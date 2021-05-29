@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::fmt::{self, Display, Formatter};
+use std::iter::Sum;
 use std::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
 
 /// A single audio sample with left and right amplitude. Values are floats that
@@ -21,6 +22,12 @@ pub struct Sample {
 }
 
 impl Sample {
+
+    /// A sample which is zero both on the left and right speakers.
+    pub const ZERO: Sample = Sample {
+        left: 0.0,
+        right: 0.0
+    };
 
     /// Creates a new sample from the given amplitudes.
     pub fn new(left: f32, right: f32) -> Sample {
@@ -107,6 +114,18 @@ impl Div<f32> for Sample {
     }
 }
 
+impl Sum<Sample> for Sample {
+    fn sum<I: Iterator<Item = Sample>>(iter: I) -> Sample {
+        let mut sum = Sample::ZERO;
+
+        for sample in iter {
+            sum += sample;
+        }
+
+        sum
+    }
+}
+
 /// A trait for audio sources, i.e. structs which provide audio data in the
 /// form of a stream of [Sample]s.
 pub trait AudioSource {
@@ -164,5 +183,16 @@ mod tests {
         assert!(equal_within_eps(prod.right, 1.2));
         assert!(equal_within_eps(quot.left, -0.15));
         assert!(equal_within_eps(quot.right, 0.05));
+    }
+
+    #[test]
+    fn sample_sum() {
+        let s1 = Sample::new(0.5, 0.6);
+        let s2 = Sample::new(-0.3, 0.1);
+        let s3 = Sample::new(0.1, 0.1);
+        let sum: Sample = vec![s1, s2, s3].into_iter().sum();
+
+        assert!(equal_within_eps(sum.left, 0.3));
+        assert!(equal_within_eps(sum.right, 0.8));
     }
 }
