@@ -1,0 +1,9 @@
+[package]
+name = "rambot-api"
+version = "0.1.0"
+authors = ["florian1345 <florian1345@gmx.de>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
