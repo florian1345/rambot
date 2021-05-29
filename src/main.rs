@@ -12,8 +12,11 @@ use serenity::framework::standard::{
 use serenity::framework::standard::macros::help;
 use serenity::model::prelude::{Message, UserId};
 
+use songbird::SerenityInit;
+
 use std::collections::HashSet;
 
+pub mod commands;
 pub mod config;
 
 #[help]
@@ -35,9 +38,12 @@ async fn main() {
     };
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(config.prefix()))
+        .group(commands::get_commands())
         .help(&PRINT_HELP);
-    let client_res =
-        Client::builder(config.token()).framework(framework).await;
+    let client_res = Client::builder(config.token())
+        .framework(framework)
+        .register_songbird()
+        .await;
     let mut client = match client_res {
         Ok(c) => c,
         Err(e) => {
