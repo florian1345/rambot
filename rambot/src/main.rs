@@ -16,6 +16,7 @@ use songbird::SerenityInit;
 
 use std::collections::HashSet;
 
+pub mod audio;
 pub mod commands;
 pub mod config;
 
