@@ -73,7 +73,7 @@ impl Config {
             Ok(serde_json::from_str(&json)?)
         }
         else {
-            println!("No config file was found. A new one will be created.");
+            log::info!("No config file was found. A new one will be created.");
             println!("Please specify the Discord API token below.");
 
             let stdin = io::stdin();

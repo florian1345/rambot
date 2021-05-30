@@ -19,6 +19,7 @@ use std::collections::HashSet;
 pub mod audio;
 pub mod commands;
 pub mod config;
+pub mod logging;
 
 #[help]
 async fn print_help(ctx: &Context, msg: &Message, args: Args,
@@ -30,10 +31,15 @@ async fn print_help(ctx: &Context, msg: &Message, args: Args,
 
 #[tokio::main]
 async fn main() {
+    if let Err(e) = logging::init() {
+        eprintln!("{}", e);
+        return;
+    }
+
     let config = match Config::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", e);
+            log::error!("{}", e);
             return;
         }
     };
@@ -48,12 +54,12 @@ async fn main() {
     let mut client = match client_res {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", e);
+            log::error!("{}", e);
             return;
         }
     };
 
     if let Err(e) = client.start().await {
-        eprintln!("{}", e);
+        log::error!("{}", e);
     }
 }
