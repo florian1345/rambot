@@ -19,8 +19,6 @@ use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-pub mod listen;
-
 /// An enumeration of all erros that ma occur when setting up a plugin.
 pub enum PluginError {
 
