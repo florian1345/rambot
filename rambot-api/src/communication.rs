@@ -5,9 +5,55 @@ use crate::audio::Sample;
 
 use serde::{Deserialize, Serialize};
 
+/// An enumeration of the different categories of messages. These are used to
+/// identify messages that belong together.
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+pub enum MessageCategory {
+
+    /// Messages dealing with the registration of audio sources.
+    Registration,
+
+    /// Messages dealing with the resolution of audio sources.
+    Resolution,
+
+    /// Messages dealing with the playback of audio sources.
+    Audio
+}
+
+/// A trait for all message data types.
+pub trait MessageData {
+
+    /// Gets the category of messages this message belongs to.
+    fn category(&self) -> MessageCategory;
+
+    /// Indicates whether a message with this data should be the first in any
+    /// conversation.
+    fn is_initial(&self) -> bool;
+
+    /// Indicates whether a message with this data should be the last in any
+    /// conversation.
+    fn is_final(&self) -> bool;
+}
+
+/// The reason for a [BotMessageData::RegisterErr] message.
+#[derive(Deserialize, Serialize)]
+pub enum RegisterErrReason {
+
+    /// Indicates that there is already an audio source with the same name
+    /// registered.
+    DuplicateName
+}
+
 /// The data of a message sent from the bot to a plugin.
 #[derive(Deserialize, Serialize)]
 pub enum BotMessageData {
+
+    /// A response by the bot that an audio source was succesfully registred.
+    SourceOk,
+
+    /// A response by the bot that an audio source could not be registered. The
+    /// reason is provided.
+    SourceErr(RegisterErrReason),
 
     /// A request by the bot for the plugin to determine whether the given
     /// string is the code of a valid audio source (e.g. the path of an
@@ -16,10 +62,18 @@ pub enum BotMessageData {
     CanResolve(String),
 
     /// A request by the bot for the plugin to attempt to setup an audio source
-    /// using the given code. It is expected that the plugin responds with a
-    /// [PluginMessageData::SetupOk] message if the setup is complete and audio
-    /// data can be sent and a [PluginMessageData::SetupErr] message otherwise.
-    SetupSource(String),
+    /// using the given name and code. It is expected that the plugin responds
+    /// with a [PluginMessageData::SetupOk] message if the setup is complete
+    /// and audio data can be sent and a [PluginMessageData::SetupErr] message
+    /// otherwise.
+    SetupSource {
+
+        /// The name of the audio source type.
+        name: String,
+
+        /// The code which was provided by the user.
+        code: String
+    },
 
     /// An indicator by the bot that the plugin can send samples with indices
     /// less than the given bound.
@@ -31,14 +85,46 @@ pub enum BotMessageData {
     CloseSource
 }
 
+impl MessageData for BotMessageData {
+
+    fn category(&self) -> MessageCategory {
+        match self {
+            BotMessageData::SourceOk
+                | BotMessageData::SourceErr(_) =>
+                    MessageCategory::Registration,
+            BotMessageData::CanResolve(_) => MessageCategory::Resolution,
+            BotMessageData::SetupSource { .. }
+                | BotMessageData::SendUntil(_)
+                | BotMessageData::CloseSource => MessageCategory::Audio
+        }
+    }
+
+    fn is_initial(&self) -> bool {
+        matches!(self,
+            BotMessageData::CanResolve(_) | BotMessageData::SetupSource { .. })
+    }
+
+    fn is_final(&self) -> bool {
+        matches!(self,
+            BotMessageData::SourceOk
+                | BotMessageData::SourceErr(_)
+                | BotMessageData::CloseSource)
+    }
+}
+
 /// The data of a message sent from a plugin to the bot.
 #[derive(Deserialize, Serialize)]
 pub enum PluginMessageData {
 
+    /// A request by the plugin to register an audio source with the bot. It
+    /// contains the source type's name.
+    RegisterSource(String),
+
     /// A response to a [BotMessageData::CanResolve] message that indicates
     /// whether the code represents a valid audio source for this plugin. In
-    /// this case, the wrapped bool will be true, otherwise false.
-    CanResolve(bool),
+    /// this case, the wrapped value will contain the name of all audio source
+    /// types that can play the given code. Otherwise, it will be empty.
+    Resolution(Vec<String>),
 
     /// A response to a [BotMessageData::SetupSource] message which indicates
     /// that audio data can now be sent.
@@ -53,10 +139,87 @@ pub enum PluginMessageData {
     AudioData(Vec<Sample>)
 }
 
+impl MessageData for PluginMessageData {
+
+    fn category(&self) -> MessageCategory {
+        match self {
+            PluginMessageData::RegisterSource(_) =>
+                MessageCategory::Registration,
+            PluginMessageData::Resolution(_) => MessageCategory::Resolution,
+            PluginMessageData::SetupOk
+                | PluginMessageData::SetupErr(_)
+                | PluginMessageData::AudioData(_) => MessageCategory::Audio
+        }
+    }
+
+    fn is_initial(&self) -> bool {
+        matches!(self, PluginMessageData::RegisterSource(_))
+    }
+
+    fn is_final(&self) -> bool {
+        matches!(self,
+            PluginMessageData::Resolution(_) | PluginMessageData::SetupErr(_))
+    }
+}
+
+/// A unique identifier of a conversation. A conversation is defined as a
+/// sequence of messages which relate to each other, for example a registration
+/// request and an accepting response.
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+pub struct ConversationId {
+    category: MessageCategory,
+    id: u64
+}
+
 /// A general message, which contains an identification to associate it with
 /// some other message, and some data.
 #[derive(Deserialize, Serialize)]
-pub struct Message<D> {
+pub struct Message<D: MessageData> {
     id: u64,
     data: D
 }
+
+impl<D: MessageData> Message<D> {
+
+    /// Creates a new message with the given identifier and some data.
+    pub fn new(id: u64, data: D) -> Message<D> {
+        Message {
+            id,
+            data
+        }
+    }
+
+    /// Gets the identifier of this message.
+    pub fn conversation_id(&self) -> ConversationId {
+        ConversationId {
+            category: self.data().category(),
+            id: self.id
+        }
+    }
+
+    /// Gets a reference to the wrapped data.
+    pub fn data(&self) -> &D {
+        &self.data
+    }
+
+    /// Transfers ownership of the wrapped data to the caller.
+    pub fn into_data(self) -> D {
+        self.data
+    }
+
+    /// Indicates whether this message should be the first in its conversation.
+    pub fn is_initial(&self) -> bool {
+        self.data().is_initial()
+    }
+
+    /// Indicates whether this message should be the last in its conversation.
+    pub fn is_final(&self) -> bool {
+        self.data().is_final()
+    }
+}
+
+/// A message sent by the bot to a plugin.
+pub type BotMessage = Message<BotMessageData>;
+
+/// A message sent by a plugin to the bot.
+pub type PluginMessage = Message<PluginMessageData>;
