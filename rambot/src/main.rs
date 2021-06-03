@@ -20,6 +20,7 @@ pub mod audio;
 pub mod commands;
 pub mod config;
 pub mod logging;
+pub mod plugin;
 
 #[help]
 async fn print_help(ctx: &Context, msg: &Message, args: Args,
