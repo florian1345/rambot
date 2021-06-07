@@ -9,6 +9,7 @@ use rambot_api::communication::{
 };
 
 use std::collections::VecDeque;
+use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
 
 const RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -16,7 +17,7 @@ const MAX_BUFFER: u64 = 4096;
 
 /// An enumeration of the errors that may occur when creating a plugin audio
 /// source.
-pub enum PluginAudioError {
+pub enum PluginSourceError {
 
     /// Indicates that the plugin raised an error with the provided message.
     ResolutionError(String),
@@ -24,6 +25,17 @@ pub enum PluginAudioError {
     /// Indicates that the plugin did not respond to the resolution request
     /// within the timeout.
     Timeout
+}
+
+impl Display for PluginSourceError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PluginSourceError::ResolutionError(msg) =>
+                write!(f, "The plugin raised an error: {}", msg),
+            PluginSourceError::Timeout =>
+                write!(f, "The plugin timed out during resolution.")
+        }
+    }
 }
 
 /// An [AudioSource] abstraction which handles the reception of audio data from
@@ -54,9 +66,8 @@ impl PluginAudioSource {
     /// If the plugin cannot resolve the given code, a
     /// [PluginAudioError::ResolutionError] is raised. If the plugin does not
     /// respond within the timeout, a [PluginAudioError::Timeout] is raised.
-    pub fn resolve(plugin: &Plugin, name: &str, code: &str)
-            -> Result<PluginAudioSource, PluginAudioError> {
-        let mut plugin = Plugin::clone(plugin);
+    pub fn resolve(mut plugin: Plugin, name: &str, code: &str)
+            -> Result<PluginAudioSource, PluginSourceError> {
         let conversation = plugin.send_new(BotMessageData::SetupSource {
             name: name.to_owned(),
             code: code.to_owned()
@@ -72,10 +83,10 @@ impl PluginAudioSource {
                     finished: false
                 }),
             Some(PluginMessageData::SetupErr(msg)) =>
-                Err(PluginAudioError::ResolutionError(msg)),
+                Err(PluginSourceError::ResolutionError(msg)),
             Some(_) =>
                 panic!("Plugin sent invalid message."), // should not happen
-            None => Err(PluginAudioError::Timeout)
+            None => Err(PluginSourceError::Timeout)
         }
     }
 }
