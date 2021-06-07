@@ -25,14 +25,6 @@ pub trait MessageData {
 
     /// Gets the category of messages this message belongs to.
     fn category(&self) -> MessageCategory;
-
-    /// Indicates whether a message with this data should be the first in any
-    /// conversation.
-    fn is_initial(&self) -> bool;
-
-    /// Indicates whether a message with this data should be the last in any
-    /// conversation.
-    fn is_final(&self) -> bool;
 }
 
 /// The reason for a [BotMessageData::RegisterErr] message.
@@ -47,6 +39,10 @@ pub enum RegisterErrReason {
 /// The data of a message sent from the bot to a plugin.
 #[derive(Deserialize, Serialize)]
 pub enum BotMessageData {
+
+    /// An indication by the bot that the plugin may start with registration of
+    /// audio sources as a response to this message.
+    StartRegistration,
 
     /// A response by the bot that an audio source was succesfully registred.
     SourceOk,
@@ -89,7 +85,8 @@ impl MessageData for BotMessageData {
 
     fn category(&self) -> MessageCategory {
         match self {
-            BotMessageData::SourceOk
+            BotMessageData::StartRegistration
+                | BotMessageData::SourceOk
                 | BotMessageData::SourceErr(_) =>
                     MessageCategory::Registration,
             BotMessageData::CanResolve(_) => MessageCategory::Resolution,
@@ -97,18 +94,6 @@ impl MessageData for BotMessageData {
                 | BotMessageData::SendUntil(_)
                 | BotMessageData::CloseSource => MessageCategory::Audio
         }
-    }
-
-    fn is_initial(&self) -> bool {
-        matches!(self,
-            BotMessageData::CanResolve(_) | BotMessageData::SetupSource { .. })
-    }
-
-    fn is_final(&self) -> bool {
-        matches!(self,
-            BotMessageData::SourceOk
-                | BotMessageData::SourceErr(_)
-                | BotMessageData::CloseSource)
     }
 }
 
@@ -119,6 +104,9 @@ pub enum PluginMessageData {
     /// A request by the plugin to register an audio source with the bot. It
     /// contains the source type's name.
     RegisterSource(String),
+
+    /// Indicates that the plugin wants to finish the registration phase.
+    RegistrationFinished,
 
     /// A response to a [BotMessageData::CanResolve] message that indicates
     /// whether the code represents a valid audio source for this plugin. In
@@ -143,22 +131,14 @@ impl MessageData for PluginMessageData {
 
     fn category(&self) -> MessageCategory {
         match self {
-            PluginMessageData::RegisterSource(_) =>
-                MessageCategory::Registration,
+            PluginMessageData::RegisterSource(_)
+                | PluginMessageData::RegistrationFinished =>
+                    MessageCategory::Registration,
             PluginMessageData::Resolution(_) => MessageCategory::Resolution,
             PluginMessageData::SetupOk
                 | PluginMessageData::SetupErr(_)
                 | PluginMessageData::AudioData(_) => MessageCategory::Audio
         }
-    }
-
-    fn is_initial(&self) -> bool {
-        matches!(self, PluginMessageData::RegisterSource(_))
-    }
-
-    fn is_final(&self) -> bool {
-        matches!(self,
-            PluginMessageData::Resolution(_) | PluginMessageData::SetupErr(_))
     }
 }
 
@@ -169,6 +149,19 @@ impl MessageData for PluginMessageData {
 pub struct ConversationId {
     category: MessageCategory,
     id: u64
+}
+
+impl ConversationId {
+
+    /// Gets the category of messages posted in this conversation.
+    pub fn category(&self) -> MessageCategory {
+        self.category
+    }
+
+    /// Gets the category-internal ID of this conversation.
+    pub fn internal_id(&self) -> u64 {
+        self.id
+    }
 }
 
 /// A general message, which contains an identification to associate it with
@@ -205,16 +198,6 @@ impl<D: MessageData> Message<D> {
     /// Transfers ownership of the wrapped data to the caller.
     pub fn into_data(self) -> D {
         self.data
-    }
-
-    /// Indicates whether this message should be the first in its conversation.
-    pub fn is_initial(&self) -> bool {
-        self.data().is_initial()
-    }
-
-    /// Indicates whether this message should be the last in its conversation.
-    pub fn is_final(&self) -> bool {
-        self.data().is_final()
     }
 }
 
