@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::plugin::PluginManager;
+use crate::plugin::load;
 
 use serenity::client::{Client, Context};
 use serenity::framework::standard::{
@@ -44,12 +46,20 @@ async fn main() {
             return;
         }
     };
+    let plugin_mgr = match load::load() {
+        Ok(m) => m,
+        Err(e) => {
+            log::error!("{}", e);
+            return;
+        }
+    };
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(config.prefix()))
         .group(commands::get_commands())
         .help(&PRINT_HELP);
     let client_res = Client::builder(config.token())
         .framework(framework)
+        .type_map_insert::<PluginManager>(plugin_mgr)
         .register_songbird()
         .await;
     let mut client = match client_res {
