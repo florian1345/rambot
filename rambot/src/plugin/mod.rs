@@ -8,11 +8,8 @@ use rambot_api::communication::{
     PluginMessageData
 };
 
-use serde::Serialize;
-
-use serde_cbor::{Deserializer, Serializer};
+use serde_cbor::Deserializer;
 use serde_cbor::de::IoRead;
-use serde_cbor::ser::IoWrite;
 
 use serenity::prelude::TypeMapKey;
 
@@ -23,8 +20,12 @@ use std::net::TcpStream;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 pub mod load;
+pub mod source;
+
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// An enumeration of all errors that may occur when setting up a plugin.
 pub enum PluginError {
@@ -88,9 +89,9 @@ impl Queues {
 
 /// A simple abstraction of a plugin that sends and receives messages.
 pub struct Plugin {
-    serializer: Serializer<IoWrite<TcpStream>>,
+    stream: TcpStream,
     queues: Arc<Mutex<Queues>>,
-    next_ids: HashMap<MessageCategory, u64>
+    next_ids: Arc<Mutex<HashMap<MessageCategory, u64>>>
 }
 
 fn listen(queues: Arc<Mutex<Queues>>,
@@ -112,22 +113,22 @@ impl Plugin {
 
     /// Creates a new plugin that uses the given TCP stream for communication.
     pub fn new(stream: TcpStream) -> Result<Plugin, PluginError> {
-        let serializer = Serializer::new(IoWrite::new(stream.try_clone()?));
         let queues = Arc::new(Mutex::new(Queues::new()));
         let queues_clone = Arc::clone(&queues);
+        let stream_clone = stream.try_clone().unwrap();
         thread::spawn(||
             listen(
                 queues_clone,
-                Deserializer::new(IoRead::new(stream))));
+                Deserializer::new(IoRead::new(stream_clone))));
         Ok(Plugin {
-            serializer,
+            stream,
             queues,
-            next_ids: HashMap::new()
+            next_ids: Arc::new(Mutex::new(HashMap::new()))
         })
     }
 
     fn get_next_id(&mut self, category: MessageCategory) -> u64 {
-        *self.next_ids.entry(category)
+        *self.next_ids.lock().unwrap().entry(category)
             .and_modify(|id| *id += 1)
             .or_insert(0)
     }
@@ -136,7 +137,7 @@ impl Plugin {
     pub fn send(&mut self, message: BotMessage)
             -> Result<(), serde_cbor::Error> {
         self.queues.lock().unwrap().ensure_exists(message.conversation_id());
-        message.serialize(&mut self.serializer)
+        serde_cbor::to_writer(&mut self.stream, &message)
     }
 
     /// Sends the given [BotMessageData] as the first message of a new
@@ -154,6 +155,47 @@ impl Plugin {
     /// i.e. if no message is currently queued, `None` will be returned.
     pub fn receive(&self, id: ConversationId) -> Option<PluginMessageData> {
         self.queues.lock().unwrap().dequeue(id)
+    }
+
+    /// Listens for messages in the conversation with the given ID until a
+    /// message was received or the timeout was passed.
+    pub fn receive_for(&self, id: ConversationId, timeout: Duration)
+            -> Option<PluginMessageData> {
+        let start = Instant::now();
+
+        while (Instant::now() - start) < timeout {
+            let msg = self.receive(id);
+
+            if msg.is_some() {
+                return msg;
+            }
+
+            thread::sleep(POLL_INTERVAL)
+        }
+
+        None
+    }
+
+    /// Blocks the thread until a new message is received.
+    pub fn receive_blocking(&self, id: ConversationId) -> PluginMessageData {
+        // TODO remove polling
+        loop {
+            if let Some(msg) = self.receive(id) {
+                return msg;
+            }
+
+            thread::sleep(POLL_INTERVAL)
+        }
+    }
+}
+
+impl Clone for Plugin {
+    fn clone(&self) -> Plugin {
+        Plugin {
+            stream: self.stream.try_clone().unwrap(),
+            queues: Arc::clone(&self.queues),
+            next_ids: Arc::clone(&self.next_ids)
+        }
     }
 }
 
