@@ -35,22 +35,15 @@ fn listen() -> PluginManager {
                     plugin.send_new(BotMessageData::StartRegistration)
                         .unwrap();
 
-                // TODO remove polling
-
                 loop {
-                    if let Some(message) = plugin.receive(conversation_id) {
-                        match message {
-                            PluginMessageData::RegisterSource(_) => {
-                                // TODO handle
-                            },
-                            PluginMessageData::RegistrationFinished => {
-                                break;
-                            },
-                            _ => {} // should not happen
-                        }
-                    }
-                    else {
-                        thread::sleep(POLL_INTERVAL);
+                    match plugin.receive_blocking(conversation_id) {
+                        PluginMessageData::RegisterSource(_) => {
+                            // TODO handle
+                        },
+                        PluginMessageData::RegistrationFinished => {
+                            break;
+                        },
+                        _ => {} // should not happen
                     }
                 }
 

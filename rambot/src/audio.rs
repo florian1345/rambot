@@ -1,6 +1,7 @@
 use rambot_api::audio::{AudioSource, Sample};
 
 use std::collections::HashMap;
+use std::io::{self, Read};
 
 /// A mixer manages multiple [AudioSource]s and adds their outputs.
 pub struct Mixer<S: AudioSource> {
@@ -65,6 +66,43 @@ impl<S: AudioSource> AudioSource for Mixer<S> {
         else {
             None
         }
+    }
+}
+
+/// A wrapper of an [AudioSource] that implements the [Read] trait.
+pub struct PCMRead<S: AudioSource> {
+    source: S
+}
+
+fn f32_to_i32(c: f32) -> i32 {
+    (c.clamp(-1.0, 1.0) * i32::MAX as f32).round() as i32
+}
+
+fn to_bytes(s: Sample) -> [u8; 4] {
+    let lle = f32_to_i32(s.left).to_le_bytes();
+    let rle = f32_to_i32(s.right).to_le_bytes();
+    [lle[0], lle[1], rle[0], rle[1]]
+}
+
+impl<S: AudioSource> Read for PCMRead<S> {
+    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+        let mut written_bytes = 0usize;
+
+        while buf.len() >= 4 {
+            if let Some(s) = self.source.next() {
+                for (i, &byte) in to_bytes(s).iter().enumerate() {
+                    buf[i] = byte;
+                }
+
+                buf = &mut buf[4..];
+                written_bytes += 4;
+            }
+            else {
+                break;
+            }
+        }
+
+        Ok(written_bytes)
     }
 }
 
