@@ -5,16 +5,18 @@ use rambot_api::communication::{BotMessageData, PluginMessageData};
 use std::fs;
 use std::net::TcpListener;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+// TODO make configurable
 const PORT: u16 = 46085;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(10);
 const PLUGIN_DIRECTORY: &str = "plugins";
 
 fn listen() -> PluginManager {
-    let mut manager = PluginManager::new();
+    let mut manager = Arc::new(Mutex::new(PluginManager::new()));
     let mut resolvers = Vec::new();
     let listener = TcpListener::bind(("127.0.0.1", PORT)).unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -23,22 +25,26 @@ fn listen() -> PluginManager {
     while (Instant::now() - last_action) < REGISTRATION_TIMEOUT {
         while let Ok((stream, _)) = listener.accept() {
             last_action = Instant::now();
-            resolvers.push(thread::spawn(|| {
+            let manager = Arc::clone(&manager);
+            resolvers.push(thread::spawn(move || {
                 let mut plugin = match Plugin::new(stream) {
                     Ok(p) => p,
                     Err(e) => {
                         log::error!("Could not load plugin: {}", e);
-                        return None;
+                        return;
                     }
                 };
+                let plugin_id = manager.lock().unwrap()
+                    .register_plugin(plugin.clone());
                 let conversation_id =
                     plugin.send_new(BotMessageData::StartRegistration)
                         .unwrap();
 
                 loop {
                     match plugin.receive_blocking(conversation_id) {
-                        PluginMessageData::RegisterSource(_) => {
-                            // TODO handle
+                        PluginMessageData::RegisterSource(name) => {
+                            manager.lock().unwrap()
+                                .register_source(plugin_id, name);
                         },
                         PluginMessageData::RegistrationFinished => {
                             break;
@@ -46,8 +52,6 @@ fn listen() -> PluginManager {
                         _ => {} // should not happen
                     }
                 }
-
-                Some(plugin)
             }))
         }
 
@@ -55,12 +59,15 @@ fn listen() -> PluginManager {
     }
 
     for resolver in resolvers {
-        if let Some(plugin) = resolver.join().unwrap() {
-            manager.register_plugin(plugin);
-        }
+        resolver.join().unwrap();
     }
 
-    manager
+    loop {
+        match Arc::try_unwrap(manager) {
+            Ok(m) => return m.into_inner().unwrap(),
+            Err(a) => manager = a
+        }
+    }
 }
 
 /// Loads all plugins in the plugin directory.

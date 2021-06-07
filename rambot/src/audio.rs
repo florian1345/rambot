@@ -69,33 +69,40 @@ impl<S: AudioSource> AudioSource for Mixer<S> {
     }
 }
 
-/// A wrapper of an [AudioSource] that implements the [Read] trait.
-pub struct PCMRead<S: AudioSource> {
+/// A wrapper of an [AudioSource] that implements the [Read] trait. It outputs
+/// 32-bit floating-point PCM audio data.
+pub struct PCMRead<S: AudioSource + Send> {
     source: S
 }
 
-fn f32_to_i32(c: f32) -> i32 {
-    (c.clamp(-1.0, 1.0) * i32::MAX as f32).round() as i32
+impl<S: AudioSource + Send> PCMRead<S> {
+
+    /// Creates a new PCMRead with the given audio source.
+    pub fn new(source: S) -> PCMRead<S> {
+        PCMRead { source }
+    }
 }
 
-fn to_bytes(s: Sample) -> [u8; 4] {
-    let lle = f32_to_i32(s.left).to_le_bytes();
-    let rle = f32_to_i32(s.right).to_le_bytes();
-    [lle[0], lle[1], rle[0], rle[1]]
+const SAMPLE_SIZE: usize = 8;
+
+fn to_bytes(s: Sample) -> Vec<u8> {
+    let lle = s.left.to_le_bytes();
+    let rle = s.right.to_le_bytes();
+    [lle, rle].concat()
 }
 
-impl<S: AudioSource> Read for PCMRead<S> {
+impl<S: AudioSource + Send> Read for PCMRead<S> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         let mut written_bytes = 0usize;
 
-        while buf.len() >= 4 {
+        while buf.len() >= SAMPLE_SIZE {
             if let Some(s) = self.source.next() {
                 for (i, &byte) in to_bytes(s).iter().enumerate() {
                     buf[i] = byte;
                 }
 
-                buf = &mut buf[4..];
-                written_bytes += 4;
+                buf = &mut buf[SAMPLE_SIZE..];
+                written_bytes += SAMPLE_SIZE;
             }
             else {
                 break;
