@@ -2,7 +2,12 @@
 //! application that runs plugins for Rambot.
 
 use crate::audio::AudioSource;
-use crate::communication::{BotMessageData, Channel, PluginMessageData};
+use crate::communication::{
+    BotMessageData,
+    Channel,
+    Message,
+    PluginMessageData
+};
 
 use std::collections::HashMap;
 use std::io;
@@ -60,6 +65,8 @@ where
     })
 }
 
+type Bot = Channel<PluginMessageData, BotMessageData>;
+
 /// An abstract representation of a plugin that can connect to the bot. As a
 /// user, you do not have to interact with this struct beyond registering it
 /// with a [PluginApp]. You can construct it with a [PluginBuilder].
@@ -69,12 +76,26 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    fn listen(&self, channel: Channel<PluginMessageData, BotMessageData>) {
+    fn start_registration(&self, bot: &mut Bot, id: u64) {
+        for name in self.named_audio_source_providers.keys() {
+            let data = PluginMessageData::RegisterSource(name.clone());
+            bot.send(Message::new(id, data)).unwrap();
+
+            // TODO do something useful with result messages
+        }
+
+        let data = PluginMessageData::RegistrationFinished;
+        bot.send(Message::new(id, data)).unwrap();
+    }
+
+    fn listen(&self, mut bot: Bot) {
         loop {
-            let msg = channel.receive_new_blocking();
+            let msg = bot.receive_new_blocking();
+            let id = msg.conversation_id().internal_id();
 
             match msg.data() {
-                BotMessageData::StartRegistration => {},
+                BotMessageData::StartRegistration =>
+                    self.start_registration(&mut bot, id),
                 BotMessageData::CanResolve(_) => {},
                 BotMessageData::SetupSource { .. } => {},
                 _ => {} // should not happen
@@ -84,8 +105,8 @@ impl Plugin {
 
     async fn launch(self) -> io::Result<()> {
         let stream = TcpStream::connect("127.0.0.1:46085")?;
-        let channel = Channel::new(stream);
-        self.listen(channel);
+        let bot = Bot::new(stream);
+        self.listen(bot);
         Ok(())
     }
 }
