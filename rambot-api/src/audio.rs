@@ -136,6 +136,12 @@ pub trait AudioSource {
     fn next(&mut self) -> Option<Sample>;
 }
 
+impl AudioSource for Box<dyn AudioSource> {
+    fn next(&mut self) -> Option<Sample> {
+        self.as_mut().next()
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
