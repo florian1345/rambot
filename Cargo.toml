@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "plugin-wave",
     "rambot",
     "rambot-api"
 ]

@@ -4,6 +4,7 @@ use rambot_api::communication::{BotMessageData, PluginMessageData};
 
 use std::fs;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -27,6 +28,7 @@ fn listen() -> PluginManager {
             last_action = Instant::now();
             let manager = Arc::clone(&manager);
             resolvers.push(thread::spawn(move || {
+                stream.set_nonblocking(false).unwrap();
                 let mut plugin = Plugin::new(stream);
                 let plugin_id = manager.lock().unwrap()
                     .register_plugin(plugin.clone());
@@ -37,8 +39,13 @@ fn listen() -> PluginManager {
                 loop {
                     match plugin.receive_blocking(conversation_id) {
                         PluginMessageData::RegisterSource(name) => {
-                            manager.lock().unwrap()
-                                .register_source(plugin_id, name);
+                            let duplicate = manager.lock().unwrap()
+                                .register_source(plugin_id, name.clone());
+
+                            if duplicate {
+                                log::warn!("Duplicate registration for audio \
+                                    source {}. Only one will work.", name);
+                            }
                         },
                         PluginMessageData::RegistrationFinished => {
                             break;
@@ -64,6 +71,21 @@ fn listen() -> PluginManager {
     }
 }
 
+fn is_executable(p: &PathBuf) -> bool {
+    if !p.is_file() {
+        return false;
+    }
+
+    let extension = p.extension().and_then(|o| o.to_str());
+
+    if let Some(extension) = extension {
+        extension == "exe"
+    }
+    else {
+        true
+    }
+}
+
 /// Loads all plugins in the plugin directory.
 pub fn load() -> Result<PluginManager, PluginError> {
     let listener = thread::spawn(listen);
@@ -80,11 +102,18 @@ pub fn load() -> Result<PluginManager, PluginError> {
                 .filter(|e| e.is_ok())
                 .map(|e| e.unwrap())
                 .map(|e| e.path())
-                .filter(|p| p.is_file() && p.ends_with(".exe"))
+                .filter(is_executable)
                 .collect::<Vec<_>>();
 
             if matches.len() != 1 {
                 continue;
+            }
+
+            if let Some(s) = &matches[0].as_os_str().to_str() {
+                log::info!("Launching executable {} ...", s);
+            }
+            else {
+                log::info!("Launching executable ....");
             }
 
             let child_res = Command::new(&matches[0])
