@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-// TODO make configurable
+// TODO make configurable (remember to update in plugin)
 const PORT: u16 = 46085;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -27,13 +27,7 @@ fn listen() -> PluginManager {
             last_action = Instant::now();
             let manager = Arc::clone(&manager);
             resolvers.push(thread::spawn(move || {
-                let mut plugin = match Plugin::new(stream) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        log::error!("Could not load plugin: {}", e);
-                        return;
-                    }
-                };
+                let mut plugin = Plugin::new(stream);
                 let plugin_id = manager.lock().unwrap()
                     .register_plugin(plugin.clone());
                 let conversation_id =
