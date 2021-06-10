@@ -7,6 +7,8 @@ use std::fmt::{self, Display, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
 
+pub mod convert;
+
 /// A single audio sample with left and right amplitude. Values are floats that
 /// are normalized to between -1.0 and 1.0 (values outside that range are
 /// permitted, but will lead to overmodulation if not sorted out before

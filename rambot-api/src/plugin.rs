@@ -250,6 +250,22 @@ impl PluginBuilder {
         self
     }
 
+    /// Registers an [AudioSourceProvider] with a name that can be specified by
+    /// users to refer to this exact type of audio source. Returns this
+    /// instance after the operation for chaining. This is a specialization of
+    /// [PluginBuilder::with_audio_source], which should preferrably be used if
+    /// the provider returns boxed audio sources.
+    pub fn with_dyn_audio_source<N, P>(mut self, name: N, provider: P)
+        -> PluginBuilder
+    where
+        N: Into<String>,
+        P: AudioSourceProvider<Box<dyn AudioSource + Send>> + 'static
+    {
+        self.plugin.named_audio_source_providers
+            .insert(name.into(), Box::new(provider));
+        self
+    }
+
     /// Registers an [AudioSourceProvider] without a name, i.e. it can only be
     /// resolved automatically. Returns this instance after the operation for
     /// chaining.
@@ -262,6 +278,22 @@ impl PluginBuilder {
         // TODO find a cleaner solution than "random_string"
         self.plugin.unnamed_audio_source_providers
             .insert(random_string(), to_dyn(provider));
+        self
+    }
+
+    /// Registers an [AudioSourceProvider] without a name, i.e. it can only be
+    /// resolved automatically. Returns this instance after the operation for
+    /// chaining. This is a specialization of
+    /// [PluginBuilder::with_unnamed_audio_source], which should preferrably be
+    /// used if the provider returns boxed audio sources.
+    pub fn with_unnamed_dyn_audio_source<P>(mut self, provider: P)
+        -> PluginBuilder
+    where
+        P: AudioSourceProvider<Box<dyn AudioSource + Send>> + 'static
+    {
+        // TODO find a cleaner solution than "random_string"
+        self.plugin.unnamed_audio_source_providers
+            .insert(random_string(), Box::new(provider));
         self
     }
 
