@@ -3,7 +3,7 @@
 //! to use these if you write a plugin.
 
 use crate::audio::Sample;
-use crate::util::MultiJoinHandle;
+use crate::util::{MultiJoinHandle, TransactionalWrite};
 
 use serde::{Deserialize, Serialize};
 
@@ -285,7 +285,7 @@ where
     S: MessageData + Serialize,
     for<'de> R: MessageData + Deserialize<'de> + Send + 'static
 {
-    stream: TcpStream,
+    stream: TransactionalWrite<TcpStream>,
     queues: Arc<Mutex<Queues<R>>>,
     next_ids: Arc<Mutex<HashMap<MessageCategory, u64>>>,
     new_conversations: Option<Arc<Mutex<VecDeque<ConversationId>>>>,
@@ -366,7 +366,7 @@ where
                 Deserializer::new(IoRead::new(stream_clone)),
                 new_conversations_clone)));
         Channel {
-            stream,
+            stream: TransactionalWrite::new(stream),
             queues,
             next_ids: Arc::new(Mutex::new(HashMap::new())),
             new_conversations,
@@ -385,7 +385,10 @@ where
     pub fn send(&mut self, message: Message<S>)
             -> Result<(), serde_cbor::Error> {
         self.queues.lock().unwrap().ensure_exists(message.conversation_id());
-        serde_cbor::to_writer(&mut self.stream, &message)
+        let mut transaction = self.stream.open_transaction();
+        serde_cbor::to_writer(&mut transaction, &message)?;
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Sends the given message data as the first message of a new conversation
@@ -471,7 +474,7 @@ where
 {
     fn clone(&self) -> Channel<S, R> {
         Channel {
-            stream: self.stream.try_clone().unwrap(),
+            stream: self.stream.clone(),
             queues: Arc::clone(&self.queues),
             next_ids: Arc::clone(&self.next_ids),
             new_conversations: self.new_conversations.as_ref().map(Arc::clone),

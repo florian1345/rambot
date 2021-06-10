@@ -39,10 +39,10 @@ fn listen() -> PluginManager {
                 loop {
                     match plugin.receive_blocking(conversation_id) {
                         PluginMessageData::RegisterSource(name) => {
-                            let duplicate = manager.lock().unwrap()
+                            let successful = manager.lock().unwrap()
                                 .register_source(plugin_id, name.clone());
 
-                            if duplicate {
+                            if !successful {
                                 log::warn!("Duplicate registration for audio \
                                     source {}. Only one will work.", name);
                             }
@@ -79,7 +79,7 @@ fn is_executable(p: &PathBuf) -> bool {
     let extension = p.extension().and_then(|o| o.to_str());
 
     if let Some(extension) = extension {
-        extension == "exe"
+        extension.to_lowercase() == "exe"
     }
     else {
         true
