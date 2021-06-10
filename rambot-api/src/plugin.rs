@@ -13,6 +13,7 @@ use crate::communication::{
 use rand::Rng;
 
 use std::collections::HashMap;
+use std::env;
 use std::io;
 use std::marker::PhantomData;
 use std::net::TcpStream;
@@ -197,8 +198,8 @@ impl Plugin {
         }
     }
 
-    async fn launch(self) -> io::Result<()> {
-        let stream = TcpStream::connect("127.0.0.1:46085")?;
+    async fn launch(self, port: u16) -> io::Result<()> {
+        let stream = TcpStream::connect(format!("127.0.0.1:{}", port))?;
         let bot = Bot::new(stream);
         self.listen(bot);
         Ok(())
@@ -270,7 +271,7 @@ impl PluginBuilder {
     }
 }
 
-/// Represents an application which may contain some (or one) [Plugin](s).
+/// Represents an application which may contain some (or one) [Plugin]s.
 pub struct PluginApp {
     plugins: Vec<Plugin>
 }
@@ -278,12 +279,18 @@ pub struct PluginApp {
 impl PluginApp {
 
     /// Launches the application, which spawns all registered plugins and
-    /// attempts to connect them to a running instance of the Rambot.
+    /// attempts to connect them to a running instance of the Rambot. Panics if
+    /// the CLI arguments have not been provided correctly (i.e.
+    /// `<executable> <port>`).
     pub async fn launch(self) -> Vec<io::Error> {
+        let port = env::args().skip(1).next()
+            .expect("Missing port as CLI argument.")
+            .parse()
+            .expect("Port has invalid format.");
         let mut futures = Vec::new();
 
         for plugin in self.plugins {
-            futures.push(plugin.launch());
+            futures.push(plugin.launch(port));
         }
 
         let mut result = Vec::new();

@@ -1,4 +1,5 @@
 use crate::audio::PCMRead;
+use crate::config::Config;
 use crate::plugin::PluginManager;
 
 use rambot_api::audio::AudioSource;
@@ -106,7 +107,8 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             let command = args.rest();
             let data_guard = ctx.data.read().await;
             let plugin_manager = data_guard.get::<PluginManager>().unwrap();
-            let source = match plugin_manager.resolve_source(command) {
+            let config = data_guard.get::<Config>().unwrap();
+            let source = match plugin_manager.resolve_source(command, config) {
                 Ok(s) => s,
                 Err(e) => {
                     msg.reply(ctx, format!("Could not resolve audio: {}", e))

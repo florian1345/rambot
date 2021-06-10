@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::plugin::source::{PluginSourceError, PluginAudioSource};
 
 use rambot_api::communication::{
@@ -12,7 +13,6 @@ use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::io;
 use std::process::Child;
-use std::str::FromStr;
 
 pub mod load;
 pub mod source;
@@ -89,15 +89,12 @@ struct PlayCommand {
     code: String
 }
 
-impl FromStr for PlayCommand {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<PlayCommand, ()> {
+impl PlayCommand {
+    fn parse(s: &str, prefix: char) -> PlayCommand {
         let mut chars = s.chars().peekable();
         let mut name = None;
 
-        // TODO make configurable
-        if Some(':') == chars.peek().cloned() {
+        if Some(prefix) == chars.peek().cloned() {
             chars.next();
             let mut name_content = String::new();
 
@@ -112,10 +109,10 @@ impl FromStr for PlayCommand {
             name = Some(name_content);
         }
 
-        Ok(PlayCommand {
+        PlayCommand {
             name,
             code: chars.collect()
-        })
+        }
     }
 }
 
@@ -177,9 +174,10 @@ impl PluginManager {
     }
 
     /// Attempts to resolve an audio source from its (complete) command.
-    pub fn resolve_source(&self, command: &str)
+    pub fn resolve_source(&self, command: &str, config: &Config)
             -> Result<PluginAudioSource, PluginResolutionError> {
-        let command = PlayCommand::from_str(command).unwrap();
+        let command =
+            PlayCommand::parse(command, config.audio_source_prefix());
 
         if let Some(name) = &command.name {
             if let Some(&source) = self.sources.get(name) {
