@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::plugin::{Plugin, PluginError, PluginManager};
 
 use rambot_api::communication::{BotMessageData, PluginMessageData};
@@ -10,20 +11,16 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-// TODO make configurable (remember to update in plugin)
-const PORT: u16 = 46085;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
-const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(10);
-const PLUGIN_DIRECTORY: &str = "plugins";
 
-fn listen() -> PluginManager {
+fn listen(port: u16, registration_timeout: Duration) -> PluginManager {
     let mut manager = Arc::new(Mutex::new(PluginManager::new()));
     let mut resolvers = Vec::new();
-    let listener = TcpListener::bind(("127.0.0.1", PORT)).unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let mut last_action = Instant::now();
 
-    while (Instant::now() - last_action) < REGISTRATION_TIMEOUT {
+    while (Instant::now() - last_action) < registration_timeout {
         while let Ok((stream, _)) = listener.accept() {
             last_action = Instant::now();
             let manager = Arc::clone(&manager);
@@ -42,7 +39,11 @@ fn listen() -> PluginManager {
                             let successful = manager.lock().unwrap()
                                 .register_source(plugin_id, name.clone());
 
-                            if !successful {
+                            if successful {
+                                log::info!("Registered audio source \"{}\".",
+                                    name);
+                            }
+                            else {
                                 log::warn!("Duplicate registration for audio \
                                     source {}. Only one will work.", name);
                             }
@@ -87,13 +88,15 @@ fn is_executable(p: &PathBuf) -> bool {
 }
 
 /// Loads all plugins in the plugin directory.
-pub fn load() -> Result<PluginManager, PluginError> {
-    let listener = thread::spawn(listen);
+pub fn load(config: &Config) -> Result<PluginManager, PluginError> {
+    let port = config.plugin_port();
+    let registration_timeout = config.registration_timeout();
+    let listener = thread::spawn(move || listen(port, registration_timeout));
     let mut children = Vec::new();
 
     log::info!("Loading plugins ...");
 
-    for entry in fs::read_dir(PLUGIN_DIRECTORY)? {
+    for entry in fs::read_dir(config.plugin_directory())? {
         let entry = entry?;
         let path = entry.path();
 
@@ -118,6 +121,7 @@ pub fn load() -> Result<PluginManager, PluginError> {
 
             let child_res = Command::new(&matches[0])
                 .current_dir(&path)
+                .arg(port.to_string())
                 .spawn();
 
             match child_res {

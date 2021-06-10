@@ -46,7 +46,7 @@ async fn main() {
             return;
         }
     };
-    let plugin_mgr = match load::load() {
+    let plugin_mgr = match load::load(&config) {
         Ok(m) => m,
         Err(e) => {
             log::error!("{}", e);
@@ -60,6 +60,7 @@ async fn main() {
     let client_res = Client::builder(config.token())
         .framework(framework)
         .type_map_insert::<PluginManager>(plugin_mgr)
+        .type_map_insert::<Config>(config)
         .register_songbird()
         .await;
     let mut client = match client_res {
