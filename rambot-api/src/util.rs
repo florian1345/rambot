@@ -1,5 +1,7 @@
+use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;
 
 #[derive(Clone)]
@@ -89,6 +91,48 @@ impl<W: Write> Clone for TransactionalWrite<W> {
     }
 }
 
+pub(crate) struct ObservableQueue<T> {
+    elements: VecDeque<T>,
+    senders: VecDeque<Sender<T>>
+}
+
+impl<T> ObservableQueue<T> {
+    pub(crate) fn new() -> ObservableQueue<T> {
+        ObservableQueue {
+            elements: VecDeque::new(),
+            senders: VecDeque::new()
+        }
+    }
+
+    pub(crate) fn enqueue(&mut self, mut element: T) {
+        while let Some(sender) = self.senders.pop_front() {
+            match sender.send(element) {
+                Ok(_) => return,
+                Err(e) => element = e.0
+            }
+        }
+
+        self.elements.push_back(element);
+    }
+
+    pub(crate) fn dequeue(&mut self) -> Option<T> {
+        self.elements.pop_front()
+    }
+
+    pub(crate) fn observe(&mut self) -> Receiver<T> {
+        let (sender, receiver) = mpsc::channel();
+
+        if let Some(element) = self.dequeue() {
+            sender.send(element).unwrap();
+        }
+        else {
+            self.senders.push_back(sender);
+        }
+
+        receiver
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -160,5 +204,28 @@ mod tests {
             .flat_map(|v| v.into_iter())
             .collect::<Vec<_>>();
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn observable_queue_filled_on_observe() {
+        let mut queue = ObservableQueue::new();
+        queue.enqueue(42);
+        queue.enqueue(43);
+        let r = queue.observe();
+        assert_eq!(42, r.recv().unwrap());
+        assert_eq!(Some(43), queue.dequeue());
+    }
+
+    #[test]
+    fn observable_queue_empty_on_observe() {
+        let mut queue = ObservableQueue::new();
+        let r = queue.observe();
+
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            queue.enqueue(42);
+        });
+
+        assert_eq!(42, r.recv().unwrap());
     }
 }
