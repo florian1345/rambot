@@ -3,20 +3,21 @@
 //! to use these if you write a plugin.
 
 use crate::audio::Sample;
-use crate::util::{MultiJoinHandle, TransactionalWrite};
+use crate::util::{MultiJoinHandle, ObservableQueue, TransactionalWrite};
 
 use serde::{Deserialize, Serialize};
 
 use serde_cbor::Deserializer;
 use serde_cbor::de::IoRead;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::marker::PhantomData;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// An enumeration of the different categories of messages. These are used to
 /// identify messages that belong together.
@@ -230,7 +231,7 @@ pub type PluginMessage = Message<PluginMessageData>;
 
 /// Manages message queues of received messages.
 struct Queues<D: MessageData> {
-    queues: HashMap<MessageCategory, HashMap<u64, VecDeque<D>>>
+    queues: HashMap<MessageCategory, HashMap<u64, ObservableQueue<D>>>
 }
 
 impl<D: MessageData> Queues<D> {
@@ -243,7 +244,7 @@ impl<D: MessageData> Queues<D> {
     }
 
     fn queue_mut(&mut self, conversation: ConversationId)
-            -> Option<&mut VecDeque<D>> {
+            -> Option<&mut ObservableQueue<D>> {
         self.queues
             .get_mut(&conversation.category())
             .and_then(|m| m.get_mut(&conversation.internal_id()))
@@ -257,7 +258,7 @@ impl<D: MessageData> Queues<D> {
             .or_insert_with(|| HashMap::new())
             .entry(conversation.internal_id());
         let result = matches!(entry, Entry::Vacant(_));
-        entry.or_insert_with(|| VecDeque::new());
+        entry.or_insert_with(|| ObservableQueue::new());
         result
     }
 
@@ -266,7 +267,7 @@ impl<D: MessageData> Queues<D> {
     /// false is returned.
     fn enqueue(&mut self, message: Message<D>) -> bool {
         self.queue_mut(message.conversation_id())
-            .map(|q| q.push_back(message.into_data()))
+            .map(|q| q.enqueue(message.into_data()))
             .is_some()
     }
 
@@ -275,7 +276,11 @@ impl<D: MessageData> Queues<D> {
     /// returns none.
     fn dequeue(&mut self, conversation: ConversationId) -> Option<D> {
         self.queue_mut(conversation)
-            .and_then(|q| q.pop_front())
+            .and_then(|q| q.dequeue())
+    }
+
+    fn observe(&mut self, conversation: ConversationId) -> Option<Receiver<D>> {
+        self.queue_mut(conversation).map(|q| q.observe())
     }
 }
 
@@ -288,14 +293,14 @@ where
     stream: TransactionalWrite<TcpStream>,
     queues: Arc<Mutex<Queues<R>>>,
     next_ids: Arc<Mutex<HashMap<MessageCategory, u64>>>,
-    new_conversations: Option<Arc<Mutex<VecDeque<ConversationId>>>>,
+    new_conversations: Option<Arc<Mutex<ObservableQueue<ConversationId>>>>,
     listener: MultiJoinHandle<()>,
     send_type: PhantomData<S>
 }
 
 fn listen<R>(queues: Arc<Mutex<Queues<R>>>,
     deserializer: Deserializer<IoRead<TcpStream>>,
-    new_conversations: Option<Arc<Mutex<VecDeque<ConversationId>>>>)
+    new_conversations: Option<Arc<Mutex<ObservableQueue<ConversationId>>>>)
 where
     for<'de> R: MessageData + Deserialize<'de>
 {
@@ -309,7 +314,7 @@ where
 
                     if queues.ensure_exists(conversation) {
                         new_conversations.lock().unwrap()
-                            .push_back(conversation);
+                            .enqueue(conversation);
                     }
 
                     queues.enqueue(msg);
@@ -327,20 +332,6 @@ where
     }
 }
 
-// TODO remove polling
-
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
-
-fn poll<T>(get: impl Fn() -> Option<T>) -> T {
-    loop {
-        if let Some(t) = get() {
-            return t;
-        }
-
-        thread::sleep(POLL_INTERVAL);
-    }
-}
-
 impl<S, R> Channel<S, R>
 where
     S: MessageData + Serialize,
@@ -353,7 +344,7 @@ where
         let queues_clone = Arc::clone(&queues);
         let stream_clone = stream.try_clone().unwrap();
         let new_conversations = if R::CAN_CREATE_CONVERSATIONS {
-            Some(Arc::new(Mutex::new(VecDeque::new())))
+            Some(Arc::new(Mutex::new(ObservableQueue::new())))
         }
         else {
             None
@@ -412,24 +403,15 @@ where
     /// message was received or the timeout was passed.
     pub fn receive_for(&self, id: ConversationId, timeout: Duration)
             -> Option<R> {
-        let start = Instant::now();
-
-        while (Instant::now() - start) < timeout {
-            let msg = self.receive(id);
-
-            if msg.is_some() {
-                return msg;
-            }
-
-            thread::sleep(POLL_INTERVAL)
-        }
-
-        None
+        let receiver = self.queues.lock().unwrap().observe(id);
+        receiver.and_then(|r| r.recv_timeout(timeout).ok())
     }
 
-    /// Blocks the thread until a new message is received.
-    pub fn receive_blocking(&self, id: ConversationId) -> R {
-        poll(|| self.receive(id))
+    /// Blocks the thread until a new message is received. This returns `None`
+    /// only if there is no conversation with the given ID.
+    pub fn receive_blocking(&self, id: ConversationId) -> Option<R> {
+        let receiver = self.queues.lock().unwrap().observe(id);
+        receiver.map(|r| r.recv().unwrap())
     }
 
     /// Returns the first message in the next new conversation, if there is
@@ -442,7 +424,7 @@ where
         let id = {
             let mut new_conversations =
                 self.new_conversations.as_ref().unwrap().lock().unwrap();
-            new_conversations.pop_front()
+            new_conversations.dequeue()
         };
         id.and_then(|id|
             Some(Message::new(id.internal_id(), self.receive(id)?)))
@@ -450,7 +432,11 @@ where
 
     /// Blocks the thread until a message in a new conversation is received.
     pub fn receive_new_blocking(&self) -> Message<R> {
-        poll(|| self.receive_new())
+        let receiver = self.new_conversations.as_ref().unwrap().lock().unwrap()
+            .observe();
+        let id = receiver.recv().unwrap();
+        let data = self.queues.lock().unwrap().dequeue(id).unwrap();
+        Message::new(id.internal_id(), data)
     }
 
     /// Waits for the listener thread to terminate, which indicates that the

@@ -121,7 +121,7 @@ impl AudioSource for PluginAudioSource {
             return None;
         }
 
-        match self.plugin.receive_blocking(self.conversation) {
+        match self.plugin.receive_blocking(self.conversation).unwrap() {
             PluginMessageData::AudioData(d) => {
                 if d.len() == 0 {
                     self.finished = true;

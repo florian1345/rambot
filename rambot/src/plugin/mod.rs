@@ -197,7 +197,7 @@ impl PluginManager {
                 let message = BotMessageData::CanResolve(command.code.clone());
                 let conversation_id = plugin.send_new(message).unwrap();
 
-                match plugin.receive_blocking(conversation_id) {
+                match plugin.receive_blocking(conversation_id).unwrap() {
                     PluginMessageData::Resolution(mut name) => {
                         if !name.is_empty() {
                             matching_plugin = Some(plugin);

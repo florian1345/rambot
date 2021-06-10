@@ -34,7 +34,7 @@ fn listen(port: u16, registration_timeout: Duration) -> PluginManager {
                         .unwrap();
 
                 loop {
-                    match plugin.receive_blocking(conversation_id) {
+                    match plugin.receive_blocking(conversation_id).unwrap() {
                         PluginMessageData::RegisterSource(name) => {
                             let successful = manager.lock().unwrap()
                                 .register_source(plugin_id, name.clone());
