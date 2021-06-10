@@ -136,7 +136,7 @@ pub trait AudioSource {
     fn next(&mut self) -> Option<Sample>;
 }
 
-impl AudioSource for Box<dyn AudioSource> {
+impl AudioSource for Box<dyn AudioSource + Send> {
     fn next(&mut self) -> Option<Sample> {
         self.as_mut().next()
     }

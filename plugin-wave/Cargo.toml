@@ -7,5 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+hound = "3.4"
 rambot-api = { path = "../rambot-api" }
 tokio = { version = "1.0", features = [ "macros", "rt-multi-thread" ] }

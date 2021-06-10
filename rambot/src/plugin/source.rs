@@ -13,7 +13,11 @@ use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
 
 const RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_BUFFER: u64 = 4096;
+const BUFFER_SIZE: u64 = 4096;
+
+/// After this amount of samples a new "SendUntil" request will be sent to the
+/// plugin to keep the buffer filled.
+const REQUEST_EVERY: usize = BUFFER_SIZE as usize / 4;
 
 /// An enumeration of the errors that may occur when creating a plugin audio
 /// source.
@@ -74,14 +78,18 @@ impl PluginAudioSource {
         }).unwrap();
 
         match plugin.receive_for(conversation, RESOLUTION_TIMEOUT) {
-            Some(PluginMessageData::SetupOk) =>
+            Some(PluginMessageData::SetupOk) => {
+                let data = BotMessageData::SendUntil(BUFFER_SIZE);
+                let msg = BotMessage::new(conversation.internal_id(), data);
+                plugin.send(msg).unwrap();
                 Ok(PluginAudioSource {
                     plugin,
                     conversation,
-                    buffer: VecDeque::new(),
+                    buffer: VecDeque::with_capacity(BUFFER_SIZE as usize),
                     processed: 0,
                     finished: false
-                }),
+                })
+            },
             Some(PluginMessageData::SetupErr(msg)) =>
                 Err(PluginSourceError::ResolutionError(msg)),
             Some(_) =>
@@ -97,16 +105,21 @@ impl AudioSource for PluginAudioSource {
 
         if dequeued.is_some() {
             self.processed += 1;
+
+            if self.buffer.len() % REQUEST_EVERY == 0 {
+                let data =
+                    BotMessageData::SendUntil(self.processed + BUFFER_SIZE);
+                let msg =
+                    BotMessage::new(self.conversation.internal_id(), data);
+                self.plugin.send(msg).unwrap();
+            }
+
             return dequeued;
         }
 
         if self.finished {
             return None;
         }
-
-        let m = BotMessageData::SendUntil(self.processed + MAX_BUFFER);
-        self.plugin.send(BotMessage::new(self.conversation.internal_id(), m))
-            .unwrap();
 
         match self.plugin.receive_blocking(self.conversation) {
             PluginMessageData::AudioData(d) => {
