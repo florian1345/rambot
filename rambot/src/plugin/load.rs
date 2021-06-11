@@ -1,63 +1,121 @@
 use crate::config::Config;
 use crate::plugin::{Plugin, PluginError, PluginManager};
 
-use rambot_api::communication::{BotMessageData, PluginMessageData};
+use rambot_api::communication::{
+    BotMessageData,
+    ConnectionIntent,
+    PluginMessageData,
+    Token
+};
 
+use std::{process::Child, collections::HashSet, thread::JoinHandle};
+use std::convert::TryFrom;
 use std::fs;
-use std::net::TcpListener;
+use std::io::ErrorKind;
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{Duration, Instant};
 
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
+fn handle_registration(stream: TcpStream, manager: Arc<Mutex<PluginManager>>) {
+    let mut plugin = Plugin::new(stream);
+    let plugin_id = manager.lock().unwrap()
+        .register_plugin(plugin.clone());
+    let conversation_id =
+        plugin.send_new(BotMessageData::StartRegistration).unwrap();
 
-fn listen(port: u16, registration_timeout: Duration) -> PluginManager {
+    loop {
+        match plugin.receive_blocking(conversation_id).unwrap() {
+            PluginMessageData::RegisterSource(name) => {
+                let successful = manager.lock().unwrap()
+                    .register_source(plugin_id, name.clone());
+
+                if successful {
+                    log::info!("Registered audio source \"{}\".",
+                        name);
+                }
+                else {
+                    log::warn!("Duplicate registration for audio \
+                        source {}. Only one will work.", name);
+                }
+            },
+            PluginMessageData::RegistrationFinished => {
+                break;
+            },
+            _ => {} // should not happen
+        }
+    }
+}
+
+fn handle_incoming_connection(mut stream: TcpStream,
+        tokens: &Arc<Mutex<HashSet<Token>>>,
+        manager: &Arc<Mutex<PluginManager>>) -> (bool, Option<JoinHandle<()>>) {
+    stream.set_nonblocking(false).unwrap();
+    let intent = match ConnectionIntent::try_from(&mut stream) {
+        Ok(i) => i,
+        Err(e) => {
+            log::warn!("Error receiving connection intent: {}", e);
+            return (false, None);
+        }
+    };
+
+    match intent {
+        ConnectionIntent::RegisterPlugin(token) =>
+            if tokens.lock().unwrap().contains(&token) {
+                let manager = Arc::clone(&manager);
+                let join_handle = thread::spawn(
+                    move || handle_registration(stream, manager));
+                (false, Some(join_handle))
+            }
+            else {
+                log::warn!(
+                    "Plugin attempted to register with invalid token.");
+                (false, None)
+            },
+        ConnectionIntent::CloseRegistration(token) => {
+            if tokens.lock().unwrap().remove(&token) {
+                (tokens.lock().unwrap().is_empty(), None)
+            }
+            else {
+                log::warn!(
+                    "Plugin attempted to close registration with invalid \
+                    token.");
+                (false, None)
+            }
+        }
+    }
+}
+
+fn listen(port: u16, tokens: Arc<Mutex<HashSet<Token>>>, abort: Receiver<()>,
+        result: Sender<PluginManager>) {
     let mut manager = Arc::new(Mutex::new(PluginManager::new()));
     let mut resolvers = Vec::new();
     let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
     listener.set_nonblocking(true).unwrap();
-    let mut last_action = Instant::now();
 
-    while (Instant::now() - last_action) < registration_timeout {
-        while let Ok((stream, _)) = listener.accept() {
-            last_action = Instant::now();
-            let manager = Arc::clone(&manager);
-            resolvers.push(thread::spawn(move || {
-                stream.set_nonblocking(false).unwrap();
-                let mut plugin = Plugin::new(stream);
-                let plugin_id = manager.lock().unwrap()
-                    .register_plugin(plugin.clone());
-                let conversation_id =
-                    plugin.send_new(BotMessageData::StartRegistration)
-                        .unwrap();
+    for incoming in listener.incoming() {
+        match incoming {
+            Ok(stream) => {
+                let (finished, resolver) =
+                    handle_incoming_connection(stream, &tokens, &manager);
 
-                loop {
-                    match plugin.receive_blocking(conversation_id).unwrap() {
-                        PluginMessageData::RegisterSource(name) => {
-                            let successful = manager.lock().unwrap()
-                                .register_source(plugin_id, name.clone());
-
-                            if successful {
-                                log::info!("Registered audio source \"{}\".",
-                                    name);
-                            }
-                            else {
-                                log::warn!("Duplicate registration for audio \
-                                    source {}. Only one will work.", name);
-                            }
-                        },
-                        PluginMessageData::RegistrationFinished => {
-                            break;
-                        },
-                        _ => {} // should not happen
-                    }
+                for resolver in resolver {
+                    resolvers.push(resolver);
                 }
-            }))
-        }
 
-        thread::sleep(POLL_INTERVAL);
+                if finished {
+                    break;
+                }
+            },
+            Err(e) => {
+                if e.kind() == ErrorKind::WouldBlock &&
+                        abort.try_recv().is_ok() {
+                    break;
+                }
+            }
+        }
     }
 
     for resolver in resolvers {
@@ -66,7 +124,10 @@ fn listen(port: u16, registration_timeout: Duration) -> PluginManager {
 
     loop {
         match Arc::try_unwrap(manager) {
-            Ok(m) => return m.into_inner().unwrap(),
+            Ok(m) => {
+                result.send(m.into_inner().unwrap()).unwrap();
+                return
+            },
             Err(a) => manager = a
         }
     }
@@ -87,16 +148,11 @@ fn is_executable(p: &PathBuf) -> bool {
     }
 }
 
-/// Loads all plugins in the plugin directory.
-pub fn load(config: &Config) -> Result<PluginManager, PluginError> {
-    let port = config.plugin_port();
-    let registration_timeout = config.registration_timeout();
-    let listener = thread::spawn(move || listen(port, registration_timeout));
+fn start_all_plugins(path: &str, port: u16, tokens: Arc<Mutex<HashSet<Token>>>)
+        -> Result<Vec<Child>, PluginError> {
     let mut children = Vec::new();
 
-    log::info!("Loading plugins ...");
-
-    for entry in fs::read_dir(config.plugin_directory())? {
+    for entry in fs::read_dir(path)? {
         let entry = entry?;
         let path = entry.path();
 
@@ -119,9 +175,12 @@ pub fn load(config: &Config) -> Result<PluginManager, PluginError> {
                 log::info!("Launching executable ....");
             }
 
+            let token = Token::new();
+            tokens.lock().unwrap().insert(token.clone());
             let child_res = Command::new(&matches[0])
                 .current_dir(&path)
                 .arg(port.to_string())
+                .arg(token.to_string())
                 .spawn();
 
             match child_res {
@@ -133,7 +192,38 @@ pub fn load(config: &Config) -> Result<PluginManager, PluginError> {
         }
     }
 
-    let mut manager = listener.join().unwrap();
+    Ok(children)
+}
+
+/// Loads all plugins in the plugin directory.
+pub fn load(config: &Config) -> Result<PluginManager, PluginError> {
+    let port = config.plugin_port();
+    let registration_timeout = config.registration_timeout();
+    let tokens = Arc::new(Mutex::new(HashSet::new()));
+    let lock_token = Token::new();
+    tokens.lock().unwrap().insert(lock_token.clone());
+    let tokens_clone = Arc::clone(&tokens);
+    let (abort_sender, abort_reciever) = mpsc::channel();
+    let (result_sender, result_receiver) = mpsc::channel();
+
+    thread::spawn(move ||
+        listen(port, tokens_clone, abort_reciever, result_sender));
+
+    log::info!("Loading plugins ...");
+
+    let path = config.plugin_directory();
+    let tokens_clone = Arc::clone(&tokens);
+    let children = start_all_plugins(path, port, tokens_clone)?;
+    tokens.lock().unwrap().remove(&lock_token);
+    let mut manager = {
+        if let Ok(m) = result_receiver.recv_timeout(registration_timeout) {
+            m
+        }
+        else {
+            abort_sender.send(()).unwrap();
+            result_receiver.recv().unwrap()
+        }
+    };
 
     for child in children {
         manager.register_child(child);
