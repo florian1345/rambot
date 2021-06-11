@@ -90,7 +90,7 @@ for WaveAudioSourceProvider {
 async fn main() {
     let errors = PluginAppBuilder::new()
         .with_plugin(PluginBuilder::new()
-            .with_audio_source("wave", WaveAudioSourceProvider)
+            .with_dyn_audio_source("wave", WaveAudioSourceProvider)
             .build())
         .build().launch().await;
 
