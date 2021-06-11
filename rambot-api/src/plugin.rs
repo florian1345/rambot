@@ -5,18 +5,23 @@ use crate::audio::{AudioSource, Sample};
 use crate::communication::{
     BotMessageData,
     Channel,
+    ConnectionIntent,
     ConversationId,
     Message,
-    PluginMessageData
+    ParseTokenError,
+    PluginMessageData,
+    Token
 };
 
 use rand::Rng;
 
 use std::collections::HashMap;
 use std::env;
+use std::fmt::{self, Display, Formatter};
 use std::io;
 use std::marker::PhantomData;
 use std::net::TcpStream;
+use std::num::ParseIntError;
 use std::thread;
 
 /// An abstract representation of a type of audio source which can be
@@ -180,7 +185,7 @@ impl Plugin {
         }
     }
 
-    fn listen(&self, mut bot: Bot) {
+    async fn listen(&self, mut bot: Bot) {
         loop {
             let msg = bot.receive_new_blocking();
             let conv_id = msg.conversation_id();
@@ -197,12 +202,72 @@ impl Plugin {
             }
         }
     }
+}
 
-    async fn launch(self, port: u16) -> io::Result<()> {
-        let stream = TcpStream::connect(format!("127.0.0.1:{}", port))?;
-        let bot = Bot::new(stream);
-        self.listen(bot);
-        Ok(())
+/// An enumeration of the errors that may occur when connecting a plugin to the
+/// bot.
+#[derive(Debug)]
+pub enum PluginLaunchError {
+
+    /// Indicates that an IO error occurred while establishing a stream.
+    IoError(io::Error),
+
+    /// Indicates that an error occurred while sending the intent.
+    CborError(serde_cbor::Error),
+
+    /// Indicates that no port was provided in the CLI arguments.
+    MissingPort,
+
+    /// Indicates that no token was provided in the CLI arguments.
+    MissingToken,
+
+    /// Indicates that the port could not be parsed correctly.
+    InvalidPort(ParseIntError),
+
+    /// Indicates that the token could not be parsed correctly.
+    InvalidToken(ParseTokenError)
+}
+
+impl From<io::Error> for PluginLaunchError {
+    fn from(e: io::Error) -> PluginLaunchError {
+        PluginLaunchError::IoError(e)
+    }
+}
+
+impl From<serde_cbor::Error> for PluginLaunchError {
+    fn from(e: serde_cbor::Error) -> PluginLaunchError {
+        PluginLaunchError::CborError(e)
+    }
+}
+
+impl From<ParseIntError> for PluginLaunchError {
+    fn from(e: ParseIntError) -> PluginLaunchError {
+        PluginLaunchError::InvalidPort(e)
+    }
+}
+
+impl From<ParseTokenError> for PluginLaunchError {
+    fn from(e: ParseTokenError) -> PluginLaunchError {
+        PluginLaunchError::InvalidToken(e)
+    }
+}
+
+impl Display for PluginLaunchError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PluginLaunchError::IoError(e) =>
+                write!(f, "Error while establishing connection: {}", e),
+            PluginLaunchError::CborError(e) =>
+                write!(f, "Error while sending intent: {}", e),
+            PluginLaunchError::MissingPort =>
+                write!(f, "Missing port in the CLI arguments."),
+            PluginLaunchError::MissingToken =>
+                write!(f, "Missing token in the CLI arguments."),
+            PluginLaunchError::InvalidPort(e) =>
+                write!(f, "Could not parse port: {}", e),
+            PluginLaunchError::InvalidToken(e) =>
+                write!(f, "Could not parse token: {}", e)
+        }
     }
 }
 
@@ -308,33 +373,43 @@ pub struct PluginApp {
     plugins: Vec<Plugin>
 }
 
+fn connect(port: u16, token: &Token) -> Result<Bot, PluginLaunchError> {
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))?;
+    serde_cbor::to_writer(&mut stream,
+        &ConnectionIntent::RegisterPlugin(token.clone()))?;
+    Ok(Bot::new(stream))
+}
+
 impl PluginApp {
 
     /// Launches the application, which spawns all registered plugins and
     /// attempts to connect them to a running instance of the Rambot. Panics if
     /// the CLI arguments have not been provided correctly (i.e.
     /// `<executable> <port>`).
-    pub async fn launch(self) -> Vec<io::Error> {
-        let port = env::args().skip(1).next()
-            .expect("Missing port as CLI argument.")
-            .parse()
-            .expect("Port has invalid format.");
+    pub async fn launch(self) -> Result<(), PluginLaunchError> {
+        let mut args = env::args().skip(1);
+        let port = args.next()
+            .ok_or(PluginLaunchError::MissingPort)?
+            .parse()?;
+        let token = args.next()
+            .ok_or(PluginLaunchError::MissingToken)?
+            .parse()?;
         let mut futures = Vec::new();
 
-        for plugin in self.plugins {
-            futures.push(plugin.launch(port));
+        for plugin in &self.plugins {
+            let bot = connect(port, &token)?;
+            futures.push(plugin.listen(bot));
         }
 
-        let mut result = Vec::new();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))?;
+        serde_cbor::to_writer(&mut stream,
+            &ConnectionIntent::CloseRegistration(token.clone()))?;
 
         for future in futures {
-            match future.await {
-                Ok(_) => {},
-                Err(e) => result.push(e)
-            }
+            future.await;
         }
 
-        result
+        Ok(())
     }
 }
 

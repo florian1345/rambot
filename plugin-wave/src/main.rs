@@ -88,13 +88,14 @@ for WaveAudioSourceProvider {
 
 #[tokio::main]
 async fn main() {
-    let errors = PluginAppBuilder::new()
+    let res = PluginAppBuilder::new()
         .with_plugin(PluginBuilder::new()
             .with_dyn_audio_source("wave", WaveAudioSourceProvider)
             .build())
         .build().launch().await;
 
-    for e in errors {
-        eprintln!("Error in plugin: {}", e);
+    match res {
+        Ok(_) => {},
+        Err(e) => eprintln!("{}", e)
     }
 }

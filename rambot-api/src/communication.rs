@@ -5,6 +5,8 @@
 use crate::audio::Sample;
 use crate::util::{MultiJoinHandle, ObservableQueue, TransactionalWrite};
 
+use rand::Rng;
+
 use serde::{Deserialize, Serialize};
 
 use serde_cbor::Deserializer;
@@ -12,8 +14,12 @@ use serde_cbor::de::IoRead;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::convert::TryFrom;
+use std::fmt::{self, Display, Formatter};
 use std::marker::PhantomData;
 use std::net::TcpStream;
+use std::num::ParseIntError;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Receiver;
 use std::thread;
@@ -228,6 +234,118 @@ pub type BotMessage = Message<BotMessageData>;
 
 /// A message sent by a plugin to the bot.
 pub type PluginMessage = Message<PluginMessageData>;
+
+/// An enumeration of the different errors that may occur when parsing
+/// [Token]s.
+#[derive(Debug)]
+pub enum ParseTokenError {
+
+    /// Indicates that the string had the wrong length.
+    InvalidLength(usize),
+
+    /// Indicates that one of the characters in the string was not a valid hex
+    /// digit.
+    InvalidDigit
+}
+
+impl From<ParseIntError> for ParseTokenError {
+    fn from(_: ParseIntError) -> ParseTokenError {
+        ParseTokenError::InvalidDigit
+    }
+}
+
+/// The number of u64-values in a token
+pub const TOKEN_SIZE: usize = 2;
+
+/// A unique identifying token for plugin apps or unnamed audio sources.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Token {
+    parts: [u64; TOKEN_SIZE]
+}
+
+impl Token {
+
+    /// Creates a new, random token.
+    pub fn new() -> Token {
+        let mut rng = rand::thread_rng();
+        let mut parts = [0; TOKEN_SIZE];
+
+        for i in 0..TOKEN_SIZE {
+            parts[i] = rng.gen();
+        }
+
+        Token {
+            parts
+        }
+    }
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for part in self.parts.iter() {
+            write!(f, "{:016x}", part)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl FromStr for Token {
+    type Err = ParseTokenError;
+
+    fn from_str(s: &str) -> Result<Token, ParseTokenError> {
+        if s.len() != 16 * TOKEN_SIZE {
+            return Err(ParseTokenError::InvalidLength(s.len()));
+        }
+
+        let mut parts = [0; TOKEN_SIZE];
+
+        for i in 0..TOKEN_SIZE {
+            let start = i * 16;
+            let end = start + 16;
+            parts[i] = u64::from_str_radix(&s[start..end], 16)?;
+        }
+
+        Ok(Token {
+            parts
+        })
+    }
+}
+
+impl Display for ParseTokenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseTokenError::InvalidLength(l) =>
+                write!(f, "Token has {} hex chars, but needs {}.", l,
+                    TOKEN_SIZE * 2),
+            ParseTokenError::InvalidDigit =>
+                write!(f, "Token contains invalid digit.")
+        }
+    }
+}
+
+/// An initial message sent by a newly connected TCP client which indicates
+/// what the client intended to communicate with this connection.
+#[derive(Deserialize, Serialize)]
+pub enum ConnectionIntent {
+
+    /// Indicates that the client wants to use the connection for a new plugin.
+    /// The client's token is provided for identification.
+    RegisterPlugin(Token),
+
+    /// Indicates that the client will no longer register new plugins. The
+    /// client's token is provided for identification.
+    CloseRegistration(Token)
+}
+
+impl TryFrom<&mut TcpStream> for ConnectionIntent {
+    type Error = serde_cbor::Error;
+
+    fn try_from(stream: &mut TcpStream) -> Result<ConnectionIntent, serde_cbor::Error> {
+        let mut de = Deserializer::new(IoRead::new(stream));
+        ConnectionIntent::deserialize(&mut de)
+    }
+}
 
 /// Manages message queues of received messages.
 struct Queues<D: MessageData> {
@@ -467,5 +585,29 @@ where
             listener: self.listener.clone(),
             send_type: PhantomData
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn token_equality() {
+        let token_1 = Token::new();
+        let token_2 = Token::new();
+
+        assert!(&token_1 != &token_2);
+        assert!(&token_1 == &token_1.clone())
+    }
+
+    #[test]
+    fn token_parsing_consistency() {
+        let original = Token::new();
+        let string = original.to_string();
+        let parsed = Token::from_str(&string).unwrap();
+
+        assert_eq!(original, parsed);
     }
 }
