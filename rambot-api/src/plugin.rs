@@ -147,8 +147,10 @@ impl Plugin {
 
     fn handle_can_resolve(&self, bot: &mut Bot, id: u64, code: &str) {
         let mut result = Vec::new();
+        let audio_source_providers = self.named_audio_source_providers.iter()
+            .chain(self.unnamed_audio_source_providers.iter());
 
-        for (name, provider) in &self.named_audio_source_providers {
+        for (name, provider) in audio_source_providers {
             if provider.can_resolve(code) {
                 result.push(name.clone());
             }

@@ -1,5 +1,11 @@
 use hound::{SampleFormat, WavReader};
 
+use plugin_commons::file::{
+    self,
+    FileAudioSourceResolver,
+    FilePluginConfigBuilder
+};
+
 use rambot_api::audio::AudioSource;
 use rambot_api::audio::convert::{
     self,
@@ -7,10 +13,8 @@ use rambot_api::audio::convert::{
     StereoAudioSource,
     ResamplingAudioSource
 };
-use rambot_api::plugin::{AudioSourceProvider, PluginAppBuilder, PluginBuilder};
 
 use std::fs::File;
-use std::path::Path;
 
 fn source_from_sample_rate<S>(s: S, sample_rate: u32)
     -> Box<dyn AudioSource + Send>
@@ -45,15 +49,10 @@ where
     }
 }
 
-struct WaveAudioSourceProvider;
+struct WaveAudioSourceResolver;
 
-impl AudioSourceProvider<Box<dyn AudioSource + Send>>
-for WaveAudioSourceProvider {
-
-    fn can_resolve(&self, code: &str) -> bool {
-        code.to_lowercase().ends_with(".wav") && Path::new(code).is_file()
-    }
-
+impl FileAudioSourceResolver<Box<dyn AudioSource + Send>>
+for WaveAudioSourceResolver {
     fn resolve(&self, code: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
         let file = match File::open(code) {
@@ -88,11 +87,11 @@ for WaveAudioSourceProvider {
 
 #[tokio::main]
 async fn main() {
-    let res = PluginAppBuilder::new()
-        .with_plugin(PluginBuilder::new()
-            .with_dyn_audio_source("wave", WaveAudioSourceProvider)
-            .build())
-        .build().launch().await;
+    let res = file::run_dyn_file_plugin(||
+        FilePluginConfigBuilder::new()
+            .with_audio_source_name("wave")
+            .with_linked_file_extensions("wav")
+            .build(), WaveAudioSourceResolver).await;
 
     match res {
         Ok(_) => {},
