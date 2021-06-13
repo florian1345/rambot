@@ -109,8 +109,8 @@ struct Mp3AudioSourceResolver;
 
 impl FileAudioSourceResolver<Box<dyn AudioSource + Send>>
 for Mp3AudioSourceResolver {
-    fn resolve(&self, code: &str) -> Result<Box<dyn AudioSource + Send>, String> {
-        let file = match File::open(code) {
+    fn resolve(&self, path: &str) -> Result<Box<dyn AudioSource + Send>, String> {
+        let file = match File::open(path) {
             Ok(f) => f,
             Err(e) => return Err(format!("{}", e))
         };
