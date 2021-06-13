@@ -1,15 +1,19 @@
 use lewton::VorbisError;
 use lewton::inside_ogg::OggStreamReader;
 
+use plugin_commons::file::{
+    self,
+    FileAudioSourceResolver,
+    FilePluginConfigBuilder
+};
+
 use rambot_api::audio::{AudioSource, Sample};
 use rambot_api::audio::convert::{self, ResamplingAudioSource};
-use rambot_api::plugin::{AudioSourceProvider, PluginAppBuilder, PluginBuilder};
 
 use std::collections::VecDeque;
 use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io;
-use std::path::Path;
 
 enum OggError {
     IOError(io::Error),
@@ -93,14 +97,10 @@ impl AudioSource for OggAudioSource {
     }
 }
 
-struct OggAudioSourceProvider;
+struct OggAudioSourceResolver;
 
-impl AudioSourceProvider<Box<dyn AudioSource + Send>>
-for OggAudioSourceProvider {
-    fn can_resolve(&self, code: &str) -> bool {
-        code.to_lowercase().ends_with(".ogg") && Path::new(code).is_file()
-    }
-
+impl FileAudioSourceResolver<Box<dyn AudioSource + Send>>
+for OggAudioSourceResolver {
     fn resolve(&self, code: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
         let source = match OggAudioSource::new(code) {
@@ -124,11 +124,11 @@ for OggAudioSourceProvider {
 
 #[tokio::main]
 async fn main() {
-    let res = PluginAppBuilder::new()
-        .with_plugin(PluginBuilder::new()
-            .with_dyn_audio_source("ogg", OggAudioSourceProvider)
-            .build())
-        .build().launch().await;
+    let res = file::run_dyn_file_plugin(||
+        FilePluginConfigBuilder::new()
+            .with_audio_source_name("ogg")
+            .with_linked_file_extensions("ogg")
+            .build(), OggAudioSourceResolver).await;
 
     match res {
         Ok(_) => {},

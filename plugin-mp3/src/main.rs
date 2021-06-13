@@ -1,12 +1,16 @@
 use minimp3::{Decoder, Frame};
 
+use plugin_commons::file::{
+    self,
+    FileAudioSourceResolver,
+    FilePluginConfigBuilder
+};
+
 use rambot_api::audio::{AudioSource, Sample};
 use rambot_api::audio::convert::{self, ResamplingAudioSource};
-use rambot_api::plugin::{AudioSourceProvider, PluginAppBuilder, PluginBuilder};
 
 use std::collections::VecDeque;
 use std::fs::File;
-use std::path::Path;
 
 struct EmptyAudioSource;
 
@@ -101,14 +105,10 @@ fn to_audio_source(mut decoder: Decoder<File>)
     }
 }
 
-struct Mp3AudioSourceProvider;
+struct Mp3AudioSourceResolver;
 
-impl AudioSourceProvider<Box<dyn AudioSource + Send>>
-for Mp3AudioSourceProvider {
-    fn can_resolve(&self, code: &str) -> bool {
-        code.to_lowercase().ends_with(".mp3") && Path::new(code).is_file()
-    }
-
+impl FileAudioSourceResolver<Box<dyn AudioSource + Send>>
+for Mp3AudioSourceResolver {
     fn resolve(&self, code: &str) -> Result<Box<dyn AudioSource + Send>, String> {
         let file = match File::open(code) {
             Ok(f) => f,
@@ -121,11 +121,11 @@ for Mp3AudioSourceProvider {
 
 #[tokio::main]
 async fn main() {
-    let res = PluginAppBuilder::new()
-        .with_plugin(PluginBuilder::new()
-            .with_dyn_audio_source("mp3", Mp3AudioSourceProvider)
-            .build())
-        .build().launch().await;
+    let res = file::run_dyn_file_plugin(||
+        FilePluginConfigBuilder::new()
+            .with_audio_source_name("mp3")
+            .with_linked_file_extensions("mp3")
+            .build(), Mp3AudioSourceResolver).await;
 
     match res {
         Ok(_) => {},

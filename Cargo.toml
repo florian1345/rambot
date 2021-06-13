@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "plugin-commons",
     "plugin-mp3",
     "plugin-ogg",
     "plugin-wave",
