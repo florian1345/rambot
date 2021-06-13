@@ -101,9 +101,9 @@ struct OggAudioSourceResolver;
 
 impl FileAudioSourceResolver<Box<dyn AudioSource + Send>>
 for OggAudioSourceResolver {
-    fn resolve(&self, code: &str)
+    fn resolve(&self, path: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let source = match OggAudioSource::new(code) {
+        let source = match OggAudioSource::new(path) {
             Ok(s) => s,
             Err(e) => return Err(format!("{}", e))
         };
