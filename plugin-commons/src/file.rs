@@ -129,7 +129,7 @@ where
         }
 
         if let Some(s) = path.extension().and_then(|s| s.to_str()) {
-            self.linked_file_extensions.contains(s)
+            self.linked_file_extensions.contains(&s.to_lowercase())
         }
         else {
             false

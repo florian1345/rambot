@@ -14,6 +14,7 @@ const DEFAULT_PLUGIN_PORT: u16 = 46085;
 const DEFAULT_PLUGIN_DIRECTORY: &str = "plugins";
 const DEFAULT_REGISTRATION_TIMEOUT_SECONDS: u64 = 10;
 const DEFAULT_AUDIO_SOURCE_PREFIX: char = ':';
+const DEFAULT_STATE_DIRECTORY: &str = "state";
 
 /// An enumeration of the different errors that can occur when loading the
 /// configuration.
@@ -66,7 +67,8 @@ pub struct Config {
     plugin_port: u16,
     plugin_directory: String,
     registration_timeout_seconds: u64,
-    audio_source_prefix: char
+    audio_source_prefix: char,
+    state_directory: String
 }
 
 impl Config {
@@ -96,7 +98,8 @@ impl Config {
                 plugin_directory: DEFAULT_PLUGIN_DIRECTORY.to_owned(),
                 registration_timeout_seconds:
                     DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
-                audio_source_prefix: DEFAULT_AUDIO_SOURCE_PREFIX
+                audio_source_prefix: DEFAULT_AUDIO_SOURCE_PREFIX,
+                state_directory: DEFAULT_STATE_DIRECTORY.to_owned()
             };
             let file = File::create(path)?;
             serde_json::to_writer(file, &config)?;
@@ -135,6 +138,11 @@ impl Config {
     /// and the user wants to specify the audio source type of the name `ogg`).
     pub fn audio_source_prefix(&self) -> char {
         self.audio_source_prefix
+    }
+
+    /// Gets the directory in which persistent state files are placed.
+    pub fn state_directory(&self) -> &str {
+        &self.state_directory
     }
 }
 
