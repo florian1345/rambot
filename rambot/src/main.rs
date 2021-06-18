@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::plugin::PluginManager;
 use crate::plugin::load;
+use crate::state::State;
 
 use serenity::client::{Client, Context};
 use serenity::framework::standard::{
@@ -19,10 +20,11 @@ use songbird::SerenityInit;
 use std::collections::HashSet;
 
 pub mod audio;
-pub mod commands;
+pub mod command;
 pub mod config;
 pub mod logging;
 pub mod plugin;
+pub mod state;
 
 #[help]
 async fn print_help(ctx: &Context, msg: &Message, args: Args,
@@ -42,10 +44,24 @@ async fn main() {
     let config = match Config::load() {
         Ok(c) => c,
         Err(e) => {
-            log::error!("{}", e);
+            log::error!("Error loading config file: {}", e);
             return;
         }
     };
+
+    log::info!("Successfully loaded config file.");
+
+    let state = match State::load(config.state_directory()) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Error loading state files: {}", e);
+            return;
+        }
+    };
+
+    log::info!("Successfully loaded state for {} guilds.",
+        state.guild_count());
+
     let plugin_mgr = match load::load(&config) {
         Ok(m) => m,
         Err(e) => {
@@ -53,14 +69,17 @@ async fn main() {
             return;
         }
     };
+
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(config.prefix()))
-        .group(commands::get_commands())
+        .group(command::get_root_commands())
+        .group(command::get_layer_commands())
         .help(&PRINT_HELP);
     let client_res = Client::builder(config.token())
         .framework(framework)
         .type_map_insert::<PluginManager>(plugin_mgr)
         .type_map_insert::<Config>(config)
+        .type_map_insert::<State>(state)
         .register_songbird()
         .await;
     let mut client = match client_res {

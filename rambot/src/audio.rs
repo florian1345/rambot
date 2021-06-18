@@ -2,10 +2,11 @@ use rambot_api::audio::{AudioSource, Sample};
 
 use std::collections::HashMap;
 use std::io::{self, Read};
+use std::sync::{Arc, Mutex};
 
 /// A mixer manages multiple [AudioSource]s and adds their outputs.
 pub struct Mixer<S: AudioSource> {
-    layers: HashMap<String, S>
+    layers: HashMap<String, Option<S>>
 }
 
 impl<S: AudioSource> Mixer<S> {
@@ -22,17 +23,17 @@ impl<S: AudioSource> Mixer<S> {
         self.layers.contains_key(name)
     }
 
-    /// Adds a new layer with the given name to this mixer. The provided source
-    /// is used for audio input. If there is already a layer wit this name,
-    /// this method will panic, as it should have been sorted out before.
-    pub fn add_layer(&mut self, name: impl Into<String>, source: S) {
+    /// Adds a new layer with the given name to this mixer, which will
+    /// initially be inactive. If there is already a layer with this name, this
+    /// method will panic, as it should have been sorted out before.
+    pub fn add_layer(&mut self, name: impl Into<String>) {
         let name = name.into();
 
         if self.contains_layer(&name) {
             panic!("Attempted to add duplicate layer.");
         }
 
-        self.layers.insert(name, source);
+        self.layers.insert(name, None);
     }
 
     /// Removes the layer with the given name and returns whether a layer was
@@ -41,23 +42,44 @@ impl<S: AudioSource> Mixer<S> {
         self.layers.remove(name).is_some()
     }
 
-    /// Gets a mutable reference to the layer with the given name, if present.
-    pub fn layer_mut(&mut self, name: &str) -> Option<&mut S> {
-        self.layers.get_mut(name)
+    /// Indicates whether this mixer is currently active, i.e. there is an
+    /// active layer.
+    pub fn active(&self) -> bool {
+        self.layers.values().any(Option::is_some)
+    }
+
+    /// Plays the given audio `source` on the `layer` with the given name.
+    pub fn play_on_layer(&mut self, layer: &str, source: S) {
+        *self.layers.get_mut(layer).unwrap() = Some(source);
+    }
+
+    /// Stops the audio source currently played on the `layer` with the given
+    /// name.
+    pub fn stop_layer(&mut self, layer: &str) {
+        *self.layers.get_mut(layer).unwrap() = None;
+    }
+
+    /// Returns an iterator over the names of all layers in this mixer.
+    pub fn layers(&self) -> impl Iterator<Item = &String> {
+        self.layers.keys()
     }
 }
 
 impl<S: AudioSource> AudioSource for Mixer<S> {
     fn next(&mut self) -> Option<Sample> {
-        let samples = self.layers.values_mut()
-            .map(S::next)
-            .flat_map(Option::into_iter);
         let mut sum = Sample::ZERO;
         let mut some = false;
 
-        for sample in samples {
-            some = true;
-            sum += sample;
+        for source_opt in self.layers.values_mut() {
+            if let Some(source) = source_opt {
+                if let Some(sample) = source.next() {
+                    some = true;
+                    sum += sample;
+                }
+                else {
+                    *source_opt = None;
+                }
+            }
         }
 
         if some {
@@ -72,13 +94,13 @@ impl<S: AudioSource> AudioSource for Mixer<S> {
 /// A wrapper of an [AudioSource] that implements the [Read] trait. It outputs
 /// 32-bit floating-point PCM audio data.
 pub struct PCMRead<S: AudioSource + Send> {
-    source: S
+    source: Arc<Mutex<S>>
 }
 
 impl<S: AudioSource + Send> PCMRead<S> {
 
     /// Creates a new PCMRead with the given audio source.
-    pub fn new(source: S) -> PCMRead<S> {
+    pub fn new(source: Arc<Mutex<S>>) -> PCMRead<S> {
         PCMRead { source }
     }
 }
@@ -94,9 +116,10 @@ fn to_bytes(s: Sample) -> Vec<u8> {
 impl<S: AudioSource + Send> Read for PCMRead<S> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         let mut written_bytes = 0usize;
+        let mut source = self.source.lock().unwrap();
 
         while buf.len() >= SAMPLE_SIZE {
-            if let Some(s) = self.source.next() {
+            if let Some(s) = source.next() {
                 for (i, &byte) in to_bytes(s).iter().enumerate() {
                     buf[i] = byte;
                 }
@@ -145,17 +168,16 @@ mod tests {
 
     #[test]
     fn mixer_layer_management() {
-        let mut mixer = Mixer::new();
-        let layer = VecAudioSource::new(Vec::<Sample>::new());
+        let mut mixer = Mixer::<VecAudioSource>::new();
 
         assert!(!mixer.contains_layer("test-layer-1"));
 
-        mixer.add_layer("test-layer-1", layer.clone());
+        mixer.add_layer("test-layer-1");
 
         assert!(mixer.contains_layer("test-layer-1"));
         assert!(!mixer.contains_layer("test-layer-2"));
 
-        mixer.add_layer("test-layer-2", layer.clone());
+        mixer.add_layer("test-layer-2");
 
         assert!(mixer.contains_layer("test-layer-1"));
         assert!(mixer.contains_layer("test-layer-2"));
@@ -180,8 +202,11 @@ mod tests {
             (-1.0, 0.0),
             (-1.0, 0.0)
         ]);
-        mixer.add_layer("1", layer_1);
-        mixer.add_layer("2", layer_2);
+        mixer.add_layer("1");
+        mixer.add_layer("2");
+
+        mixer.play_on_layer("1", layer_1);
+        mixer.play_on_layer("2", layer_2);
 
         assert_eq!(Some((0.0, 1.0).into()), mixer.next());
         assert_eq!(Some((-1.0, 1.0).into()), mixer.next());
