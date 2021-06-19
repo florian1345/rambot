@@ -1,6 +1,7 @@
-use crate::audio::PCMRead;
+use crate::audio::{Mixer, PCMRead};
 use crate::config::Config;
 use crate::plugin::PluginManager;
+use crate::plugin::source::PluginAudioSource;
 use crate::state::State;
 
 use rambot_api::audio::AudioSource;
@@ -22,7 +23,7 @@ pub mod layer;
 pub use layer::get_layer_commands;
 
 #[group]
-#[commands(connect, disconnect, play)]
+#[commands(connect, disconnect, play, stop)]
 struct Root;
 
 pub fn get_root_commands() -> &'static CommandGroup {
@@ -99,54 +100,95 @@ fn to_input<S: AudioSource + Send + 'static>(source: Arc<Mutex<S>>) -> Input {
     Input::float_pcm(true, Reader::Extension(Box::new(read)))
 }
 
+async fn get_mixer(ctx: &Context, msg: &Message)
+        -> Arc<Mutex<Mixer<PluginAudioSource>>> {
+    let mut data_guard = ctx.data.write().await;
+    let state = data_guard.get_mut::<State>().unwrap();
+    state.guild_state(msg.guild_id.unwrap()).mixer()
+}
+
+async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
+        call: Arc<TokioMutex<Call>>) -> Option<String> {
+    let mixer = get_mixer(ctx, msg).await;
+    let mut call_guard = call.lock().await;
+    let data_guard = ctx.data.read().await;
+    let plugin_manager = data_guard.get::<PluginManager>().unwrap();
+    let config = data_guard.get::<Config>().unwrap();
+    let source = match plugin_manager.resolve_source(command, config) {
+        Ok(s) => s,
+        Err(e) =>
+            return Some(format!("Could not resolve audio: {}", e))
+    };
+
+    let active_before = {
+        let mut mixer_guard = mixer.lock().unwrap();
+
+        if !mixer_guard.contains_layer(&layer) {
+            return Some(format!("No layer of name {}.", &layer));
+        }
+
+        let result = mixer_guard.active();
+        mixer_guard.play_on_layer(&layer, source);
+        result
+    };
+
+    if !active_before {
+        call_guard.play_only_source(to_input(mixer));
+    }
+
+    None
+}
+
 #[command]
 #[only_in(guilds)]
 #[description(
-    "Plays the given audio. Possible formats for the input depend on the \
-    installed plugins.")]
+    "Plays the given audio on the given layer. Possible formats for the input \
+    depend on the installed plugins.")]
+#[usage("layer audio")]
 async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mixer = {
-        let mut data_guard = ctx.data.write().await;
-        let state = data_guard.get_mut::<State>().unwrap();
-        state.guild_state(msg.guild_id.unwrap()).mixer()
-    };
     let layer = args.single::<String>()?;
-
-    if !mixer.lock().unwrap().contains_layer(&layer) {
-        msg.reply(ctx, format!("No layer of name {}.", &layer)).await?;
-        return Ok(());
-    }
+    let command = args.rest();
 
     match get_songbird_call(ctx, msg).await {
         Some(call) => {
-            let mut call_guard = call.lock().await;
-            let command = args.rest();
-            let data_guard = ctx.data.read().await;
-            let plugin_manager = data_guard.get::<PluginManager>().unwrap();
-            let config = data_guard.get::<Config>().unwrap();
-            let source = match plugin_manager.resolve_source(command, config) {
-                Ok(s) => s,
-                Err(e) => {
-                    msg.reply(ctx, format!("Could not resolve audio: {}", e))
-                        .await?;
-                    return Ok(());
-                }
-            };
+            let reply = play_do(ctx, msg, &layer, command, call).await;
 
-            let active_before = {
-                let mut mixer_guard = mixer.lock().unwrap();
-                let result = mixer_guard.active();
-                mixer_guard.play_on_layer(&layer, source);
-                result
-            };
-
-            if !active_before {
-                call_guard.play_source(to_input(mixer));
+            if let Some(reply) = reply {
+                msg.reply(ctx, reply).await?;
             }
         },
         None => {
             msg.reply(ctx, "I am not connected to a voice channel").await?;
         }
+    }
+
+    Ok(())
+}
+
+async fn stop_do(ctx: &Context, msg: &Message, layer: &str) -> Option<String> {
+    let mixer = get_mixer(ctx, msg).await;
+    let mut mixer_guard = mixer.lock().unwrap();
+    
+    if !mixer_guard.contains_layer(layer) {
+        Some(format!("No layer of name {}.", layer))
+    }
+    else if !mixer_guard.stop_layer(layer) {
+        Some("No audio to stop.".to_owned())
+    }
+    else {
+        None
+    }
+}
+
+#[command]
+#[only_in(guilds)]
+#[description("Stops the audio currently playing on the given layer.")]
+#[usage("layer")]
+async fn stop(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let layer = args.single::<String>()?;
+
+    if let Some(reply) = stop_do(ctx, msg, &layer).await {
+        msg.reply(ctx, reply).await?;
     }
 
     Ok(())

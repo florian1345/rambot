@@ -49,14 +49,16 @@ impl<S: AudioSource> Mixer<S> {
     }
 
     /// Plays the given audio `source` on the `layer` with the given name.
+    /// Panics if the layer does not exist.
     pub fn play_on_layer(&mut self, layer: &str, source: S) {
         *self.layers.get_mut(layer).unwrap() = Some(source);
     }
 
     /// Stops the audio source currently played on the `layer` with the given
-    /// name.
-    pub fn stop_layer(&mut self, layer: &str) {
-        *self.layers.get_mut(layer).unwrap() = None;
+    /// name. Returns true if and only if there was something playing on the
+    /// layer before. Panics if the layer does not exist.
+    pub fn stop_layer(&mut self, layer: &str) -> bool {
+        self.layers.get_mut(layer).unwrap().take().is_some()
     }
 
     /// Returns an iterator over the names of all layers in this mixer.
