@@ -180,14 +180,32 @@ async fn stop_do(ctx: &Context, msg: &Message, layer: &str) -> Option<String> {
     }
 }
 
+async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
+    let mixer = get_mixer(ctx, msg).await;
+    let mut mixer_guard = mixer.lock().unwrap();
+
+    if mixer_guard.stop_all() {
+        None
+    }
+    else {
+        Some("No audio to stop.".to_owned())
+    }
+}
+
 #[command]
 #[only_in(guilds)]
 #[description("Stops the audio currently playing on the given layer.")]
 #[usage("layer")]
 async fn stop(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let layer = args.single::<String>()?;
+    let reply = if args.is_empty() {
+        stop_all_do(ctx, msg).await
+    }
+    else {
+        let layer = args.single::<String>()?;
+        stop_do(ctx, msg, &layer).await
+    };
 
-    if let Some(reply) = stop_do(ctx, msg, &layer).await {
+    if let Some(reply) = reply {
         msg.reply(ctx, reply).await?;
     }
 

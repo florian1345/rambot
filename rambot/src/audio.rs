@@ -61,6 +61,20 @@ impl<S: AudioSource> Mixer<S> {
         self.layers.get_mut(layer).unwrap().take().is_some()
     }
 
+    /// Stops audio on all layers. Returns true if and only if at there was
+    /// audio playing before on at least one layer.
+    pub fn stop_all(&mut self) -> bool {
+        let mut stopped = false;
+
+        for layer in self.layers.values_mut() {
+            if layer.take().is_some() {
+                stopped = true;
+            }
+        }
+
+        stopped
+    }
+
     /// Returns an iterator over the names of all layers in this mixer.
     pub fn layers(&self) -> impl Iterator<Item = &String> {
         self.layers.keys()
