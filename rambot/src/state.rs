@@ -1,4 +1,5 @@
 use crate::audio::Mixer;
+use crate::plugin::PluginManager;
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -15,17 +16,28 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// The bot's state for one specific guild.
-#[derive(Deserialize)]
-#[serde(from = "MixerTopology")]
 pub struct GuildState {
     mixer: Arc<Mutex<Mixer>>
 }
 
 impl GuildState {
-    fn new() -> GuildState {
+    fn new(plugin_manager: Arc<PluginManager>) -> GuildState {
         log::info!("New guild state created.");
         GuildState {
-            mixer: Arc::new(Mutex::new(Mixer::new()))
+            mixer: Arc::new(Mutex::new(Mixer::new(plugin_manager)))
+        }
+    }
+
+    fn new_with_mixer(plugin_manager: Arc<PluginManager>,
+            topology: MixerTopology) -> GuildState {
+        let mut mixer = Mixer::new(plugin_manager);
+        
+        for layer in topology.layers {
+            mixer.add_layer(layer);
+        }
+        
+        GuildState {
+            mixer: Arc::new(Mutex::new(mixer))
         }
     }
 
@@ -58,20 +70,6 @@ impl Serialize for GuildState {
 #[derive(Deserialize, Serialize)]
 struct MixerTopology {
     layers: Vec<String>
-}
-
-impl From<MixerTopology> for GuildState {
-    fn from(t: MixerTopology) -> GuildState {
-        let mut mixer = Mixer::new();
-
-        for layer in t.layers {
-            mixer.add_layer(layer);
-        }
-
-        GuildState {
-            mixer: Arc::new(Mutex::new(mixer))
-        }
-    }
 }
 
 /// An enumeration of the errors that may occur while loading or saving the
@@ -217,7 +215,8 @@ impl State {
     /// exist, it will be created and the returned state will be empty. Once
     /// the state is dropped, the (potentially modified) state will be stored
     /// in the same directory.
-    pub fn load(directory: &str) -> Result<State, StateError> {
+    pub fn load(directory: &str, plugin_manager: Arc<PluginManager>)
+            -> Result<State, StateError> {
         let path = Path::new(directory);
 
         if path.is_file() {
@@ -236,8 +235,11 @@ impl State {
 
                 if let Some(guild_id_str) = guild_id_str_opt {
                     let guild_id = GuildId::from(guild_id_str.parse::<u64>()?);
-                    let guild_state =
+                    let topology =
                         serde_json::from_reader(File::open(json_path)?)?;
+                    let guild_state =
+                        GuildState::new_with_mixer(Arc::clone(&plugin_manager),
+                            topology);
                     state.guild_states.insert(guild_id, guild_state);
                 }
             }
@@ -252,19 +254,22 @@ impl State {
     /// Gets an immutable reference to the [GuildState] with the given ID. This
     /// is intended to be used whenever any potential state changes do not need
     /// to be saved.
-    pub fn guild_state(&mut self, id: GuildId) -> &GuildState {
+    pub fn guild_state(&mut self, id: GuildId,
+            plugin_manager: Arc<PluginManager>) -> &GuildState {
         self.guild_states.entry(id)
-            .or_insert_with(GuildState::new)
+            .or_insert_with(|| GuildState::new(plugin_manager))
     }
 
     /// Gets a [GuildStateGuard] to the [GuildState] with the given ID. This is
     /// intended to be used whenever any potential state changes need to be
     /// saved.
-    pub fn guild_state_mut(&mut self, id: GuildId) -> GuildStateGuard<'_> {
+    pub fn guild_state_mut(&mut self, id: GuildId,
+            plugin_manager: Arc<PluginManager>) -> GuildStateGuard<'_> {
         let path = Path::new(&self.directory);
         let file_path = path.join(format!("{}.json", id.as_u64()));
         let guild_state = self.guild_states.entry(id)
-            .or_insert_with(GuildState::new);
+            .or_insert_with(|| GuildState::new(plugin_manager));
+
         GuildStateGuard {
             path: file_path,
             guild_state

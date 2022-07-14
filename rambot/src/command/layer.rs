@@ -1,4 +1,5 @@
 use crate::audio::Mixer;
+use crate::plugin::PluginManager;
 use crate::state::State;
 
 use serenity::client::Context;
@@ -6,7 +7,7 @@ use serenity::framework::standard::{Args, CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
 use serenity::model::prelude::Message;
 
-use std::sync::MutexGuard;
+use std::sync::{MutexGuard, Arc};
 
 #[group]
 #[prefix("layer")]
@@ -32,8 +33,11 @@ async fn get_layer(ctx: &Context, msg: &Message, mut args: Args)
 async fn with_mixer<T>(ctx: &Context, msg: &Message,
         f: impl FnOnce(MutexGuard<Mixer>) -> T) -> T {
     let mut data_guard = ctx.data.write().await;
+    let plugin_manager =
+        Arc::clone(data_guard.get::<PluginManager>().unwrap());
     let state = data_guard.get_mut::<State>().unwrap();
-    let guild_state = state.guild_state_mut(msg.guild_id.unwrap());
+    let guild_state =
+        state.guild_state_mut(msg.guild_id.unwrap(), plugin_manager);
     let mixer = guild_state.mixer();
     f(mixer.lock().unwrap())
 }

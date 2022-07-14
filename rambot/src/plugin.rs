@@ -5,7 +5,7 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin
+    Plugin, AudioSourceList
 };
 
 use serenity::prelude::TypeMapKey;
@@ -14,6 +14,7 @@ use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 pub enum LoadPluginsError {
     IoError(io::Error),
@@ -60,6 +61,11 @@ impl Display for ResolveError {
                 write!(f, "Plugin reported error during resolution: {}", msg)
         }
     }
+}
+
+pub enum Audio {
+    Single(Box<dyn AudioSource + Send>),
+    List(Box<dyn AudioSourceList + Send>)
 }
 
 pub struct PluginManager {
@@ -136,8 +142,33 @@ impl PluginManager {
 
         Err(ResolveError::NoPluginFound)
     }
+
+    pub fn resolve_audio_source_list(&self, descriptor: &str)
+            -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
+        for resolver in self.audio_source_list_resolvers.iter() {
+            if resolver.can_resolve(descriptor) {
+                return resolver.resolve(descriptor)
+                    .map_err(|msg| ResolveError::PluginResolveError(msg));
+            }
+        }
+    
+        Err(ResolveError::NoPluginFound)
+    }
+
+    pub fn resolve_audio(&self, descriptor: &str)
+            -> Result<Audio, ResolveError> {
+        match self.resolve_audio_source(descriptor) {
+            Ok(source) => Ok(Audio::Single(source)),
+            Err(ResolveError::PluginResolveError(e)) =>
+                Err(ResolveError::PluginResolveError(e)),
+            _ => {
+                self.resolve_audio_source_list(descriptor)
+                    .map(|list| Audio::List(list))
+            }
+        }
+    }
 }
 
 impl TypeMapKey for PluginManager {
-    type Value = PluginManager;
+    type Value = Arc<PluginManager>;
 }

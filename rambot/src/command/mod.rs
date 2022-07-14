@@ -1,5 +1,5 @@
 use crate::audio::{Mixer, PCMRead};
-use crate::plugin::PluginManager;
+use crate::plugin::{PluginManager, Audio};
 use crate::state::State;
 
 use rambot_api::AudioSource;
@@ -101,8 +101,10 @@ fn to_input<S: AudioSource + Send + 'static>(source: Arc<Mutex<S>>) -> Input {
 async fn get_mixer(ctx: &Context, msg: &Message)
         -> Arc<Mutex<Mixer>> {
     let mut data_guard = ctx.data.write().await;
+    let plugin_manager =
+        Arc::clone(data_guard.get::<PluginManager>().unwrap());
     let state = data_guard.get_mut::<State>().unwrap();
-    state.guild_state(msg.guild_id.unwrap()).mixer()
+    state.guild_state(msg.guild_id.unwrap(), plugin_manager).mixer()
 }
 
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
@@ -111,8 +113,8 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     let mut call_guard = call.lock().await;
     let data_guard = ctx.data.read().await;
     let plugin_manager = data_guard.get::<PluginManager>().unwrap();
-    let source = match plugin_manager.resolve_audio_source(command) {
-        Ok(s) => s,
+    let audio = match plugin_manager.resolve_audio(command) {
+        Ok(a) => a,
         Err(e) =>
             return Some(format!("Could not resolve audio: {}", e))
     };
@@ -125,7 +127,16 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         }
 
         let result = mixer_guard.active();
-        mixer_guard.play_on_layer(&layer, source);
+
+        match audio {
+            Audio::Single(source) => mixer_guard.play_on_layer(layer, source),
+            Audio::List(list) => {
+                if let Err(e) = mixer_guard.play_list_on_layer(layer, list) {
+                    return Some(format!("Error initiating playlist: {}", e));
+                }
+            }
+        }
+        
         result
     };
 

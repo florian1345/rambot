@@ -1,10 +1,12 @@
-use rambot_api::{AudioSource, Sample};
+use rambot_api::{AudioSource, Sample, AudioSourceList};
 
 use songbird::input::reader::MediaSource;
 
 use std::collections::HashMap;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
+
+use crate::plugin::PluginManager;
 
 struct AudioBuffer {
     data: Vec<Sample>,
@@ -40,6 +42,7 @@ impl AudioBuffer {
 struct Layer {
     name: String,
     source: Option<Box<dyn AudioSource + Send>>,
+    list: Option<Box<dyn AudioSourceList + Send>>,
     buffer: AudioBuffer
 }
 
@@ -62,16 +65,18 @@ impl Layer {
 /// A mixer manages multiple [AudioSource]s and adds their outputs.
 pub struct Mixer {
     layers: Vec<Layer>,
-    names: HashMap<String, usize>
+    names: HashMap<String, usize>,
+    plugin_manager: Arc<PluginManager>
 }
 
 impl Mixer {
 
     /// Creates a new mixer without layers.
-    pub fn new() -> Mixer {
+    pub fn new(plugin_manager: Arc<PluginManager>) -> Mixer {
         Mixer {
             layers: Vec::new(),
-            names: HashMap::new()
+            names: HashMap::new(),
+            plugin_manager
         }
     }
 
@@ -95,6 +100,7 @@ impl Mixer {
         self.layers.push(Layer {
             name: name.clone(),
             source: None,
+            list: None,
             buffer: AudioBuffer {
                 data: Vec::new(),
                 active_len: 0
@@ -128,20 +134,50 @@ impl Mixer {
         self.layers.iter().map(|l| &l.source).any(Option::is_some)
     }
 
+    fn layer_mut(&mut self, layer: &str) -> &mut Layer {
+        let index = *self.names.get(layer).unwrap();
+        self.layers.get_mut(index).unwrap()
+    }
+
     /// Plays the given audio `source` on the `layer` with the given name.
     /// Panics if the layer does not exist.
     pub fn play_on_layer(&mut self, layer: &str,
             source: Box<dyn AudioSource + Send>) {
+        let layer = self.layer_mut(layer);
+        layer.play(source);
+        layer.list = None;
+    }
+
+    pub fn play_list_on_layer(&mut self, layer: &str,
+            mut list: Box<dyn AudioSourceList + Send>)
+            -> Result<(), io::Error> {
+
+        // TODO convince borrow checker that it is OK to use layer_mut
+
         let index = *self.names.get(layer).unwrap();
-        self.layers.get_mut(index).unwrap().play(source);
+        let layer = self.layers.get_mut(index).unwrap();
+
+        if let Some(descriptor) = list.next()? {
+            let source =
+                self.plugin_manager.resolve_audio_source(&descriptor)
+                    .map_err(|e|
+                        io::Error::new(ErrorKind::Other, format!("{}", e)))?;
+            layer.play(source);
+            layer.list = Some(list);
+        }
+        else {
+            layer.stop();
+        }
+
+        Ok(())
     }
 
     /// Stops the audio source currently played on the `layer` with the given
     /// name. Returns true if and only if there was something playing on the
     /// layer before. Panics if the layer does not exist.
     pub fn stop_layer(&mut self, layer: &str) -> bool {
-        let index = *self.names.get(layer).unwrap();
-        self.layers.get_mut(index).unwrap().stop()
+        let layer = self.layer_mut(layer);
+        layer.stop()
     }
 
     /// Stops audio on all layers. Returns true if and only if at there was
@@ -160,16 +196,19 @@ impl Mixer {
 
 impl AudioSource for Mixer {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
+        // TODO this is too complex. simplify or divide.
+
         let mut size = usize::MAX;
         let mut active_layers = Vec::new();
 
+        'outer:
         for layer in self.layers.iter_mut() {
             if layer.active() {
                 if layer.buffer.active_len < buf.len() {
                     layer.buffer.extend_capacity(buf.len());
                 }
 
-                if let Some(source) = &mut layer.source {
+                while let Some(source) = &mut layer.source {
                     let inactive_len = buf.len() - layer.buffer.active_len;
                     let inactive_slice =
                         layer.buffer.inactive_slice(inactive_len);
@@ -178,11 +217,39 @@ impl AudioSource for Mixer {
                     layer.buffer.active_len += sample_count;
 
                     if sample_count == 0 {
-                        layer.source = None;
+                        if let Some(list) = &mut layer.list {
+                            if let Some(next) = list.next()? {
+                                // Audio source ran out but list continues
 
-                        if layer.buffer.active_len == 0 {
-                            continue;
+                                let source = self.plugin_manager
+                                    .resolve_audio_source(&next)
+                                    .map_err(|e| io::Error::new(
+                                        ErrorKind::Other, format!("{}", e)))?;
+
+                                layer.source = Some(source);
+                            }
+                            else {
+                                // Audio source ran out list is finished
+
+                                layer.list = None;
+                                layer.source = None;
+                            }
                         }
+                        else {
+                            // Audio source ran out and there is no list
+    
+                            layer.source = None;
+                        }
+
+                        if layer.source.is_none() &&
+                                layer.buffer.active_len == 0 {
+                            // Inactive layer
+
+                            continue 'outer;
+                        }
+                    }
+                    else {
+                        break;
                     }
                 }
 

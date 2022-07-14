@@ -209,8 +209,8 @@ pub trait AudioSource {
 pub trait AudioSourceList {
 
     /// Gets the next descriptor in the list, or `None` if the list is
-    /// finished.
-    fn next(&mut self) -> Option<String>;
+    /// finished. May return an IO-[Error](io::Error) if the operation fails.
+    fn next(&mut self) -> Result<Option<String>, io::Error>;
 }
 
 /// A trait for resolvers which can create [AudioSource]s from string
@@ -264,7 +264,7 @@ pub trait AudioSourceListResolver : Send + Sync {
     fn can_resolve(&self, descriptor: &str) -> bool;
 
     fn resolve(&self, descriptor: &str)
-        -> Result<Box<dyn AudioSourceList>, String>;
+        -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 
 pub trait Plugin : std::any::Any + Send + Sync {

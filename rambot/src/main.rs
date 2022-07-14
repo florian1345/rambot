@@ -17,6 +17,7 @@ use serenity::model::prelude::{Message, UserId};
 use songbird::SerenityInit;
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 pub mod audio;
 pub mod command;
@@ -50,7 +51,18 @@ async fn main() {
 
     log::info!("Successfully loaded config file.");
 
-    let state = match State::load(config.state_directory()) {
+    let plugin_mgr = match PluginManager::new(config.plugin_directory()) {
+        Ok(m) => m,
+        Err(e) => {
+            log::error!("{}", e);
+            return;
+        }
+    };
+    let plugin_mgr = Arc::new(plugin_mgr);
+
+    let state_res = State::load(
+        config.state_directory(), Arc::clone(&plugin_mgr));
+    let state = match state_res {
         Ok(s) => s,
         Err(e) => {
             log::error!("Error loading state files: {}", e);
@@ -60,14 +72,6 @@ async fn main() {
 
     log::info!("Successfully loaded state for {} guilds.",
         state.guild_count());
-
-    let plugin_mgr = match PluginManager::new(config.plugin_directory()) {
-        Ok(m) => m,
-        Err(e) => {
-            log::error!("{}", e);
-            return;
-        }
-    };
 
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(config.prefix()))

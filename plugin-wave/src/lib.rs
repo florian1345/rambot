@@ -1,3 +1,5 @@
+//! A plugin which can play back WAV files.
+
 use hound::{SampleFormat, WavIntoSamples, WavReader};
 
 use rambot_api::{
