@@ -2,11 +2,12 @@ use rambot_api::{AudioSource, Sample, AudioSourceList};
 
 use songbird::input::reader::MediaSource;
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
-use crate::plugin::PluginManager;
+use crate::plugin::{PluginManager, Audio};
 
 struct AudioBuffer {
     data: Vec<Sample>,
@@ -58,7 +59,7 @@ impl Layer {
 
     fn stop(&mut self) -> bool {
         self.buffer.active_len = 0;
-        self.source.take().is_some()
+        self.list.take().is_some() || self.source.take().is_some()
     }
 }
 
@@ -67,6 +68,19 @@ pub struct Mixer {
     layers: Vec<Layer>,
     names: HashMap<String, usize>,
     plugin_manager: Arc<PluginManager>
+}
+
+fn play_on_layer<P>(layer: &mut Layer, descriptor: &str, plugin_manager: &P)
+    -> Result<(), io::Error>
+where
+    P: Borrow<PluginManager>
+{
+    let source =
+        plugin_manager.borrow().resolve_audio_source(descriptor)
+            .map_err(|e|
+                io::Error::new(ErrorKind::Other, format!("{}", e)))?;
+    layer.play(source);
+    Ok(())
 }
 
 impl Mixer {
@@ -139,34 +153,28 @@ impl Mixer {
         self.layers.get_mut(index).unwrap()
     }
 
-    /// Plays the given audio `source` on the `layer` with the given name.
+    /// Plays audio given some `descriptor` on the `layer` with the given name.
     /// Panics if the layer does not exist.
-    pub fn play_on_layer(&mut self, layer: &str,
-            source: Box<dyn AudioSource + Send>) {
-        let layer = self.layer_mut(layer);
-        layer.play(source);
-        layer.list = None;
-    }
-
-    pub fn play_list_on_layer(&mut self, layer: &str,
-            mut list: Box<dyn AudioSourceList + Send>)
+    pub fn play_on_layer(&mut self, layer: &str, descriptor: &str)
             -> Result<(), io::Error> {
 
-        // TODO convince borrow checker that it is OK to use layer_mut
+        // TODO convince the borrow checker that it is ok to use layer_mut
 
         let index = *self.names.get(layer).unwrap();
         let layer = self.layers.get_mut(index).unwrap();
+        let audio = self.plugin_manager.resolve_audio(descriptor)
+            .map_err(|e| io::Error::new(ErrorKind::Other, format!("{}", e)))?;
 
-        if let Some(descriptor) = list.next()? {
-            let source =
-                self.plugin_manager.resolve_audio_source(&descriptor)
-                    .map_err(|e|
-                        io::Error::new(ErrorKind::Other, format!("{}", e)))?;
-            layer.play(source);
-            layer.list = Some(list);
-        }
-        else {
-            layer.stop();
+        layer.stop();
+
+        match audio {
+            Audio::Single(source) => layer.play(source),
+            Audio::List(mut list) => {
+                if let Some(descriptor) = list.next()? {
+                    play_on_layer(layer, &descriptor, &self.plugin_manager)?;
+                    layer.list = Some(list);
+                }
+            },
         }
 
         Ok(())
@@ -221,12 +229,8 @@ impl AudioSource for Mixer {
                             if let Some(next) = list.next()? {
                                 // Audio source ran out but list continues
 
-                                let source = self.plugin_manager
-                                    .resolve_audio_source(&next)
-                                    .map_err(|e| io::Error::new(
-                                        ErrorKind::Other, format!("{}", e)))?;
-
-                                layer.source = Some(source);
+                                play_on_layer(
+                                    layer, &next, &self.plugin_manager)?;
                             }
                             else {
                                 // Audio source ran out list is finished

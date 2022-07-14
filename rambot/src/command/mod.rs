@@ -1,5 +1,5 @@
 use crate::audio::{Mixer, PCMRead};
-use crate::plugin::{PluginManager, Audio};
+use crate::plugin::PluginManager;
 use crate::state::State;
 
 use rambot_api::AudioSource;
@@ -111,13 +111,6 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         call: Arc<TokioMutex<Call>>) -> Option<String> {
     let mixer = get_mixer(ctx, msg).await;
     let mut call_guard = call.lock().await;
-    let data_guard = ctx.data.read().await;
-    let plugin_manager = data_guard.get::<PluginManager>().unwrap();
-    let audio = match plugin_manager.resolve_audio(command) {
-        Ok(a) => a,
-        Err(e) =>
-            return Some(format!("Could not resolve audio: {}", e))
-    };
 
     let active_before = {
         let mut mixer_guard = mixer.lock().unwrap();
@@ -128,13 +121,8 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
 
         let result = mixer_guard.active();
 
-        match audio {
-            Audio::Single(source) => mixer_guard.play_on_layer(layer, source),
-            Audio::List(list) => {
-                if let Err(e) = mixer_guard.play_list_on_layer(layer, list) {
-                    return Some(format!("Error initiating playlist: {}", e));
-                }
-            }
+        if let Err(e) = mixer_guard.play_on_layer(layer, command) {
+            return Some(format!("{}", e));
         }
         
         result
