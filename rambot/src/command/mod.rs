@@ -12,12 +12,14 @@ use serenity::model::prelude::Message;
 use songbird::Call;
 use songbird::input::{Input, Reader};
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::Mutex as TokioMutex;
 
+pub mod effect;
 pub mod layer;
 
+pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 
 #[group]
@@ -105,6 +107,18 @@ async fn get_mixer(ctx: &Context, msg: &Message)
         Arc::clone(data_guard.get::<PluginManager>().unwrap());
     let state = data_guard.get_mut::<State>().unwrap();
     state.guild_state(msg.guild_id.unwrap(), plugin_manager).mixer()
+}
+
+async fn with_mixer<T>(ctx: &Context, msg: &Message,
+        f: impl FnOnce(MutexGuard<Mixer>) -> T) -> T {
+    let mut data_guard = ctx.data.write().await;
+    let plugin_manager =
+        Arc::clone(data_guard.get::<PluginManager>().unwrap());
+    let state = data_guard.get_mut::<State>().unwrap();
+    let guild_state =
+        state.guild_state_mut(msg.guild_id.unwrap(), plugin_manager);
+    let mixer = guild_state.mixer();
+    f(mixer.lock().unwrap())
 }
 
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,

@@ -2,12 +2,12 @@ use rambot_api::{AudioSource, Sample, AudioSourceList};
 
 use songbird::input::reader::MediaSource;
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
-use crate::plugin::{PluginManager, Audio};
+use crate::plugin::{PluginManager, Audio, ResolveError};
 
 struct AudioBuffer {
     data: Vec<Sample>,
@@ -44,7 +44,8 @@ struct Layer {
     name: String,
     source: Option<Box<dyn AudioSource + Send>>,
     list: Option<Box<dyn AudioSourceList + Send>>,
-    buffer: AudioBuffer
+    buffer: AudioBuffer,
+    effect_descriptors: Vec<String>
 }
 
 impl Layer {
@@ -70,17 +71,34 @@ pub struct Mixer {
     plugin_manager: Arc<PluginManager>
 }
 
+fn to_io_err<T, E: Display>(r: Result<T, E>) -> Result<T, io::Error> {
+    r.map_err(|e| io::Error::new(ErrorKind::Other, format!("{}", e)))
+}
+
+fn play_source_on_layer<P>(layer: &mut Layer,
+    mut source: Box<dyn AudioSource + Send>, plugin_manager: &P)
+    -> Result<(), io::Error>
+where
+    P: AsRef<PluginManager>
+{
+    for effect in &layer.effect_descriptors {
+        source =
+            to_io_err(plugin_manager.as_ref().resolve_effect(effect, source))?;
+    }
+
+    layer.play(source);
+    Ok(())
+}
+
 fn play_on_layer<P>(layer: &mut Layer, descriptor: &str, plugin_manager: &P)
     -> Result<(), io::Error>
 where
-    P: Borrow<PluginManager>
+    P: AsRef<PluginManager>
 {
     let source =
-        plugin_manager.borrow().resolve_audio_source(descriptor)
-            .map_err(|e|
-                io::Error::new(ErrorKind::Other, format!("{}", e)))?;
-    layer.play(source);
-    Ok(())
+        to_io_err(plugin_manager.as_ref().resolve_audio_source(descriptor))?;
+
+    play_source_on_layer(layer, source, plugin_manager)
 }
 
 impl Mixer {
@@ -118,7 +136,8 @@ impl Mixer {
             buffer: AudioBuffer {
                 data: Vec::new(),
                 active_len: 0
-            }
+            },
+            effect_descriptors: Vec::new()
         });
         self.names.insert(name, index);
 
@@ -153,6 +172,39 @@ impl Mixer {
         self.layers.get_mut(index).unwrap()
     }
 
+    pub fn add_effect(&mut self, layer: &str, descriptor: impl Into<String>)
+            -> Result<(), ResolveError> {
+        // TODO convince the borrow checker that it is ok to use layer_mut
+
+        let descriptor = descriptor.into();
+        let index = *self.names.get(layer).unwrap();
+        let layer = self.layers.get_mut(index).unwrap();
+
+        if let Some(source) = layer.source.take() {
+            // TODO find a way to retrieve the original audio if this fails
+
+            layer.source =
+                Some(self.plugin_manager.resolve_effect(&descriptor, source)?);
+        }
+
+        layer.effect_descriptors.push(descriptor);
+        Ok(())
+    }
+
+    pub fn clear_effects(&mut self, layer: &str) {
+        let layer = self.layer_mut(layer);
+
+        if let Some(mut source) = layer.source.take() {
+            while source.has_child() {
+                source = source.take_child();
+            }
+
+            layer.source = Some(source);
+        }
+
+        layer.effect_descriptors.clear();
+    }
+
     /// Plays audio given some `descriptor` on the `layer` with the given name.
     /// Panics if the layer does not exist.
     pub fn play_on_layer(&mut self, layer: &str, descriptor: &str)
@@ -162,13 +214,13 @@ impl Mixer {
 
         let index = *self.names.get(layer).unwrap();
         let layer = self.layers.get_mut(index).unwrap();
-        let audio = self.plugin_manager.resolve_audio(descriptor)
-            .map_err(|e| io::Error::new(ErrorKind::Other, format!("{}", e)))?;
+        let audio = to_io_err(self.plugin_manager.resolve_audio(descriptor))?;
 
         layer.stop();
 
         match audio {
-            Audio::Single(source) => layer.play(source),
+            Audio::Single(source) => 
+                play_source_on_layer(layer, source, &self.plugin_manager)?,
             Audio::List(mut list) => {
                 if let Some(descriptor) = list.next()? {
                     play_on_layer(layer, &descriptor, &self.plugin_manager)?;
@@ -281,6 +333,14 @@ impl AudioSource for Mixer {
         }
 
         Ok(size)
+    }
+
+    fn has_child(&self) -> bool {
+        false
+    }
+
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+        panic!("mixer has no child")
     }
 }
 

@@ -167,6 +167,19 @@ impl PluginManager {
             }
         }
     }
+
+    pub fn resolve_effect(&self, descriptor: &str,
+            child: Box<dyn AudioSource + Send>)
+            -> Result<Box<dyn AudioSource + Send>, ResolveError> {
+        for resolver in self.effect_resolvers.iter() {
+            if resolver.can_resolve(descriptor) {
+                return resolver.resolve(descriptor, child)
+                    .map_err(|msg| ResolveError::PluginResolveError(msg));
+            }
+        }
+
+        Err(ResolveError::NoPluginFound)
+    }
 }
 
 impl TypeMapKey for PluginManager {

@@ -180,28 +180,16 @@ pub trait AudioSource {
     /// Indicates whether this audio source wraps around a child source. For
     /// example, a low-pass filter wraps around the root audio source which is
     /// filtered.
-    ///
-    /// By default, this is implemented to return `false`. If you create an
-    /// audio source with child, override this method to return `true`.
-    fn has_child(&self) -> bool
-    where
-        Self: Sized
-    {
-        false
-    }
+    fn has_child(&self) -> bool;
 
-    /// Unwraps the child of this audio source, as described in
-    /// [AudioSource::has_child]. If that method returns `true`, this must
-    /// return a valid audio source, otherwise it may panic.
+    /// Removes the child from this audio source and returns it. If
+    /// [AudioSource::has_child] returns `true`, this must return a valid audio
+    /// source, otherwise it may panic.
     ///
-    /// By default, this method panics. If you create an audio source with
-    /// child, override this method to return its child.
-    fn into_child(self) -> Box<dyn AudioSource>
-    where
-        Self: Sized
-    {
-        panic!("audio source has no child")
-    }
+    /// Unless this method is called outside the framework, it is guaranteed
+    /// that the audio source is dropped immediately afterwards. It is
+    /// therefore not necessary to keep it in a usable state.
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send>;
 }
 
 /// A trait for types which can offer a list or enumeration of descriptors,
@@ -256,7 +244,7 @@ pub trait EffectResolver : Send + Sync {
     /// If [EffectResolver::can_resolve] returns `true`, this should probably
     /// work, however it may still return an error message should an unexpected
     /// problem occur.
-    fn resolve(&self, descriptor: &str, child: Box<dyn AudioSource>)
+    fn resolve(&self, descriptor: &str, child: Box<dyn AudioSource + Send>)
         -> Result<Box<dyn AudioSource + Send>, String>;
 }
 

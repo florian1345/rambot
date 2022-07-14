@@ -108,6 +108,14 @@ impl<R: Read> AudioSource for IntWaveAudioSource<R> {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         read(self, buf)
     }
+
+    fn has_child(&self) -> bool {
+        false
+    }
+
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+        panic!("wave audio source has no child")
+    }
 }
 
 struct FloatWaveAudioSource<R> {
@@ -132,6 +140,14 @@ impl<R: Read> FloatSamples for FloatWaveAudioSource<R> {
 impl<R: Read> AudioSource for FloatWaveAudioSource<R> {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         read(self, buf)
+    }
+
+    fn has_child(&self) -> bool {
+        false
+    }
+
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+        panic!("wave audio source has no child")
     }
 }
 

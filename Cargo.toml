@@ -2,6 +2,7 @@
 
 members = [
     "plugin-folder-list",
+    "plugin-volume",
     "plugin-wave",
     "rambot",
     "rambot-api"

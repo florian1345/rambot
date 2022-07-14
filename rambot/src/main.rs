@@ -76,6 +76,7 @@ async fn main() {
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(config.prefix()))
         .group(command::get_root_commands())
+        .group(command::get_effect_commands())
         .group(command::get_layer_commands())
         .help(&PRINT_HELP);
     let client_res = Client::builder(config.token())
