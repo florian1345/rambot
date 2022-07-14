@@ -1,10 +1,8 @@
 use crate::audio::{Mixer, PCMRead};
-use crate::config::Config;
 use crate::plugin::PluginManager;
-use crate::plugin::source::PluginAudioSource;
 use crate::state::State;
 
-use rambot_api::audio::AudioSource;
+use rambot_api::AudioSource;
 
 use serenity::client::Context;
 use serenity::framework::standard::{Args, CommandGroup, CommandResult};
@@ -101,7 +99,7 @@ fn to_input<S: AudioSource + Send + 'static>(source: Arc<Mutex<S>>) -> Input {
 }
 
 async fn get_mixer(ctx: &Context, msg: &Message)
-        -> Arc<Mutex<Mixer<PluginAudioSource>>> {
+        -> Arc<Mutex<Mixer>> {
     let mut data_guard = ctx.data.write().await;
     let state = data_guard.get_mut::<State>().unwrap();
     state.guild_state(msg.guild_id.unwrap()).mixer()
@@ -113,8 +111,7 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     let mut call_guard = call.lock().await;
     let data_guard = ctx.data.read().await;
     let plugin_manager = data_guard.get::<PluginManager>().unwrap();
-    let config = data_guard.get::<Config>().unwrap();
-    let source = match plugin_manager.resolve_source(command, config) {
+    let source = match plugin_manager.resolve_audio_source(command) {
         Ok(s) => s,
         Err(e) =>
             return Some(format!("Could not resolve audio: {}", e))

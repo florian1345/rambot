@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::plugin::PluginManager;
-use crate::plugin::load;
 use crate::state::State;
 
 use serenity::client::{Client, Context};
@@ -62,7 +61,7 @@ async fn main() {
     log::info!("Successfully loaded state for {} guilds.",
         state.guild_count());
 
-    let plugin_mgr = match load::load(&config) {
+    let plugin_mgr = match PluginManager::new(config.plugin_directory()) {
         Ok(m) => m,
         Err(e) => {
             log::error!("{}", e);

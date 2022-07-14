@@ -1,16 +1,14 @@
 [workspace]
 
 members = [
-    "plugin-commons",
-    "plugin-flac",
-    "plugin-mp3",
-    "plugin-ogg",
     "plugin-wave",
     "rambot",
     "rambot-api"
 ]
 
 [profile.release]
+
 lto = true
 opt-level = 3
 panic = 'abort'
+strip = true

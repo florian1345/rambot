@@ -1,5 +1,4 @@
 use crate::audio::Mixer;
-use crate::plugin::source::PluginAudioSource;
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -19,7 +18,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Deserialize)]
 #[serde(from = "MixerTopology")]
 pub struct GuildState {
-    mixer: Arc<Mutex<Mixer<PluginAudioSource>>>
+    mixer: Arc<Mutex<Mixer>>
 }
 
 impl GuildState {
@@ -32,7 +31,7 @@ impl GuildState {
 
     /// Gets an [Arc] to a [Mutex]ed audio [Mixer] for audio playback in this
     /// guild. This also manages the layers.
-    pub fn mixer(&self) -> Arc<Mutex<Mixer<PluginAudioSource>>> {
+    pub fn mixer(&self) -> Arc<Mutex<Mixer>> {
         Arc::clone(&self.mixer)
     }
 

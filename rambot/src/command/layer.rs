@@ -1,5 +1,4 @@
 use crate::audio::Mixer;
-use crate::plugin::source::PluginAudioSource;
 use crate::state::State;
 
 use serenity::client::Context;
@@ -31,7 +30,7 @@ async fn get_layer(ctx: &Context, msg: &Message, mut args: Args)
 }
 
 async fn with_mixer<T>(ctx: &Context, msg: &Message,
-        f: impl FnOnce(MutexGuard<Mixer<PluginAudioSource>>) -> T) -> T {
+        f: impl FnOnce(MutexGuard<Mixer>) -> T) -> T {
     let mut data_guard = ctx.data.write().await;
     let state = data_guard.get_mut::<State>().unwrap();
     let guild_state = state.guild_state_mut(msg.guild_id.unwrap());
@@ -44,7 +43,12 @@ async fn with_mixer<T>(ctx: &Context, msg: &Message,
 #[description("Adds a layer with the given name to the mixer in this guild.")]
 async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     if let Some(layer) = get_layer(ctx, msg, args).await? {
-        with_mixer(ctx, msg, move |mut mixer| mixer.add_layer(layer)).await;
+        let added = with_mixer(ctx, msg, move |mut mixer|
+            mixer.add_layer(layer)).await;
+
+        if !added {
+            msg.reply(ctx, "A layer with the same name already exists.").await?;
+        }
     }
 
     Ok(())
@@ -56,8 +60,12 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     "Removes a layer with the given name from the mixer in this guild.")]
 async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     if let Some(layer) = get_layer(ctx, msg, args).await? {
-        with_mixer(ctx, msg, move |mut mixer| mixer.remove_layer(&layer))
-            .await;
+        let removed = with_mixer(ctx, msg, move |mut mixer|
+            mixer.remove_layer(&layer)).await;
+
+        if !removed {
+            msg.reply(ctx, "Layer not found.").await?;
+        }
     }
 
     Ok(())
