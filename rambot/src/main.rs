@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub mod audio;
 pub mod command;
 pub mod config;
+pub mod effect;
 pub mod logging;
 pub mod plugin;
 pub mod state;

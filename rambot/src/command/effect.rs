@@ -19,7 +19,13 @@ pub fn get_effect_commands() -> &'static CommandGroup {
 #[description("Adds an effect to the layer with the given name.")]
 async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let layer = args.single::<String>()?;
-    let effect = args.rest();
+    let effect = match args.rest().parse() {
+        Ok(e) => e,
+        Err(e) => {
+            msg.reply(ctx, e).await?;
+            return Ok(());
+        }
+    };
     let res = with_mixer(ctx, msg,
         |mut mixer| mixer.add_effect(&layer, effect)).await;
 

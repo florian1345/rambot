@@ -7,9 +7,7 @@ use rambot_api::{
     Sample
 };
 
-use regex::Regex;
-
-use std::io;
+use std::{io, collections::HashMap};
 
 struct VolumeEffect {
     child: Option<Box<dyn AudioSource + Send>>,
@@ -36,31 +34,29 @@ impl AudioSource for VolumeEffect {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref REGEX: Regex = Regex::new(r"volume=([0-9]+(?:\.[0-9]+)?)")
-        .unwrap();
-}
-
 struct VolumeEffectResolver;
 
 impl EffectResolver for VolumeEffectResolver {
-    fn can_resolve(&self, descriptor: &str) -> bool {
-        REGEX.is_match(descriptor)
+    fn name(&self) -> &str {
+        "volume"
     }
 
-    fn resolve(&self, descriptor: &str, child: Box<dyn AudioSource + Send>)
-            -> Result<Box<dyn AudioSource + Send>, String> {
-        if let Some(captures) = REGEX.captures(descriptor) {
-            let volume = captures.get(1).unwrap().as_str().parse().unwrap();
+    fn unique(&self) -> bool {
+        true
+    }
 
-            Ok(Box::new(VolumeEffect {
-                child: Some(child),
-                volume
-            }))
-        }
-        else {
-            Err("Descriptor does not match required syntax.".to_owned())
-        }
+    fn resolve(&self, key_values: &HashMap<String, String>,
+            child: Box<dyn AudioSource + Send>)
+            -> Result<Box<dyn AudioSource + Send>, String> {
+        let volume = key_values.get("volume")
+            .map(|v| v.parse::<f32>()
+                .map_err(|e| format!("Error parsing volume number: {}", e)))
+            .unwrap_or_else(|| Err("Missing \"volume\" key.".to_owned()))?;
+
+        Ok(Box::new(VolumeEffect {
+            child: Some(child),
+            volume
+        }))
     }
 }
 
