@@ -10,6 +10,7 @@ use rambot_api::{
 
 use serenity::prelude::TypeMapKey;
 
+use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::io;
@@ -71,7 +72,7 @@ pub enum Audio {
 pub struct PluginManager {
     audio_source_resolvers: Vec<Box<dyn AudioSourceResolver>>,
     audio_source_list_resolvers: Vec<Box<dyn AudioSourceListResolver>>,
-    effect_resolvers: Vec<Box<dyn EffectResolver>>,
+    effect_resolvers: HashMap<String, Box<dyn EffectResolver>>,
     loaded_libraries: Vec<Library>
 }
 
@@ -81,7 +82,7 @@ impl PluginManager {
         let mut plugin_manager = PluginManager {
             audio_source_resolvers: Vec::new(),
             audio_source_list_resolvers: Vec::new(),
-            effect_resolvers: Vec::new(),
+            effect_resolvers: HashMap::new(),
             loaded_libraries: Vec::new()
         };
 
@@ -126,7 +127,11 @@ impl PluginManager {
             &mut plugin.audio_source_resolvers());
         self.audio_source_list_resolvers.append(
             &mut plugin.audio_source_list_resolvers());
-        self.effect_resolvers.append(&mut plugin.effect_resolvers());
+
+        for effect_resolver in plugin.effect_resolvers() {
+            let name = effect_resolver.name().to_owned();
+            self.effect_resolvers.insert(name, effect_resolver);
+        }
 
         Ok(())
     }
@@ -168,17 +173,23 @@ impl PluginManager {
         }
     }
 
-    pub fn resolve_effect(&self, descriptor: &str,
+    pub fn is_effect_unique(&self, name: &str) -> bool {
+        self.effect_resolvers.get(name)
+            .map(|r| r.unique())
+            .unwrap_or(false)
+    }
+
+    pub fn resolve_effect(&self, name: &str,
+            key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
-        for resolver in self.effect_resolvers.iter() {
-            if resolver.can_resolve(descriptor) {
-                return resolver.resolve(descriptor, child)
-                    .map_err(|msg| ResolveError::PluginResolveError(msg));
-            }
+        if let Some(resolver) = self.effect_resolvers.get(name) {
+            resolver.resolve(key_values, child)
+                .map_err(|msg| ResolveError::PluginResolveError(msg))
         }
-
-        Err(ResolveError::NoPluginFound)
+        else {
+            Err(ResolveError::NoPluginFound)
+        }
     }
 }
 

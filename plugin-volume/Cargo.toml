@@ -9,6 +9,4 @@ crate-type = [ "cdylib" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lazy_static = "1.4"
 rambot-api = { path = "../rambot-api" }
-regex = "1.6"

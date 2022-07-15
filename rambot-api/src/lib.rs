@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
@@ -235,16 +236,16 @@ pub trait AudioSourceResolver : Send + Sync {
 /// audio data it outputs by the volume number.
 pub trait EffectResolver : Send + Sync {
 
-    /// Indicates whether this resolver can construct an effect from the given
-    /// descriptor.
-    fn can_resolve(&self, descriptor: &str) -> bool;
+    fn name(&self) -> &str;
+
+    fn unique(&self) -> bool;
 
     /// Generates an [AudioSource] trait object that yields audio constituting
-    /// the effect defined by the given descriptor applied to the given child.
-    /// If [EffectResolver::can_resolve] returns `true`, this should probably
-    /// work, however it may still return an error message should an unexpected
-    /// problem occur.
-    fn resolve(&self, descriptor: &str, child: Box<dyn AudioSource + Send>)
+    /// the effect defined by the given key-value pairs applied to the given
+    /// child. This may return an error should the provided key-value map
+    /// contain invalid inputs.
+    fn resolve(&self, key_values: &HashMap<String, String>,
+        child: Box<dyn AudioSource + Send>)
         -> Result<Box<dyn AudioSource + Send>, String>;
 }
 

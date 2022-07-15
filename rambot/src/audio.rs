@@ -7,6 +7,7 @@ use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
+use crate::effect::EffectDescriptor;
 use crate::plugin::{PluginManager, Audio, ResolveError};
 
 struct AudioBuffer {
@@ -45,7 +46,7 @@ struct Layer {
     source: Option<Box<dyn AudioSource + Send>>,
     list: Option<Box<dyn AudioSourceList + Send>>,
     buffer: AudioBuffer,
-    effect_descriptors: Vec<String>
+    effect_descriptors: Vec<EffectDescriptor>
 }
 
 impl Layer {
@@ -82,8 +83,8 @@ where
     P: AsRef<PluginManager>
 {
     for effect in &layer.effect_descriptors {
-        source =
-            to_io_err(plugin_manager.as_ref().resolve_effect(effect, source))?;
+        source = to_io_err(plugin_manager.as_ref()
+            .resolve_effect(&effect.name, &effect.key_values, source))?;
     }
 
     layer.play(source);
@@ -172,19 +173,41 @@ impl Mixer {
         self.layers.get_mut(index).unwrap()
     }
 
-    pub fn add_effect(&mut self, layer: &str, descriptor: impl Into<String>)
+    pub fn add_effect(&mut self, layer: &str, descriptor: EffectDescriptor)
             -> Result<(), ResolveError> {
         // TODO convince the borrow checker that it is ok to use layer_mut
 
-        let descriptor = descriptor.into();
         let index = *self.names.get(layer).unwrap();
         let layer = self.layers.get_mut(index).unwrap();
 
-        if let Some(source) = layer.source.take() {
-            // TODO find a way to retrieve the original audio if this fails
+        if let Some(mut source) = layer.source.take() {
+            if self.plugin_manager.is_effect_unique(&descriptor.name) {
+                // We need to remove the old effect of the same name
 
-            layer.source =
-                Some(self.plugin_manager.resolve_effect(&descriptor, source)?);
+                let idx = layer.effect_descriptors.iter().enumerate()
+                    .find(|(_, e)| &e.name == &descriptor.name)
+                    .map(|(i, _)| i);
+
+                if let Some(idx) = idx {
+                    // TODO check whether relying on children being present is OK
+
+                    for _ in idx..layer.effect_descriptors.len() {
+                        source = source.take_child();
+                    }
+
+                    layer.effect_descriptors.remove(idx);
+
+                    for old_effect in &layer.effect_descriptors[idx..] {
+                        source = self.plugin_manager.resolve_effect(
+                            &old_effect.name, &old_effect.key_values, source)?;
+                    }
+                }
+            }
+
+            // TODO find a way to recover the audio source if this fails
+
+            layer.source = Some(self.plugin_manager.resolve_effect(
+                &descriptor.name, &descriptor.key_values, source)?);
         }
 
         layer.effect_descriptors.push(descriptor);
