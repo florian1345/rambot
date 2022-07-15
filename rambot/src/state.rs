@@ -1,4 +1,5 @@
 use crate::audio::Mixer;
+use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 
 use serde::{Deserialize, Serialize, Serializer};
@@ -23,17 +24,26 @@ pub struct GuildState {
 impl GuildState {
     fn new(plugin_manager: Arc<PluginManager>) -> GuildState {
         log::info!("New guild state created.");
+
         GuildState {
             mixer: Arc::new(Mutex::new(Mixer::new(plugin_manager)))
         }
     }
 
     fn new_with_mixer(plugin_manager: Arc<PluginManager>,
-            topology: MixerTopology) -> GuildState {
+            serde: SerdeMixer) -> GuildState {
         let mut mixer = Mixer::new(plugin_manager);
         
-        for layer in topology.layers {
-            mixer.add_layer(layer);
+        for layer in serde.layers {
+            mixer.add_layer(&layer.name);
+
+            for effect in layer.effects {
+                mixer.add_effect(&layer.name, effect).unwrap();
+            }
+
+            for adapter in layer.adapters {
+                mixer.add_adapter(&layer.name, adapter);
+            }
         }
         
         GuildState {
@@ -47,14 +57,18 @@ impl GuildState {
         Arc::clone(&self.mixer)
     }
 
-    fn topology(&self) -> MixerTopology {
+    fn serde(&self) -> SerdeMixer {
         let mut layers = Vec::new();
 
         for layer in self.mixer.lock().unwrap().layers() {
-            layers.push(layer.clone());
+            layers.push(SerdeLayer {
+                name: layer.name().to_owned(),
+                effects: layer.effects().to_vec(),
+                adapters: layer.adapters().to_vec()
+            });
         }
 
-        MixerTopology { layers }
+        SerdeMixer { layers }
     }
 }
 
@@ -63,13 +77,25 @@ impl Serialize for GuildState {
     where
         S: Serializer
     {
-        self.topology().serialize(serializer)
+        self.serde().serialize(serializer)
     }
 }
 
 #[derive(Deserialize, Serialize)]
-struct MixerTopology {
-    layers: Vec<String>
+struct SerdeLayer {
+    name: String,
+    effects: Vec<KeyValueDescriptor>,
+    adapters: Vec<KeyValueDescriptor>
+}
+
+#[derive(Deserialize, Serialize)]
+struct SerdeMixer {
+    layers: Vec<SerdeLayer>
+}
+
+#[derive(Deserialize, Serialize)]
+struct SerdeGuildState {
+    mixer: SerdeMixer
 }
 
 /// An enumeration of the errors that may occur while loading or saving the

@@ -16,9 +16,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::Mutex as TokioMutex;
 
+pub mod adapter;
 pub mod effect;
 pub mod layer;
 
+pub use adapter::get_adapter_commands;
 pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 

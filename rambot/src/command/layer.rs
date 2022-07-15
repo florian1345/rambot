@@ -65,7 +65,7 @@ async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     "Prints a list of the names of all layers of the mixer in this guild.")]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let layers = with_mixer(ctx, msg, |mixer| {
-        mixer.layers().cloned().collect::<Vec<_>>()
+        mixer.layers().iter().map(|l| l.name().to_owned()).collect::<Vec<_>>()
     }).await;
 
     let response = if layers.is_empty() {

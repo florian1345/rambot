@@ -3,6 +3,7 @@
 use hound::{SampleFormat, WavIntoSamples, WavReader};
 
 use rambot_api::{
+    AdapterResolver,
     AudioSource,
     AudioSourceListResolver,
     AudioSourceResolver,
@@ -205,6 +206,10 @@ impl Plugin for WavePlugin {
 
     fn audio_source_list_resolvers(&self)
             -> Vec<Box<dyn AudioSourceListResolver>> {
+        Vec::new()
+    }
+
+    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
         Vec::new()
     }
 }

@@ -2,6 +2,8 @@
 
 members = [
     "plugin-folder-list",
+    "plugin-loop",
+    "plugin-shuffle",
     "plugin-volume",
     "plugin-wave",
     "rambot",

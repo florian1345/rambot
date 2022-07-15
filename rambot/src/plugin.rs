@@ -5,7 +5,7 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin, AudioSourceList
+    Plugin, AudioSourceList, AdapterResolver
 };
 
 use serenity::prelude::TypeMapKey;
@@ -17,6 +17,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum LoadPluginsError {
     IoError(io::Error),
     LoadError(libloading::Error),
@@ -48,6 +49,7 @@ impl Display for LoadPluginsError {
     }
 }
 
+#[derive(Debug)]
 pub enum ResolveError {
     NoPluginFound,
     PluginResolveError(String)
@@ -64,8 +66,8 @@ impl Display for ResolveError {
     }
 }
 
-pub enum Audio {
-    Single(Box<dyn AudioSource + Send>),
+pub enum AudioDescriptorList {
+    Single(String),
     List(Box<dyn AudioSourceList + Send>)
 }
 
@@ -73,6 +75,7 @@ pub struct PluginManager {
     audio_source_resolvers: Vec<Box<dyn AudioSourceResolver>>,
     audio_source_list_resolvers: Vec<Box<dyn AudioSourceListResolver>>,
     effect_resolvers: HashMap<String, Box<dyn EffectResolver>>,
+    adapter_resolvers: HashMap<String, Box<dyn AdapterResolver>>,
     loaded_libraries: Vec<Library>
 }
 
@@ -83,6 +86,7 @@ impl PluginManager {
             audio_source_resolvers: Vec::new(),
             audio_source_list_resolvers: Vec::new(),
             effect_resolvers: HashMap::new(),
+            adapter_resolvers: HashMap::new(),
             loaded_libraries: Vec::new()
         };
 
@@ -99,11 +103,12 @@ impl PluginManager {
             }
         }
 
-        log::info!("Loaded {} plugins with {} audio sources, {} lists, and {} \
-            effects.", plugin_manager.loaded_libraries.len(),
+        log::info!("Loaded {} plugins with {} audio sources, {} lists, {} \
+            effects, and {} adapters.", plugin_manager.loaded_libraries.len(),
             plugin_manager.audio_source_resolvers.len(),
             plugin_manager.audio_source_list_resolvers.len(),
-            plugin_manager.effect_resolvers.len());
+            plugin_manager.effect_resolvers.len(),
+            plugin_manager.adapter_resolvers.len());
 
         Ok(plugin_manager)
     }
@@ -133,11 +138,18 @@ impl PluginManager {
             self.effect_resolvers.insert(name, effect_resolver);
         }
 
+        for adapter_resolver in plugin.adapter_resolvers() {
+            let name = adapter_resolver.name().to_owned();
+            self.adapter_resolvers.insert(name, adapter_resolver);
+        }
+
         Ok(())
     }
 
     pub fn resolve_audio_source(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
+        // TODO avoid code duplication with resolve_audio_source_list
+
         for resolver in self.audio_source_resolvers.iter() {
             if resolver.can_resolve(descriptor) {
                 return resolver.resolve(descriptor)
@@ -160,16 +172,13 @@ impl PluginManager {
         Err(ResolveError::NoPluginFound)
     }
 
-    pub fn resolve_audio(&self, descriptor: &str)
-            -> Result<Audio, ResolveError> {
-        match self.resolve_audio_source(descriptor) {
-            Ok(source) => Ok(Audio::Single(source)),
+    pub fn resolve_audio_descriptor_list(&self, descriptor: &str)
+            -> Result<AudioDescriptorList, ResolveError> {
+        match self.resolve_audio_source_list(descriptor) {
+            Ok(list) => Ok(AudioDescriptorList::List(list)),
             Err(ResolveError::PluginResolveError(e)) =>
                 Err(ResolveError::PluginResolveError(e)),
-            _ => {
-                self.resolve_audio_source_list(descriptor)
-                    .map(|list| Audio::List(list))
-            }
+            _ => Ok(AudioDescriptorList::Single(descriptor.to_owned()))
         }
     }
 
@@ -183,7 +192,28 @@ impl PluginManager {
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
+        // TODO avoid code duplication with resolve_adapter
+
         if let Some(resolver) = self.effect_resolvers.get(name) {
+            resolver.resolve(key_values, child)
+                .map_err(|msg| ResolveError::PluginResolveError(msg))
+        }
+        else {
+            Err(ResolveError::NoPluginFound)
+        }
+    }
+
+    pub fn is_adapter_unique(&self, name: &str) -> bool {
+        self.adapter_resolvers.get(name)
+            .map(|r| r.unique())
+            .unwrap_or(false)
+    }
+
+    pub fn resolve_adapter(&self, name: &str,
+            key_values: &HashMap<String, String>,
+            child: Box<dyn AudioSourceList + Send>)
+            -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
+        if let Some(resolver) = self.adapter_resolvers.get(name) {
             resolver.resolve(key_values, child)
                 .map_err(|msg| ResolveError::PluginResolveError(msg))
         }
