@@ -1,4 +1,5 @@
 use rambot_api::{
+    AdapterResolver,
     AudioSourceList,
     AudioSourceListResolver,
     AudioSourceResolver,
@@ -74,6 +75,10 @@ impl Plugin for FolderListPlugin {
     fn audio_source_list_resolvers(&self)
             -> Vec<Box<dyn AudioSourceListResolver>> {
         vec![Box::new(FolderListResolver)]
+    }
+
+    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
+        Vec::new()
     }
 }
 

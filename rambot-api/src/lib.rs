@@ -256,6 +256,17 @@ pub trait AudioSourceListResolver : Send + Sync {
         -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 
+pub trait AdapterResolver : Send + Sync {
+
+    fn name(&self) -> &str;
+
+    fn unique(&self) -> bool;
+
+    fn resolve(&self, key_values: &HashMap<String, String>,
+        child: Box<dyn AudioSourceList + Send>)
+        -> Result<Box<dyn AudioSourceList + Send>, String>;
+}
+
 pub trait Plugin : std::any::Any + Send + Sync {
     fn load_plugin(&self) -> Result<(), String>;
 
@@ -265,6 +276,8 @@ pub trait Plugin : std::any::Any + Send + Sync {
 
     fn audio_source_list_resolvers(&self)
         -> Vec<Box<dyn AudioSourceListResolver>>;
+
+    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>>;
 }
 
 #[macro_export]

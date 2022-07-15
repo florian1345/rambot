@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::iter::Peekable;
 use std::str::{Chars, FromStr};
 
-pub enum ParseEffectDescriptorError {
+pub enum ParseKeyValueDescriptorError {
     MissingClosingQuote,
     MissingDelimiter(char),
     InvalidDelimiter {
@@ -13,57 +15,66 @@ pub enum ParseEffectDescriptorError {
     UnexpectedContinuation
 }
 
-impl Display for ParseEffectDescriptorError {
+impl Display for ParseKeyValueDescriptorError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            ParseEffectDescriptorError::MissingClosingQuote =>
+            ParseKeyValueDescriptorError::MissingClosingQuote =>
                 write!(f, "Missing closing quote in string."),
-            ParseEffectDescriptorError::MissingDelimiter(d) =>
+            ParseKeyValueDescriptorError::MissingDelimiter(d) =>
                 write!(f, "Missing delimiter: \'{}\'.", d),
-            ParseEffectDescriptorError::InvalidDelimiter {
+            ParseKeyValueDescriptorError::InvalidDelimiter {
                 expected,
                 found
             } => write!(f, "Expected delimiter \'{}\', but found: \'{}\'.",
                 expected, found),
-            ParseEffectDescriptorError::UnexpectedContinuation =>
+            ParseKeyValueDescriptorError::UnexpectedContinuation =>
                 write!(f, "Expected end, but effect descriptor continued.")
         }
     }
 }
 
-pub struct EffectDescriptor {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct KeyValueDescriptor {
     pub name: String,
     pub key_values: HashMap<String, String>
 }
 
-impl FromStr for EffectDescriptor {
-    type Err = ParseEffectDescriptorError;
+impl FromStr for KeyValueDescriptor {
+    type Err = ParseKeyValueDescriptorError;
 
     fn from_str(code: &str)
-            -> Result<EffectDescriptor, ParseEffectDescriptorError> {
+            -> Result<KeyValueDescriptor, ParseKeyValueDescriptorError> {
         let mut chars = code.chars().peekable();
         let name = parse_string(&mut chars)?;
+        let mut parenthesis = false;
         
         let key_values = match chars.next() {
-            Some('(') => Some(parse_key_value(&mut chars)?),
-            Some(c) => return Err(ParseEffectDescriptorError::InvalidDelimiter {
+            Some('(') => {
+                parenthesis = true;
+                parse_key_value(&mut chars)?
+            },
+            Some('=') => {
+                let value = parse_string(&mut chars)?;
+                let mut map = HashMap::new();
+                map.insert(name.clone(), value);
+                map
+            },
+            Some(c) => return Err(ParseKeyValueDescriptorError::InvalidDelimiter {
                 expected: '(',
                 found: c
             }),
-            None => None
+            None => HashMap::new()
         };
         
-        if key_values.is_some() {
+        if parenthesis {
             consume_delimiter(&mut chars, ')')?;
         }
         
         if chars.next().is_some() {
-            return Err(ParseEffectDescriptorError::UnexpectedContinuation);
+            return Err(ParseKeyValueDescriptorError::UnexpectedContinuation);
         }
-        
-        let key_values = key_values.unwrap_or_else(HashMap::new);
-        
-        Ok(EffectDescriptor {
+
+        Ok(KeyValueDescriptor {
             name,
             key_values
         })
@@ -75,7 +86,7 @@ fn is_delimiter(c: char) -> bool {
 }
 
 fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
-        -> Result<String, ParseEffectDescriptorError> {
+        -> Result<String, ParseKeyValueDescriptorError> {
     let mut s = String::new();
     let mut quote_mode = false;
 
@@ -114,7 +125,7 @@ fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
     }
 
     if quote_mode {
-        Err(ParseEffectDescriptorError::MissingClosingQuote)
+        Err(ParseKeyValueDescriptorError::MissingClosingQuote)
     }
     else {
         Ok(s)
@@ -122,25 +133,25 @@ fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
 }
 
 fn consume_delimiter<'a>(chars: &mut Peekable<Chars<'a>>, delimiter: char)
-        -> Result<(), ParseEffectDescriptorError> {
+        -> Result<(), ParseKeyValueDescriptorError> {
     match chars.next() {
         Some(c) => {
             if c == delimiter {
                 Ok(())
             }
             else {
-                Err(ParseEffectDescriptorError::InvalidDelimiter {
+                Err(ParseKeyValueDescriptorError::InvalidDelimiter {
                     expected: '=',
                     found: c
                 })
             }
         },
-        None => Err(ParseEffectDescriptorError::MissingDelimiter(delimiter))
+        None => Err(ParseKeyValueDescriptorError::MissingDelimiter(delimiter))
     }
 }
 
 fn parse_key_value<'a>(chars: &mut Peekable<Chars<'a>>)
-        -> Result<HashMap<String, String>, ParseEffectDescriptorError> {
+        -> Result<HashMap<String, String>, ParseKeyValueDescriptorError> {
     let mut first = true;
     let mut result = HashMap::new();
 

@@ -22,7 +22,7 @@ use std::sync::Arc;
 pub mod audio;
 pub mod command;
 pub mod config;
-pub mod effect;
+pub mod key_value;
 pub mod logging;
 pub mod plugin;
 pub mod state;
@@ -77,6 +77,7 @@ async fn main() {
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(config.prefix()))
         .group(command::get_root_commands())
+        .group(command::get_adapter_commands())
         .group(command::get_effect_commands())
         .group(command::get_layer_commands())
         .help(&PRINT_HELP);

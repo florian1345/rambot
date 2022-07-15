@@ -7,8 +7,26 @@ use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
-use crate::effect::EffectDescriptor;
-use crate::plugin::{PluginManager, Audio, ResolveError};
+use crate::key_value::KeyValueDescriptor;
+use crate::plugin::{PluginManager, AudioDescriptorList, ResolveError};
+
+struct SingleAudioSourceList {
+    descriptor: Option<String>
+}
+
+impl SingleAudioSourceList {
+    fn new(descriptor: String) -> SingleAudioSourceList {
+        SingleAudioSourceList {
+            descriptor: Some(descriptor)
+        }
+    }
+}
+
+impl AudioSourceList for SingleAudioSourceList {
+    fn next(&mut self) -> Result<Option<String>, io::Error> {
+        Ok(self.descriptor.take())
+    }
+}
 
 struct AudioBuffer {
     data: Vec<Sample>,
@@ -41,12 +59,16 @@ impl AudioBuffer {
     }
 }
 
-struct Layer {
+/// A single layer of a [Mixer] which wraps up to one active [AudioSource]. The
+/// public methods of this type only allow access to the general information
+/// about the structure of this layer, not the actual audio played.
+pub struct Layer {
     name: String,
     source: Option<Box<dyn AudioSource + Send>>,
     list: Option<Box<dyn AudioSourceList + Send>>,
     buffer: AudioBuffer,
-    effect_descriptors: Vec<EffectDescriptor>
+    effects: Vec<KeyValueDescriptor>,
+    adapters: Vec<KeyValueDescriptor>
 }
 
 impl Layer {
@@ -61,7 +83,26 @@ impl Layer {
 
     fn stop(&mut self) -> bool {
         self.buffer.active_len = 0;
-        self.list.take().is_some() || self.source.take().is_some()
+        self.list.take().is_some() | self.source.take().is_some()
+    }
+
+    /// Gets the name of this layer.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Gets a slice of [KeyValueDescriptor]s representing the audio effects
+    /// that are active on this layer. The order in the slice is equal to the
+    /// order in which they are applied to the audio.
+    pub fn effects(&self) -> &[KeyValueDescriptor] {
+        &self.effects
+    }
+
+    /// Gets a slice of [KeyValueDescriptor]s representing the adapters that
+    /// are active on this layer. The order in the slice is equal to the order
+    /// in which they are applied to the playlist.
+    pub fn adapters(&self) -> &[KeyValueDescriptor] {
+        &self.adapters
     }
 }
 
@@ -82,7 +123,7 @@ fn play_source_on_layer<P>(layer: &mut Layer,
 where
     P: AsRef<PluginManager>
 {
-    for effect in &layer.effect_descriptors {
+    for effect in &layer.effects {
         source = to_io_err(plugin_manager.as_ref()
             .resolve_effect(&effect.name, &effect.key_values, source))?;
     }
@@ -100,6 +141,25 @@ where
         to_io_err(plugin_manager.as_ref().resolve_audio_source(descriptor))?;
 
     play_source_on_layer(layer, source, plugin_manager)
+}
+
+fn play_list_on_layer<P>(layer: &mut Layer,
+    mut list: Box<dyn AudioSourceList + Send>, plugin_manager: &P)
+    -> Result<(), io::Error>
+where
+    P: AsRef<PluginManager>
+{
+    for adapter in &layer.adapters {
+        list = to_io_err(plugin_manager.as_ref().resolve_adapter(
+            &adapter.name, &adapter.key_values, list))?;
+    }
+
+    if let Some(descriptor) = list.next()? {
+        play_on_layer(layer, &descriptor, plugin_manager)?;
+        layer.list = Some(list);
+    }
+
+    Ok(())
 }
 
 impl Mixer {
@@ -138,7 +198,8 @@ impl Mixer {
                 data: Vec::new(),
                 active_len: 0
             },
-            effect_descriptors: Vec::new()
+            effects: Vec::new(),
+            adapters: Vec::new()
         });
         self.names.insert(name, index);
 
@@ -173,7 +234,7 @@ impl Mixer {
         self.layers.get_mut(index).unwrap()
     }
 
-    pub fn add_effect(&mut self, layer: &str, descriptor: EffectDescriptor)
+    pub fn add_effect(&mut self, layer: &str, descriptor: KeyValueDescriptor)
             -> Result<(), ResolveError> {
         // TODO convince the borrow checker that it is ok to use layer_mut
 
@@ -184,20 +245,20 @@ impl Mixer {
             if self.plugin_manager.is_effect_unique(&descriptor.name) {
                 // We need to remove the old effect of the same name
 
-                let idx = layer.effect_descriptors.iter().enumerate()
+                let idx = layer.effects.iter().enumerate()
                     .find(|(_, e)| &e.name == &descriptor.name)
                     .map(|(i, _)| i);
 
                 if let Some(idx) = idx {
                     // TODO check whether relying on children being present is OK
 
-                    for _ in idx..layer.effect_descriptors.len() {
+                    for _ in idx..layer.effects.len() {
                         source = source.take_child();
                     }
 
-                    layer.effect_descriptors.remove(idx);
+                    layer.effects.remove(idx);
 
-                    for old_effect in &layer.effect_descriptors[idx..] {
+                    for old_effect in &layer.effects[idx..] {
                         source = self.plugin_manager.resolve_effect(
                             &old_effect.name, &old_effect.key_values, source)?;
                     }
@@ -210,7 +271,7 @@ impl Mixer {
                 &descriptor.name, &descriptor.key_values, source)?);
         }
 
-        layer.effect_descriptors.push(descriptor);
+        layer.effects.push(descriptor);
         Ok(())
     }
 
@@ -225,7 +286,16 @@ impl Mixer {
             layer.source = Some(source);
         }
 
-        layer.effect_descriptors.clear();
+        layer.effects.clear();
+    }
+
+    pub fn add_adapter(&mut self, layer: &str,
+            descriptor: KeyValueDescriptor) {
+        self.layer_mut(layer).adapters.push(descriptor);
+    }
+
+    pub fn clear_adapters(&mut self, layer: &str) {
+        self.layer_mut(layer).adapters.clear();
     }
 
     /// Plays audio given some `descriptor` on the `layer` with the given name.
@@ -237,19 +307,19 @@ impl Mixer {
 
         let index = *self.names.get(layer).unwrap();
         let layer = self.layers.get_mut(index).unwrap();
-        let audio = to_io_err(self.plugin_manager.resolve_audio(descriptor))?;
+        let audio = to_io_err(self.plugin_manager.resolve_audio_descriptor_list(descriptor))?;
 
         layer.stop();
 
         match audio {
-            Audio::Single(source) => 
-                play_source_on_layer(layer, source, &self.plugin_manager)?,
-            Audio::List(mut list) => {
-                if let Some(descriptor) = list.next()? {
-                    play_on_layer(layer, &descriptor, &self.plugin_manager)?;
-                    layer.list = Some(list);
-                }
+            AudioDescriptorList::Single(source) => {
+                play_list_on_layer(layer,
+                    Box::new(SingleAudioSourceList::new(source)),
+                    &self.plugin_manager)?
             },
+            AudioDescriptorList::List(list) => {
+                play_list_on_layer(layer, list, &self.plugin_manager)?
+            }
         }
 
         Ok(())
@@ -271,9 +341,9 @@ impl Mixer {
             .any(|x| x)
     }
 
-    /// Returns an iterator over the names of all layers in this mixer.
-    pub fn layers(&self) -> impl Iterator<Item = &String> {
-        self.names.keys()
+    /// Returns a slice of all layers in this mixer.
+    pub fn layers(&self) -> &[Layer] {
+        &self.layers
     }
 }
 
