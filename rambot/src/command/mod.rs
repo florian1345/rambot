@@ -111,8 +111,10 @@ async fn get_mixer(ctx: &Context, msg: &Message)
     state.guild_state(msg.guild_id.unwrap(), plugin_manager).mixer()
 }
 
-async fn with_mixer<T>(ctx: &Context, msg: &Message,
-        f: impl FnOnce(MutexGuard<Mixer>) -> T) -> T {
+async fn with_mixer<T, F>(ctx: &Context, msg: &Message, f: F) -> T
+where
+    F: FnOnce(MutexGuard<Mixer>) -> T
+{
     let mut data_guard = ctx.data.write().await;
     let plugin_manager =
         Arc::clone(data_guard.get::<PluginManager>().unwrap());
@@ -121,6 +123,27 @@ async fn with_mixer<T>(ctx: &Context, msg: &Message,
         state.guild_state_mut(msg.guild_id.unwrap(), plugin_manager);
     let mixer = guild_state.mixer();
     f(mixer.lock().unwrap())
+}
+
+async fn with_mixer_and_layer<T, F>(ctx: &Context, msg: &Message, layer: &str,
+    f: F) -> CommandResult<Option<T>>
+where
+    F: FnOnce(MutexGuard<Mixer>) -> T
+{
+    let result = with_mixer(ctx, msg, |mixer| {
+        if mixer.contains_layer(&layer) {
+            Some(f(mixer))
+        }
+        else {
+            None
+        }
+    }).await;
+
+    if result.is_none() {
+        msg.reply(ctx, "I could not find that layer.").await?;
+    }
+
+    Ok(result)
 }
 
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,

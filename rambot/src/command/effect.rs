@@ -1,4 +1,4 @@
-use crate::command::with_mixer;
+use crate::command::with_mixer_and_layer;
 
 use serenity::client::Context;
 use serenity::framework::standard::{Args, CommandGroup, CommandResult};
@@ -26,10 +26,10 @@ async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             return Ok(());
         }
     };
-    let res = with_mixer(ctx, msg,
-        |mut mixer| mixer.add_effect(&layer, effect)).await;
+    let res = with_mixer_and_layer(ctx, msg, &layer,
+        |mut mixer| mixer.add_effect(&layer, effect)).await?;
 
-    if let Err(e) = res {
+    if let Some(Err(e)) = res {
         msg.reply(ctx, e).await?;
     }
 
@@ -46,7 +46,8 @@ async fn clear(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         msg.reply(ctx, "Expected only the layer name.").await?;
     }
 
-    with_mixer(ctx, msg, |mut mixer| mixer.clear_effects(&layer)).await;
+    with_mixer_and_layer(ctx, msg, &layer, |mut mixer|
+        mixer.clear_effects(&layer)).await?;
 
     Ok(())
 }
