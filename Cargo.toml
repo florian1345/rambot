@@ -1,8 +1,10 @@
 [workspace]
 
 members = [
+    "plugin-commons",
     "plugin-folder-list",
     "plugin-loop",
+    "plugin-ogg",
     "plugin-shuffle",
     "plugin-volume",
     "plugin-wave",
