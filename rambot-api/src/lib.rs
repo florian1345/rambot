@@ -193,6 +193,20 @@ pub trait AudioSource {
     fn take_child(&mut self) -> Box<dyn AudioSource + Send>;
 }
 
+impl AudioSource for Box<dyn AudioSource + Send> {
+    fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
+        self.as_mut().read(buf)
+    }
+
+    fn has_child(&self) -> bool {
+        self.as_ref().has_child()
+    }
+
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+        self.as_mut().take_child()
+    }
+}
+
 /// A trait for types which can offer a list or enumeration of descriptors,
 /// such as a playlist or loop functionality.
 pub trait AudioSourceList {

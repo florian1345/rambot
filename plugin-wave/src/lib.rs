@@ -169,21 +169,21 @@ impl AudioSourceResolver for WaveAudioSourceResolver {
 
         match spec.sample_format {
             SampleFormat::Float => {
-                Ok(Box::new(FloatWaveAudioSource {
+                Ok(plugin_commons::adapt_sampling_rate(FloatWaveAudioSource {
                     samples: wav_reader.into_samples(),
                     channels: spec.channels
-                }))
+                }, spec.sample_rate))
             },
             SampleFormat::Int => {
                 let bits = spec.bits_per_sample;
                 let max_value = 1u64 << (bits - 1);
                 let factor = 1.0 / max_value as f32;
 
-                Ok(Box::new(IntWaveAudioSource {
+                Ok(plugin_commons::adapt_sampling_rate(IntWaveAudioSource {
                     samples: wav_reader.into_samples(),
                     factor,
                     channels: spec.channels
-                }))
+                }, spec.sample_rate))
             }
         }
     }
