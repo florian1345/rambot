@@ -325,6 +325,29 @@ impl Mixer {
         Ok(())
     }
 
+    /// Skips to the next audio source provided by the list on the layer with
+    /// the given name. If querying the next piece or initiating playback
+    /// fails, an appropriate error is returned.
+    pub fn skip_on_layer(&mut self, layer: &str) -> Result<(), io::Error> {
+
+        // TODO convince the borrow checker that it is ok to use layer_mut
+
+        let index = *self.names.get(layer).unwrap();
+        let layer = self.layers.get_mut(index).unwrap();
+
+        match layer.list.as_mut().map(|l| l.next()) {
+            Some(Ok(Some(next))) => {
+                play_on_layer(layer, &next, &self.plugin_manager)?;
+                Ok(())
+            },
+            Some(Err(e)) => Err(e),
+            Some(Ok(None)) | None => {
+                layer.stop();
+                Ok(())
+            }
+        }
+    }
+
     /// Stops the audio source currently played on the `layer` with the given
     /// name. Returns true if and only if there was something playing on the
     /// layer before. Panics if the layer does not exist.

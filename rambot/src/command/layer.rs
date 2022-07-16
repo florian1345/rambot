@@ -1,4 +1,4 @@
-use crate::command::with_mixer;
+use crate::command::{get_layer_arg, with_mixer};
 
 use serenity::client::Context;
 use serenity::framework::standard::{Args, CommandGroup, CommandResult};
@@ -14,23 +14,11 @@ pub fn get_layer_commands() -> &'static CommandGroup {
     &LAYER_GROUP
 }
 
-async fn get_layer(ctx: &Context, msg: &Message, mut args: Args)
-        -> CommandResult<Option<String>> {
-    let layer = args.single::<String>()?;
-
-    if !args.is_empty() {
-        msg.reply(ctx, "Expected only the layer name.").await?;
-        return Ok(None);
-    }
-
-    Ok(Some(layer))
-}
-
 #[command]
 #[only_in(guilds)]
 #[description("Adds a layer with the given name to the mixer in this guild.")]
 async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(layer) = get_layer(ctx, msg, args).await? {
+    if let Some(layer) = get_layer_arg(ctx, msg, args).await? {
         let added = with_mixer(ctx, msg, move |mut mixer|
             mixer.add_layer(layer)).await;
 
@@ -47,7 +35,7 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description(
     "Removes a layer with the given name from the mixer in this guild.")]
 async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(layer) = get_layer(ctx, msg, args).await? {
+    if let Some(layer) = get_layer_arg(ctx, msg, args).await? {
         let removed = with_mixer(ctx, msg, move |mut mixer|
             mixer.remove_layer(&layer)).await;
 
