@@ -25,7 +25,7 @@ pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 
 #[group]
-#[commands(connect, disconnect, play, stop)]
+#[commands(connect, disconnect, play, skip, stop)]
 struct Root;
 
 pub fn get_root_commands() -> &'static CommandGroup {
@@ -146,6 +146,18 @@ where
     Ok(result)
 }
 
+async fn get_layer_arg(ctx: &Context, msg: &Message, mut args: Args)
+        -> CommandResult<Option<String>> {
+    let layer = args.single::<String>()?;
+
+    if !args.is_empty() {
+        msg.reply(ctx, "Expected only the layer name.").await?;
+        return Ok(None);
+    }
+
+    Ok(Some(layer))
+}
+
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         call: Arc<TokioMutex<Call>>) -> Option<String> {
     let mixer = get_mixer(ctx, msg).await;
@@ -194,6 +206,24 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         },
         None => {
             msg.reply(ctx, "I am not connected to a voice channel").await?;
+        }
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+#[description("Plays the next piece of the list currently played on the given \
+    layer. If the last piece of hte list is active, this stops audio on the \
+    layer.")]
+async fn skip(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if let Some(layer) = get_layer_arg(ctx, msg, args).await? {
+        let result = with_mixer_and_layer(ctx, msg, &layer,
+            |mut mixer| mixer.skip_on_layer(&layer)).await?;
+
+        if let Some(Err(e)) = result {
+            msg.reply(ctx, e).await?;
         }
     }
 
