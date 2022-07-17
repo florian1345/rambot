@@ -145,4 +145,3 @@ fn make_ogg_plugin() -> OggPlugin {
 }
 
 rambot_api::export_plugin!(make_ogg_plugin);
-

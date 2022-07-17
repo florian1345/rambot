@@ -2,6 +2,7 @@
 
 members = [
     "plugin-commons",
+    "plugin-filters",
     "plugin-folder-list",
     "plugin-loop",
     "plugin-ogg",
