@@ -19,7 +19,7 @@ mod button;
 
 use button::BUTTONCMD_GROUP;
 
-#[group]
+#[group("Board")]
 #[prefix("board")]
 #[commands(add, remove, display, list)]
 #[sub_groups(buttoncmd)]

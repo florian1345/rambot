@@ -6,7 +6,7 @@ use serenity::framework::standard::macros::{command, group};
 use serenity::model::channel::ReactionType;
 use serenity::model::prelude::Message;
 
-#[group]
+#[group("Button")]
 #[prefix("button")]
 #[commands(add, description, remove)]
 struct ButtonCmd;
