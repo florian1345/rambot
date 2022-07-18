@@ -1,4 +1,4 @@
-use crate::command::board::with_board_manager_mut;
+use crate::command::board::{with_board_manager_mut, Button};
 
 use serenity::client::Context;
 use serenity::framework::standard::{Args, CommandResult};
@@ -8,8 +8,10 @@ use serenity::model::prelude::Message;
 
 #[group]
 #[prefix("button")]
-#[commands(add, remove)]
-struct Button;
+#[commands(add, description, remove)]
+struct ButtonCmd;
+
+// TODO reduce code duplication among these commands
 
 #[command]
 #[only_in(guilds)]
@@ -24,12 +26,53 @@ async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
     let err = with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
-            if board.buttons.iter().any(|(r, _)| r == &emote) {
+            if board.buttons.iter().any(|btn| &btn.emote == &emote) {
                 Some(format!("Duplicate button: {}.", emote))
             }
             else {
-                board.buttons.push((emote, command));
+                board.buttons.push(Button {
+                    emote,
+                    description: String::new(),
+                    command
+                });
                 None
+            }
+        }
+        else {
+            Some(format!(
+                "I could not find a board with name `{}`.", board_name))
+        }
+    }).await;
+
+    if let Some(err) = err {
+        msg.reply(ctx, err).await?;
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+#[description("Takes as first argument the board name, as second argument an \
+    emote, and as third argument a description, which is assigned to the \
+    button represented by the given emote on the board with the given name. \
+    Omit description to remove it from the button.")]
+async fn description(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let board_name = args.single::<String>()?;
+    let emote = args.single::<ReactionType>()?;
+    let description = args.rest().to_owned();
+
+    let err = with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
+        if let Some(board) = board_mgr.boards.get_mut(&board_name) {
+            let button = board.buttons.iter_mut()
+                .find(|btn| &btn.emote == &emote);
+
+            if let Some(button) = button {
+                button.description = description;
+                None
+            }
+            else {
+                Some(format!("I found no button with the emote {}.", emote))
             }
         }
         else {
@@ -58,7 +101,7 @@ async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
             let old_len = board.buttons.len();
 
-            board.buttons.retain(|b| &b.0 != &emote);
+            board.buttons.retain(|btn| &btn.emote != &emote);
 
             if board.buttons.len() == old_len {
                 Some(format!("I found no button with the emote {}.", emote))
