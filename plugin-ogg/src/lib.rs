@@ -11,9 +11,7 @@ use rambot_api::{
 };
 
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, BufReader, ErrorKind, Read, Seek};
-use std::path::Path;
+use std::io::{self, ErrorKind, Read, Seek};
 
 fn fill<T, I>(slice: &mut [T], iter: I)
 where
@@ -93,16 +91,12 @@ struct OggAudioSourceResolver;
 impl AudioSourceResolver for OggAudioSourceResolver {
 
     fn can_resolve(&self, descriptor: &str) -> bool {
-        // TODO reduce code duplication with plugin-wave
-
-        let extension = descriptor[(descriptor.len() - 4)..].to_lowercase();
-        extension == ".ogg" && Path::new(descriptor).exists()
+        plugin_commons::is_file_with_extension(descriptor, ".ogg")
     }
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let file = File::open(descriptor).map_err(|e| format!("{}", e))?;
-        let reader = BufReader::new(file);
+        let reader = plugin_commons::open_file_buf(descriptor)?;
         let ogg_reader = OggStreamReader::new(reader)
             .map_err(|e| format!("{}", e))?;
         let sampling_rate = ogg_reader.ident_hdr.audio_sample_rate;

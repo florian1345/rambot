@@ -12,9 +12,7 @@ use rambot_api::{
     Sample
 };
 
-use std::fs::File;
-use std::io::{BufReader, ErrorKind, Read, self};
-use std::path::Path;
+use std::io::{ErrorKind, Read, self};
 
 trait FloatSamples {
     fn next(&mut self);
@@ -156,14 +154,12 @@ struct WaveAudioSourceResolver;
 
 impl AudioSourceResolver for WaveAudioSourceResolver {
     fn can_resolve(&self, descriptor: &str) -> bool {
-        let extension = descriptor[(descriptor.len() - 4)..].to_lowercase();
-        extension == ".wav" && Path::new(descriptor).exists()
+        plugin_commons::is_file_with_extension(descriptor, ".wav")
     }
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let file = File::open(descriptor).map_err(|e| format!("{}", e))?;
-        let reader = BufReader::new(file);
+        let reader = plugin_commons::open_file_buf(descriptor)?;
         let wav_reader = WavReader::new(reader).map_err(|e| format!("{}", e))?;
         let spec = wav_reader.spec();
 

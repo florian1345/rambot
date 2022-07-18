@@ -4,6 +4,7 @@ members = [
     "plugin-commons",
     "plugin-filters",
     "plugin-folder-list",
+    "plugin-json-list",
     "plugin-loop",
     "plugin-ogg",
     "plugin-shuffle",
