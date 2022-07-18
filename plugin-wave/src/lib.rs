@@ -2,6 +2,7 @@
 
 use hound::{SampleFormat, WavIntoSamples, WavReader};
 
+use plugin_commons::FileManager;
 use rambot_api::{
     AdapterResolver,
     AudioSource,
@@ -9,7 +10,7 @@ use rambot_api::{
     AudioSourceResolver,
     EffectResolver,
     Plugin,
-    Sample
+    Sample, PluginConfig
 };
 
 use std::io::{ErrorKind, Read, self};
@@ -150,16 +151,18 @@ impl<R: Read> AudioSource for FloatWaveAudioSource<R> {
     }
 }
 
-struct WaveAudioSourceResolver;
+struct WaveAudioSourceResolver {
+    file_manager: FileManager
+}
 
 impl AudioSourceResolver for WaveAudioSourceResolver {
     fn can_resolve(&self, descriptor: &str) -> bool {
-        plugin_commons::is_file_with_extension(descriptor, ".wav")
+        self.file_manager.is_file_with_extension(descriptor, ".wav")
     }
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = plugin_commons::open_file_buf(descriptor)?;
+        let reader = self.file_manager.open_file_buf(descriptor)?;
         let wav_reader = WavReader::new(reader).map_err(|e| format!("{}", e))?;
         let spec = wav_reader.spec();
 
@@ -185,15 +188,20 @@ impl AudioSourceResolver for WaveAudioSourceResolver {
     }
 }
 
-struct WavePlugin;
+struct WavePlugin {
+    file_manager: Option<FileManager>
+}
 
 impl Plugin for WavePlugin {
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
+        self.file_manager = Some(FileManager::new(config));
         Ok(())
     }
 
     fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        vec![Box::new(WaveAudioSourceResolver)]
+        vec![Box::new(WaveAudioSourceResolver {
+            file_manager: self.file_manager.as_ref().unwrap().clone()
+        })]
     }
 
     fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
@@ -211,7 +219,9 @@ impl Plugin for WavePlugin {
 }
 
 fn make_wave_plugin() -> WavePlugin {
-    WavePlugin
+    WavePlugin {
+        file_manager: None
+    }
 }
 
 rambot_api::export_plugin!(make_wave_plugin);

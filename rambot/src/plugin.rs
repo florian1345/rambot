@@ -5,7 +5,7 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin, AudioSourceList, AdapterResolver
+    Plugin, AudioSourceList, AdapterResolver, PluginConfig
 };
 
 use serenity::prelude::TypeMapKey;
@@ -16,6 +16,8 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use crate::config::Config;
 
 #[derive(Debug)]
 pub enum LoadPluginsError {
@@ -81,7 +83,7 @@ pub struct PluginManager {
 
 impl PluginManager {
 
-    pub fn new(directory: &str) -> Result<PluginManager, LoadPluginsError> {
+    pub fn new(config: &Config) -> Result<PluginManager, LoadPluginsError> {
         let mut plugin_manager = PluginManager {
             audio_source_resolvers: Vec::new(),
             audio_source_list_resolvers: Vec::new(),
@@ -90,7 +92,7 @@ impl PluginManager {
             loaded_libraries: Vec::new()
         };
 
-        for dir_entry in fs::read_dir(directory)? {
+        for dir_entry in fs::read_dir(config.plugin_directory())? {
             let dir_entry = dir_entry?;
             let file_type = dir_entry.file_type()?;
 
@@ -98,7 +100,8 @@ impl PluginManager {
                 // TODO this is probably truly unsafe -- how to contain?
 
                 unsafe {
-                    plugin_manager.load_plugin(dir_entry.path())?;
+                    plugin_manager.load_plugin(
+                        dir_entry.path(), config.plugin_config())?;
                 }
             }
         }
@@ -113,7 +116,7 @@ impl PluginManager {
         Ok(plugin_manager)
     }
 
-    unsafe fn load_plugin(&mut self, path: PathBuf)
+    unsafe fn load_plugin(&mut self, path: PathBuf, config: &PluginConfig)
             -> Result<(), LoadPluginsError> {
         type CreatePlugin = unsafe fn() -> *mut dyn Plugin;
         
@@ -122,9 +125,9 @@ impl PluginManager {
         let lib = self.loaded_libraries.last().unwrap();
         let create_plugin: Symbol<CreatePlugin> = lib.get(b"_create_plugin")?;
         let raw = create_plugin();
-        let plugin: Box<dyn Plugin> = Box::from_raw(raw);
+        let mut plugin: Box<dyn Plugin> = Box::from_raw(raw);
 
-        if let Err(msg) = plugin.load_plugin() {
+        if let Err(msg) = plugin.load_plugin(config) {
             return Err(LoadPluginsError::InitError(msg));
         }
 

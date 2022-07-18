@@ -1,3 +1,5 @@
+use plugin_commons::FileManager;
+
 use std::collections::VecDeque;
 use std::io;
 
@@ -7,7 +9,8 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin
+    Plugin,
+    PluginConfig
 };
 
 struct JsonAudioSourceList {
@@ -20,17 +23,19 @@ impl AudioSourceList for JsonAudioSourceList {
     }
 }
 
-struct JsonAudioSourceListResolver;
+struct JsonAudioSourceListResolver {
+    file_manager: FileManager
+}
 
 impl AudioSourceListResolver for JsonAudioSourceListResolver {
 
     fn can_resolve(&self, descriptor: &str) -> bool {
-        plugin_commons::is_file_with_extension(descriptor, ".json")
+        self.file_manager.is_file_with_extension(descriptor, ".json")
     }
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSourceList + Send>, String> {
-        let reader = plugin_commons::open_file_buf(descriptor)?;
+        let reader = self.file_manager.open_file_buf(descriptor)?;
         let audio_sources: Vec<String> = serde_json::from_reader(reader)
             .map_err(|e| format!("{}", e))?;
 
@@ -40,11 +45,14 @@ impl AudioSourceListResolver for JsonAudioSourceListResolver {
     }
 }
 
-struct JsonListPlugin;
+struct JsonListPlugin {
+    file_manager: Option<FileManager>
+}
 
 impl Plugin for JsonListPlugin {
 
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
+        self.file_manager = Some(FileManager::new(config));
         Ok(())
     }
 
@@ -58,7 +66,9 @@ impl Plugin for JsonListPlugin {
 
     fn audio_source_list_resolvers(&self)
             -> Vec<Box<dyn AudioSourceListResolver>> {
-        vec![Box::new(JsonAudioSourceListResolver)]
+        vec![Box::new(JsonAudioSourceListResolver {
+            file_manager: self.file_manager.as_ref().unwrap().clone()
+        })]
     }
 
     fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
@@ -67,7 +77,9 @@ impl Plugin for JsonListPlugin {
 }
 
 fn make_json_list_plugin() -> JsonListPlugin {
-    JsonListPlugin
+    JsonListPlugin {
+        file_manager: None
+    }
 }
 
 rambot_api::export_plugin!(make_json_list_plugin);

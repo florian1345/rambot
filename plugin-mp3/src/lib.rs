@@ -1,5 +1,7 @@
 use minimp3::{self, Decoder, Frame};
 
+use plugin_commons::FileManager;
+
 use rambot_api::{
     AdapterResolver,
     AudioSource,
@@ -7,6 +9,7 @@ use rambot_api::{
     AudioSourceResolver,
     EffectResolver,
     Plugin,
+    PluginConfig,
     Sample
 };
 
@@ -95,17 +98,19 @@ impl<R: Read + Seek> AudioSource for Mp3AudioSource<R> {
     }
 }
 
-struct Mp3AudioSourceResolver;
+struct Mp3AudioSourceResolver {
+    file_manager: FileManager
+}
 
 impl AudioSourceResolver for Mp3AudioSourceResolver {
 
     fn can_resolve(&self, descriptor: &str) -> bool {
-        plugin_commons::is_file_with_extension(descriptor, ".mp3")
+        self.file_manager.is_file_with_extension(descriptor, ".mp3")
     }
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = plugin_commons::open_file_buf(descriptor)?;
+        let reader = self.file_manager.open_file_buf(descriptor)?;
         let decoder = Decoder::new(reader);
         let mut frames = FrameIterator {
             decoder
@@ -123,16 +128,21 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
     }
 }
 
-struct Mp3Plugin;
+struct Mp3Plugin {
+    file_manager: Option<FileManager>
+}
 
 impl Plugin for Mp3Plugin {
 
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
+        self.file_manager = Some(FileManager::new(config));
         Ok(())
     }
 
     fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        vec![Box::new(Mp3AudioSourceResolver)]
+        vec![Box::new(Mp3AudioSourceResolver {
+            file_manager: self.file_manager.as_ref().unwrap().clone()
+        })]
     }
 
     fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
@@ -150,7 +160,9 @@ impl Plugin for Mp3Plugin {
 }
 
 fn make_mp3_plugin() -> Mp3Plugin {
-    Mp3Plugin
+    Mp3Plugin {
+        file_manager: None
+    }
 }
 
 rambot_api::export_plugin!(make_mp3_plugin);
