@@ -162,6 +162,32 @@ where
     Ok(())
 }
 
+fn reapply_effects_after_removal<P>(layer: &mut Layer,
+    first_removed_idx: usize, total_removed: usize, plugin_manager: &P)
+    -> Result<(), ResolveError>
+where
+    P: AsRef<PluginManager>
+{
+    if let Some(mut source) = layer.source.take() {
+        // TODO find a way to recover the audio source if this fails
+
+        let old_len = layer.effects.len() + total_removed;
+
+        for _ in 0..(old_len - first_removed_idx) {
+            source = source.take_child();
+        }
+
+        for old_effect in &layer.effects[first_removed_idx..] {
+            source = plugin_manager.as_ref().resolve_effect(
+                &old_effect.name, &old_effect.key_values, source)?;
+        }
+
+        layer.source = Some(source);
+    }
+
+    Ok(())
+}
+
 impl Mixer {
 
     /// Creates a new mixer without layers.
@@ -229,6 +255,11 @@ impl Mixer {
         self.layers.iter().map(|l| &l.source).any(Option::is_some)
     }
 
+    pub fn layer(&self, layer: &str) -> &Layer {
+        let index = *self.names.get(layer).unwrap();
+        self.layers.get(index).unwrap()
+    }
+
     fn layer_mut(&mut self, layer: &str) -> &mut Layer {
         let index = *self.names.get(layer).unwrap();
         self.layers.get_mut(index).unwrap()
@@ -241,32 +272,23 @@ impl Mixer {
         let index = *self.names.get(layer).unwrap();
         let layer = self.layers.get_mut(index).unwrap();
 
-        if let Some(mut source) = layer.source.take() {
-            if self.plugin_manager.is_effect_unique(&descriptor.name) {
-                // We need to remove the old effect of the same name
+        if self.plugin_manager.is_effect_unique(&descriptor.name) {
+            // We need to remove the old effect of the same name
 
-                let idx = layer.effects.iter().enumerate()
-                    .find(|(_, e)| &e.name == &descriptor.name)
-                    .map(|(i, _)| i);
+            let removed_idx = layer.effects.iter().enumerate()
+                .find(|(_, e)| &e.name == &descriptor.name)
+                .map(|(i, _)| i);
 
-                if let Some(idx) = idx {
-                    // TODO check whether relying on children being present is OK
-
-                    for _ in idx..layer.effects.len() {
-                        source = source.take_child();
-                    }
-
-                    layer.effects.remove(idx);
-
-                    for old_effect in &layer.effects[idx..] {
-                        source = self.plugin_manager.resolve_effect(
-                            &old_effect.name, &old_effect.key_values, source)?;
-                    }
-                }
+            if let Some(idx) = removed_idx {
+                layer.effects.remove(idx);
+                reapply_effects_after_removal(
+                    layer, idx, 1, &self.plugin_manager)?;
             }
+        }
 
+        if let Some(source) = layer.source.take() {
             // TODO find a way to recover the audio source if this fails
-
+            
             layer.source = Some(self.plugin_manager.resolve_effect(
                 &descriptor.name, &descriptor.key_values, source)?);
         }
@@ -275,7 +297,7 @@ impl Mixer {
         Ok(())
     }
 
-    pub fn clear_effects(&mut self, layer: &str) {
+    pub fn clear_effects(&mut self, layer: &str) -> usize {
         let layer = self.layer_mut(layer);
 
         if let Some(mut source) = layer.source.take() {
@@ -286,7 +308,46 @@ impl Mixer {
             layer.source = Some(source);
         }
 
+        let old_len = layer.effects.len();
         layer.effects.clear();
+        old_len
+    }
+
+    /// Removes all effects from the `layer` with the given name that do not
+    /// match the given `predicate`.
+    pub fn retain_effects<P>(&mut self, layer: &str, mut predicate: P)
+        -> Result<usize, ResolveError>
+    where
+        P: FnMut(&KeyValueDescriptor) -> bool
+    {
+        // TODO convince the borrow checker that it is ok to use layer_mut
+
+        let index = *self.names.get(layer).unwrap();
+        let layer = self.layers.get_mut(index).unwrap();
+
+        let mut index = 0;
+        let mut first_removed_idx = None;
+        let old_len = layer.effects.len();
+
+        layer.effects.retain(|descriptor| {
+            if predicate(descriptor) {
+                index += 1;
+                true
+            }
+            else {
+                first_removed_idx.get_or_insert(index);
+                false
+            }
+        });
+
+        let total_removed = old_len - layer.effects.len();
+
+        if let Some(first_removed_idx) = first_removed_idx {
+            reapply_effects_after_removal(layer, first_removed_idx,
+                total_removed, &self.plugin_manager)?;
+        }
+
+        Ok(total_removed)
     }
 
     pub fn add_adapter(&mut self, layer: &str,
@@ -294,8 +355,23 @@ impl Mixer {
         self.layer_mut(layer).adapters.push(descriptor);
     }
 
-    pub fn clear_adapters(&mut self, layer: &str) {
-        self.layer_mut(layer).adapters.clear();
+    pub fn clear_adapters(&mut self, layer: &str) -> usize {
+        let layer = self.layer_mut(layer);
+        let old_len = layer.adapters.len();
+        layer.adapters.clear();
+        old_len
+    }
+
+    /// Removes all adapters from the `layer` with the given name that do not
+    /// match the given `predicate`.
+    pub fn retain_adapters<P>(&mut self, layer: &str, predicate: P) -> usize
+    where
+        P: FnMut(&KeyValueDescriptor) -> bool
+    {
+        let layer = self.layer_mut(layer);
+        let old_len = layer.adapters.len();
+        layer.adapters.retain(predicate);
+        old_len - layer.adapters.len()
     }
 
     /// Plays audio given some `descriptor` on the `layer` with the given name.
