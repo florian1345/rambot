@@ -1,7 +1,10 @@
 use rambot_api::{AudioSource, Sample};
 
+use std::fs::File;
 use std::io;
+use std::io::BufReader;
 use std::mem;
+use std::path::Path;
 
 struct ResamplingAudioSource<S> {
     base: S,
@@ -99,4 +102,32 @@ where
             fraction: 0.0
         })
     }
+}
+
+/// Determines whether the given descriptor is the path of a file that has the
+/// given extension. This is a common operation among plugins that read files,
+/// as it is necessary for the implementation of various `can_resolve` methods.
+///
+/// # Arguments
+///
+/// * `descriptor`: The descriptor to check.
+/// * `extension`: The required extension (including the period) in lower case.
+///
+/// # Returns
+///
+/// True if and only if the descriptor represents a file with the given
+/// extension.
+pub fn is_file_with_extension(descriptor: &str, extension: &str) -> bool {
+    let file_extension = descriptor[(descriptor.len() - extension.len())..]
+        .to_lowercase();
+
+    file_extension == extension && Path::new(descriptor).exists()
+}
+
+/// Utility function for opening a file and wrapping it in a [BufReader]. Any
+/// error is converted into a string to allow this function to be used inside
+/// various `resolve` methods.
+pub fn open_file_buf(file: &str) -> Result<BufReader<File>, String> {
+    let file = File::open(file).map_err(|e| format!("{}", e))?;
+    Ok(BufReader::new(file))
 }
