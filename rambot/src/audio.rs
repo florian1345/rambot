@@ -437,6 +437,8 @@ impl Mixer {
     pub fn stop_all(&mut self) -> bool {
         self.layers.iter_mut()
             .map(Layer::stop)
+            .collect::<Vec<_>>() // Avoid short circuiting
+            .into_iter()
             .any(|x| x)
     }
 
@@ -453,57 +455,57 @@ impl AudioSource for Mixer {
         let mut size = usize::MAX;
         let mut active_layers = Vec::new();
 
-        'outer:
         for layer in self.layers.iter_mut() {
-            if layer.active() {
-                if layer.buffer.active_len < buf.len() {
-                    layer.buffer.extend_capacity(buf.len());
-                }
+            if !layer.active() {
+                continue;
+            }
+
+            if layer.buffer.active_len < buf.len() {
+                layer.buffer.extend_capacity(buf.len());
 
                 while let Some(source) = &mut layer.source {
                     let inactive_len = buf.len() - layer.buffer.active_len;
                     let inactive_slice =
                         layer.buffer.inactive_slice(inactive_len);
                     let sample_count = source.read(inactive_slice)?;
-
+    
                     layer.buffer.active_len += sample_count;
-
+    
                     if sample_count == 0 {
                         if let Some(list) = &mut layer.list {
                             if let Some(next) = list.next()? {
                                 // Audio source ran out but list continues
-
+    
                                 play_on_layer(
                                     layer, &next, &self.plugin_manager)?;
                             }
                             else {
                                 // Audio source ran out list is finished
-
+    
                                 layer.list = None;
                                 layer.source = None;
                             }
                         }
                         else {
                             // Audio source ran out and there is no list
-    
+        
                             layer.source = None;
-                        }
-
-                        if layer.source.is_none() &&
-                                layer.buffer.active_len == 0 {
-                            // Inactive layer
-
-                            continue 'outer;
                         }
                     }
                     else {
                         break;
                     }
                 }
-
-                size = size.min(layer.buffer.active_len);
-                active_layers.push(layer);
             }
+
+            // The layer may have been deactivated just now, so we check again
+
+            if !layer.active() {
+                continue;
+            }
+
+            size = size.min(layer.buffer.active_len);
+            active_layers.push(layer);
         }
 
         if size == usize::MAX {
