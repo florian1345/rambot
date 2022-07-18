@@ -6,6 +6,7 @@ members = [
     "plugin-folder-list",
     "plugin-json-list",
     "plugin-loop",
+    "plugin-mp3",
     "plugin-ogg",
     "plugin-shuffle",
     "plugin-volume",

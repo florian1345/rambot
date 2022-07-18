@@ -23,8 +23,9 @@ impl<S> ResamplingAudioSource<S> {
     }
 }
 
-impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
-    fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
+impl<S: AudioSource> ResamplingAudioSource<S> {
+    fn read_maybe_zero(&mut self, buf: &mut [Sample])
+            -> Result<Option<usize>, io::Error> {
         let required_base_buf_len =
             (buf.len() as f64 * self.step + self.fraction + 2.0)
                 .floor() as usize;
@@ -35,10 +36,11 @@ impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
             }
         }
 
-        let base_sample_count = self.base.read(&mut self.buf[1..required_base_buf_len])?;
+        let base_sample_count =
+            self.base.read(&mut self.buf[1..required_base_buf_len])?;
 
         if base_sample_count == 0 {
-            return Ok(0);
+            return Ok(None);
         }
 
         let sample_count =
@@ -55,7 +57,22 @@ impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
         self.fraction =
             (self.fraction + sample_count as f64 * self.step).fract();
 
-        Ok(sample_count)
+        Ok(Some(sample_count))
+    }
+}
+
+impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
+    fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
+        loop {
+            if let Some(count) = self.read_maybe_zero(buf)? {
+                if count > 0 {
+                    return Ok(count);
+                }
+            }
+            else {
+                return Ok(0);
+            }
+        }
     }
 
     fn has_child(&self) -> bool {
