@@ -1,3 +1,4 @@
+use crate::FrameworkTypeMapKey;
 use crate::audio::{Mixer, PCMRead};
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildStateGuard};
@@ -28,7 +29,7 @@ pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 
 #[group]
-#[commands(connect, disconnect, play, skip, stop)]
+#[commands(connect, disconnect, cmd_do, play, skip, stop)]
 struct Root;
 
 pub fn get_root_commands() -> &'static CommandGroup {
@@ -287,6 +288,24 @@ async fn stop(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
     if let Some(reply) = reply {
         msg.reply(ctx, reply).await?;
+    }
+
+    Ok(())
+}
+
+#[command("do")]
+#[only_in(guilds)]
+#[description("Takes as input a list of quoted strings separated by spaces. \
+    These are then executed as commands in order.")]
+async fn cmd_do(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    let commands = args.raw_quoted().collect::<Vec<_>>();
+    let framework = Arc::clone(
+        ctx.data.read().await.get::<FrameworkTypeMapKey>().unwrap());
+
+    for command in commands {
+        let mut msg = msg.clone();
+        msg.content = command.to_owned();
+        framework.dispatch(ctx.clone(), msg).await;
     }
 
     Ok(())
