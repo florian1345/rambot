@@ -39,6 +39,50 @@ pub struct KeyValueDescriptor {
     pub key_values: HashMap<String, String>
 }
 
+fn fmt_string(f: &mut Formatter<'_>, s: &str) -> fmt::Result {
+    if s.chars().any(is_delimiter) || s.starts_with('\"') {
+        write!(f, "\"")?;
+
+        for c in s.chars() {
+            if is_delimiter(c) {
+                write!(f, "\\{}", c)?;
+            }
+            else {
+                write!(f, "{}", c)?;
+            }
+        }
+
+        write!(f, "\"")
+    }
+    else {
+        write!(f, "{}", s)
+    }
+}
+
+impl Display for KeyValueDescriptor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.name)?;
+
+        if self.key_values.len() > 0 {
+            write!(f, "(")?;
+
+            for (i, (k, v)) in self.key_values.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ",")?;
+                }
+
+                fmt_string(f, k)?;
+                write!(f, "=")?;
+                fmt_string(f, v)?;
+            }
+
+            write!(f, ")")?;
+        }
+
+        Ok(())
+    }
+}
+
 impl FromStr for KeyValueDescriptor {
     type Err = ParseKeyValueDescriptorError;
 

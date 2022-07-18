@@ -1,5 +1,6 @@
 use crate::FrameworkTypeMapKey;
-use crate::audio::{Mixer, PCMRead};
+use crate::audio::{Mixer, PCMRead, Layer};
+use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildStateGuard};
 
@@ -306,6 +307,36 @@ async fn cmd_do(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         let mut msg = msg.clone();
         msg.content = command.to_owned();
         framework.dispatch(ctx.clone(), msg).await;
+    }
+
+    Ok(())
+}
+
+async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,
+    mut args: Args, name_plural_capital: &str, get: F) -> CommandResult
+where
+    F: FnOnce(&Layer) -> &[KeyValueDescriptor]
+{
+    let layer = args.single::<String>()?;
+
+    if !args.is_empty() {
+        msg.reply(ctx, "Expected only the layer name.").await?;
+    }
+
+    let descriptors = with_mixer_and_layer(ctx, msg, &layer, |mixer|
+        get(mixer.layer(&layer)).iter()
+            .map(|e| format!("{}", e))
+            .collect::<Vec<_>>()).await?;
+
+    if let Some(descriptors) = descriptors {
+        let mut reply =
+            format!("{} on layer `{}`:", name_plural_capital, &layer);
+
+        for (i, descriptor) in descriptors.iter().enumerate() {
+            reply.push_str(&format!("\n{}. {}", i + 1, descriptor));
+        }
+
+        msg.reply(ctx, reply).await?;
     }
 
     Ok(())
