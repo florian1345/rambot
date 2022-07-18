@@ -4,12 +4,13 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin
+    Plugin,
+    PluginConfig
 };
 
 use std::fs::{self, ReadDir};
 use std::io::{self, ErrorKind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 struct FolderList {
     path: PathBuf,
@@ -35,7 +36,9 @@ impl AudioSourceList for FolderList {
     }
 }
 
-struct FolderListResolver;
+struct FolderListResolver {
+    root: String
+}
 
 impl AudioSourceListResolver for FolderListResolver {
     fn can_resolve(&self, descriptor: &str) -> bool {
@@ -47,7 +50,7 @@ impl AudioSourceListResolver for FolderListResolver {
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSourceList + Send>, String> {
-        let path = PathBuf::from(descriptor);
+        let path = Path::new(&self.root).join(descriptor);
         let read_dir = fs::read_dir(&path).map_err(|e| format!("{}", e))?;
         Ok(Box::new(FolderList {
             path,
@@ -56,11 +59,14 @@ impl AudioSourceListResolver for FolderListResolver {
     }
 }
 
-struct FolderListPlugin;
+struct FolderListPlugin {
+    root: String
+}
 
 impl Plugin for FolderListPlugin {
 
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
+        self.root = config.root_directory().to_owned();
         Ok(())
     }
 
@@ -74,7 +80,9 @@ impl Plugin for FolderListPlugin {
 
     fn audio_source_list_resolvers(&self)
             -> Vec<Box<dyn AudioSourceListResolver>> {
-        vec![Box::new(FolderListResolver)]
+        vec![Box::new(FolderListResolver {
+            root: self.root.clone()
+        })]
     }
 
     fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
@@ -83,7 +91,9 @@ impl Plugin for FolderListPlugin {
 }
 
 fn make_folder_list_plugin() -> FolderListPlugin {
-    FolderListPlugin
+    FolderListPlugin {
+        root: String::new()
+    }
 }
 
 rambot_api::export_plugin!(make_folder_list_plugin);

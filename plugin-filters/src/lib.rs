@@ -9,7 +9,8 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin
+    Plugin,
+    PluginConfig
 };
 
 use std::collections::HashMap;
@@ -65,7 +66,7 @@ impl EffectResolver for InvGaussianEffectResolver {
 struct FiltersPlugin;
 
 impl Plugin for FiltersPlugin {
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, _config: &PluginConfig) -> Result<(), String> {
         Ok(())
     }
 

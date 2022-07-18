@@ -1,4 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
+use std::env;
 use std::io;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
@@ -152,6 +155,50 @@ impl Div<f32> for &Sample {
     }
 }
 
+const DEFAULT_ALLOW_WEB_ACCESS: bool = true;
+
+/// Configuration information that is potentially relevant to plugins, but not
+/// the bot itself. It is passed to the plugins during initialization. It is
+/// their responsibility to act according to this config.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct PluginConfig {
+    root_directory: String,
+    allow_web_access: bool
+}
+
+impl PluginConfig {
+
+    /// Creates a new, default plugin config. The root directory is initialized
+    /// to the current working directory. Getting this may fail, hence this
+    /// method may return an IO-[Error](io::Error).
+    pub fn default() -> Result<PluginConfig, io::Error> {
+        let root_directory = env::current_dir()?
+            .as_os_str()
+            .to_str()
+            .unwrap()
+            .to_owned();
+
+        Ok(PluginConfig {
+            root_directory,
+            allow_web_access: DEFAULT_ALLOW_WEB_ACCESS 
+        })
+    }
+
+    /// The path of the directory to use as a root for file system operations,
+    /// such as opening audio files. All paths should be interpreted relative
+    /// to this root and no files outside this directory should be read, for
+    /// security reasons.
+    pub fn root_directory(&self) -> &str {
+        &self.root_directory
+    }
+
+    /// Indicates whether plugins should access the internet. Currently, it is
+    /// the plugins' responsibility to enforce this constraint.
+    pub fn allow_web_access(&self) -> bool {
+        self.allow_web_access
+    }
+}
+
 /// A trait for types which can read audio data in the form of [Sample]s. The
 /// interface is similar to that of the IO [Read](std::io::Read) trait.
 pub trait AudioSource {
@@ -281,8 +328,8 @@ pub trait AdapterResolver : Send + Sync {
         -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 
-pub trait Plugin : std::any::Any + Send + Sync {
-    fn load_plugin(&self) -> Result<(), String>;
+pub trait Plugin : Send + Sync {
+    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String>;
 
     fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>>;
 

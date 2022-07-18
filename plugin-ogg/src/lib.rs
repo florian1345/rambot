@@ -1,5 +1,7 @@
 use lewton::inside_ogg::OggStreamReader;
 
+use plugin_commons::FileManager;
+
 use rambot_api::{
     AdapterResolver,
     AudioSource,
@@ -7,6 +9,7 @@ use rambot_api::{
     AudioSourceResolver,
     EffectResolver,
     Plugin,
+    PluginConfig,
     Sample
 };
 
@@ -86,17 +89,19 @@ impl<R: Read + Seek> AudioSource for OggAudioSource<R> {
     }
 }
 
-struct OggAudioSourceResolver;
+struct OggAudioSourceResolver {
+    file_manager: FileManager
+}
 
 impl AudioSourceResolver for OggAudioSourceResolver {
 
     fn can_resolve(&self, descriptor: &str) -> bool {
-        plugin_commons::is_file_with_extension(descriptor, ".ogg")
+        self.file_manager.is_file_with_extension(descriptor, ".ogg")
     }
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = plugin_commons::open_file_buf(descriptor)?;
+        let reader = self.file_manager.open_file_buf(descriptor)?;
         let ogg_reader = OggStreamReader::new(reader)
             .map_err(|e| format!("{}", e))?;
         let sampling_rate = ogg_reader.ident_hdr.audio_sample_rate;
@@ -108,16 +113,21 @@ impl AudioSourceResolver for OggAudioSourceResolver {
     }
 }
 
-struct OggPlugin;
+struct OggPlugin {
+    file_manager: Option<FileManager>
+}
 
 impl Plugin for OggPlugin {
 
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
+        self.file_manager = Some(FileManager::new(config));
         Ok(())
     }
 
     fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        vec![Box::new(OggAudioSourceResolver)]
+        vec![Box::new(OggAudioSourceResolver {
+            file_manager: self.file_manager.as_ref().unwrap().clone()
+        })]
     }
 
     fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
@@ -135,7 +145,9 @@ impl Plugin for OggPlugin {
 }
 
 fn make_ogg_plugin() -> OggPlugin {
-    OggPlugin
+    OggPlugin {
+        file_manager: None
+    }
 }
 
 rambot_api::export_plugin!(make_ogg_plugin);

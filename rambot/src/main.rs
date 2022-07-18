@@ -63,7 +63,7 @@ async fn main() {
 
     log::info!("Successfully loaded config file.");
 
-    let plugin_mgr = match PluginManager::new(config.plugin_directory()) {
+    let plugin_mgr = match PluginManager::new(&config) {
         Ok(m) => m,
         Err(e) => {
             log::error!("{}", e);

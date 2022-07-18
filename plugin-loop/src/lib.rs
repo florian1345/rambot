@@ -4,7 +4,8 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin
+    Plugin,
+    PluginConfig
 };
 
 use std::collections::HashMap;
@@ -58,7 +59,7 @@ impl AdapterResolver for LoopAdapterResolver {
 struct LoopPlugin;
 
 impl Plugin for LoopPlugin {
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, _config: &PluginConfig) -> Result<(), String> {
         Ok(())
     }
 

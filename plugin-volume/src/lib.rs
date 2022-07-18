@@ -5,7 +5,8 @@ use rambot_api::{
     AudioSourceResolver,
     EffectResolver,
     Plugin,
-    Sample
+    Sample,
+    PluginConfig
 };
 
 use std::{io, collections::HashMap};
@@ -64,7 +65,7 @@ impl EffectResolver for VolumeEffectResolver {
 struct VolumePlugin;
 
 impl Plugin for VolumePlugin {
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, _config: &PluginConfig) -> Result<(), String> {
         Ok(())
     }
 

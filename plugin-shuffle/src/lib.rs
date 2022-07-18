@@ -4,7 +4,8 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin
+    Plugin,
+    PluginConfig
 };
 
 use rand::{Rng, SeedableRng};
@@ -79,7 +80,7 @@ impl AdapterResolver for ShuffleAdapterResolver {
 struct ShufflePlugin;
 
 impl Plugin for ShufflePlugin {
-    fn load_plugin(&self) -> Result<(), String> {
+    fn load_plugin(&mut self, _config: &PluginConfig) -> Result<(), String> {
         Ok(())
     }
 
