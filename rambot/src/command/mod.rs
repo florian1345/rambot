@@ -1,12 +1,13 @@
 use crate::audio::{Mixer, PCMRead};
 use crate::plugin::PluginManager;
-use crate::state::State;
+use crate::state::{State, GuildStateGuard};
 
 use rambot_api::AudioSource;
 
 use serenity::client::Context;
 use serenity::framework::standard::{Args, CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
+use serenity::model::id::GuildId;
 use serenity::model::prelude::Message;
 
 use songbird::Call;
@@ -17,10 +18,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod adapter;
+pub mod board;
 pub mod effect;
 pub mod layer;
 
 pub use adapter::get_adapter_commands;
+pub use board::get_board_commands;
 pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 
@@ -111,18 +114,24 @@ async fn get_mixer(ctx: &Context, msg: &Message)
     state.guild_state(msg.guild_id.unwrap(), plugin_manager).mixer()
 }
 
-async fn with_mixer<T, F>(ctx: &Context, msg: &Message, f: F) -> T
+async fn with_guild_state<T, F>(ctx: &Context, guild_id: GuildId, f: F) -> T
 where
-    F: FnOnce(MutexGuard<Mixer>) -> T
+    F: FnOnce(GuildStateGuard) -> T
 {
     let mut data_guard = ctx.data.write().await;
     let plugin_manager =
         Arc::clone(data_guard.get::<PluginManager>().unwrap());
     let state = data_guard.get_mut::<State>().unwrap();
-    let guild_state =
-        state.guild_state_mut(msg.guild_id.unwrap(), plugin_manager);
-    let mixer = guild_state.mixer();
-    f(mixer.lock().unwrap())
+    let guild_state = state.guild_state_mut(guild_id, plugin_manager);
+    f(guild_state)
+}
+
+async fn with_mixer<T, F>(ctx: &Context, msg: &Message, f: F) -> T
+where
+    F: FnOnce(MutexGuard<Mixer>) -> T
+{
+    with_guild_state(ctx, msg.guild_id.unwrap(),
+        |gs| f(gs.mixer().lock().unwrap())).await
 }
 
 async fn with_mixer_and_layer<T, F>(ctx: &Context, msg: &Message, layer: &str,
@@ -146,16 +155,22 @@ where
     Ok(result)
 }
 
-async fn get_layer_arg(ctx: &Context, msg: &Message, mut args: Args)
-        -> CommandResult<Option<String>> {
+async fn get_single_string_arg(ctx: &Context, msg: &Message, mut args: Args,
+        multi_err: &str) -> CommandResult<Option<String>> {
     let layer = args.single::<String>()?;
 
     if !args.is_empty() {
-        msg.reply(ctx, "Expected only the layer name.").await?;
+        msg.reply(ctx, multi_err).await?;
         return Ok(None);
     }
 
     Ok(Some(layer))
+}
+
+async fn get_layer_arg(ctx: &Context, msg: &Message, args: Args)
+        -> CommandResult<Option<String>> {
+    get_single_string_arg(ctx, msg, args, "Expected only the layer name.")
+        .await
 }
 
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,

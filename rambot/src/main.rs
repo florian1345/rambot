@@ -1,8 +1,10 @@
+use crate::command::board::BoardButtonEventHandler;
 use crate::config::Config;
 use crate::plugin::PluginManager;
 use crate::state::State;
 
 use serenity::client::{Client, Context};
+use serenity::framework::Framework;
 use serenity::framework::standard::{
     Args,
     CommandGroup,
@@ -13,6 +15,7 @@ use serenity::framework::standard::{
 };
 use serenity::framework::standard::macros::help;
 use serenity::model::prelude::{Message, UserId};
+use serenity::prelude::TypeMapKey;
 
 use songbird::SerenityInit;
 
@@ -26,6 +29,14 @@ pub mod key_value;
 pub mod logging;
 pub mod plugin;
 pub mod state;
+
+pub type FrameworkArc = Arc<Box<dyn Framework + Send + Sync + 'static>>;
+
+pub struct FrameworkTypeMapKey;
+
+impl TypeMapKey for FrameworkTypeMapKey {
+    type Value = FrameworkArc;
+}
 
 #[help]
 async fn print_help(ctx: &Context, msg: &Message, args: Args,
@@ -74,18 +85,25 @@ async fn main() {
     log::info!("Successfully loaded state for {} guilds.",
         state.guild_count());
 
-    let framework = StandardFramework::new()
-        .configure(|c| c.prefix(config.prefix()))
-        .group(command::get_root_commands())
-        .group(command::get_adapter_commands())
-        .group(command::get_effect_commands())
-        .group(command::get_layer_commands())
-        .help(&PRINT_HELP);
+    // We need to keep the framework, as sound boards need to be able to submit
+    // commands programatically.
+
+    let framework: FrameworkArc =
+        Arc::new(Box::new(StandardFramework::new()
+            .configure(|c| c.prefix(config.prefix()))
+            .group(command::get_root_commands())
+            .group(command::get_adapter_commands())
+            .group(command::get_board_commands())
+            .group(command::get_effect_commands())
+            .group(command::get_layer_commands())
+            .help(&PRINT_HELP)));
     let client_res = Client::builder(config.token())
-        .framework(framework)
+        .framework_arc(Arc::clone(&framework))
+        .event_handler(BoardButtonEventHandler)
         .type_map_insert::<PluginManager>(plugin_mgr)
         .type_map_insert::<Config>(config)
         .type_map_insert::<State>(state)
+        .type_map_insert::<FrameworkTypeMapKey>(framework)
         .register_songbird()
         .await;
     let mut client = match client_res {

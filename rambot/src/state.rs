@@ -1,4 +1,5 @@
 use crate::audio::Mixer;
+use crate::command::board::{BoardManager, Board};
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 
@@ -18,7 +19,8 @@ use std::sync::{Arc, Mutex};
 
 /// The bot's state for one specific guild.
 pub struct GuildState {
-    mixer: Arc<Mutex<Mixer>>
+    mixer: Arc<Mutex<Mixer>>,
+    board_manager: BoardManager
 }
 
 impl GuildState {
@@ -26,15 +28,16 @@ impl GuildState {
         log::info!("New guild state created.");
 
         GuildState {
-            mixer: Arc::new(Mutex::new(Mixer::new(plugin_manager)))
+            mixer: Arc::new(Mutex::new(Mixer::new(plugin_manager))),
+            board_manager: BoardManager::new()
         }
     }
 
-    fn new_with_mixer(plugin_manager: Arc<PluginManager>,
-            serde: SerdeMixer) -> GuildState {
+    fn from_serde(plugin_manager: Arc<PluginManager>,
+            serde: SerdeGuildState) -> GuildState {
         let mut mixer = Mixer::new(plugin_manager);
         
-        for layer in serde.layers {
+        for layer in serde.mixer.layers {
             mixer.add_layer(&layer.name);
 
             for effect in layer.effects {
@@ -45,9 +48,16 @@ impl GuildState {
                 mixer.add_adapter(&layer.name, adapter);
             }
         }
+
+        let mut board_manager = BoardManager::new();
+
+        for board in serde.boards {
+            board_manager.add_board(board);
+        }
         
         GuildState {
-            mixer: Arc::new(Mutex::new(mixer))
+            mixer: Arc::new(Mutex::new(mixer)),
+            board_manager
         }
     }
 
@@ -57,7 +67,15 @@ impl GuildState {
         Arc::clone(&self.mixer)
     }
 
-    fn serde(&self) -> SerdeMixer {
+    pub fn board_manager(&self) -> &BoardManager {
+        &self.board_manager
+    }
+
+    pub fn board_manager_mut(&mut self) -> &mut BoardManager {
+        &mut self.board_manager
+    }
+
+    fn serde(&self) -> SerdeGuildState {
         let mut layers = Vec::new();
 
         for layer in self.mixer.lock().unwrap().layers() {
@@ -68,7 +86,12 @@ impl GuildState {
             });
         }
 
-        SerdeMixer { layers }
+        SerdeGuildState {
+            mixer: SerdeMixer {
+                layers
+            },
+            boards: self.board_manager.boards().cloned().collect()
+        }
     }
 }
 
@@ -95,7 +118,8 @@ struct SerdeMixer {
 
 #[derive(Deserialize, Serialize)]
 struct SerdeGuildState {
-    mixer: SerdeMixer
+    mixer: SerdeMixer,
+    boards: Vec<Board>
 }
 
 /// An enumeration of the errors that may occur while loading or saving the
@@ -264,7 +288,7 @@ impl State {
                     let topology =
                         serde_json::from_reader(File::open(json_path)?)?;
                     let guild_state =
-                        GuildState::new_with_mixer(Arc::clone(&plugin_manager),
+                        GuildState::from_serde(Arc::clone(&plugin_manager),
                             topology);
                     state.guild_states.insert(guild_id, guild_state);
                 }
