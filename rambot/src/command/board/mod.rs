@@ -17,12 +17,12 @@ use serenity::model::prelude::Message;
 
 mod button;
 
-use button::BUTTON_GROUP;
+use button::BUTTONCMD_GROUP;
 
 #[group]
 #[prefix("board")]
 #[commands(add, remove, display, list)]
-#[sub_groups(button)]
+#[sub_groups(buttoncmd)]
 struct BoardCmd;
 
 pub fn get_board_commands() -> &'static CommandGroup {
@@ -102,11 +102,19 @@ async fn display(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
         match board_res {
             Ok(board) => {
-                let content = format!("Sound board `{}`:", board_name);
+                let mut content = format!("Sound board `{}`:", board_name);
+
+                for button in &board.buttons {
+                    if !button.description.is_empty() {
+                        content.push_str(&format!("\n{} : {}", &button.emote,
+                            &button.description));
+                    }
+                }
+
                 let board_msg = msg.channel_id.say(ctx, content).await?;
 
-                for (reaction, _) in &board.buttons {
-                    board_msg.react(ctx, reaction.clone()).await?;
+                for button in &board.buttons {
+                    board_msg.react(ctx, button.emote.clone()).await?;
                 }
 
                 with_board_manager_mut(ctx, guild_id, |board_mgr| {
@@ -146,9 +154,16 @@ async fn list(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
+pub struct Button {
+    emote: ReactionType,
+    description: String,
+    command: String
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Board {
     name: String,
-    buttons: Vec<(ReactionType, String)>
+    buttons: Vec<Button>
 }
 
 pub struct BoardManager {
@@ -228,8 +243,8 @@ impl EventHandler for BoardButtonEventHandler {
                 let command = with_board_manager(&ctx, guild_id, |board_mgr|
                     board_mgr.active_board(add_reaction.message_id)
                         .and_then(|b| b.buttons.iter()
-                            .find(|(k, _)| k == &add_reaction.emoji)
-                            .map(|(_, v)| v))
+                            .find(|btn| &btn.emote == &add_reaction.emoji)
+                            .map(|btn| &btn.command))
                         .cloned()).await;
 
                 if let Some(command) = command {
