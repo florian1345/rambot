@@ -10,6 +10,7 @@ chrono = "0.4"
 libloading = "0.7"
 log = "0.4"
 rambot-api = { path = "../rambot-api" }
+rambot-proc-macro = { path = "../rambot-proc-macro" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = "1.0"
 serenity = "0.10"
