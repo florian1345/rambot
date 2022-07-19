@@ -1,8 +1,11 @@
 use crate::audio::Layer;
 use crate::command::{list_layer_key_value_descriptors, with_mixer_and_layer};
+use crate::key_value::KeyValueDescriptor;
+
+use rambot_proc_macro::rambot_command;
 
 use serenity::client::Context;
-use serenity::framework::standard::{Args, CommandGroup, CommandResult};
+use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
 use serenity::model::prelude::Message;
 
@@ -15,18 +18,12 @@ pub fn get_effect_commands() -> &'static CommandGroup {
     &EFFECT_GROUP
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Adds an effect to the layer with the given name.")]
-async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let layer = args.single::<String>()?;
-    let effect = match args.rest().parse() {
-        Ok(e) => e,
-        Err(e) => {
-            msg.reply(ctx, e).await?;
-            return Ok(());
-        }
-    };
+#[rambot_command(
+    description = "Adds an effect to the layer with the given name.",
+    rest
+)]
+async fn add(ctx: &Context, msg: &Message, layer: String,
+        effect: KeyValueDescriptor) -> CommandResult {
     let res = with_mixer_and_layer(ctx, msg, &layer,
         |mut mixer| mixer.add_effect(&layer, effect)).await?;
 
@@ -37,24 +34,13 @@ async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Clears all effects from the layer with the given name. As an \
-    optional second argument, this command takes an effect name. If that is \
-    provided, only effects of that name are removed.")]
-async fn clear(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let layer = args.single::<String>()?;
-    let name = if args.is_empty() {
-        None
-    }
-    else {
-        Some(args.single::<String>()?)
-    };
-
-    if !args.is_empty() {
-        msg.reply(ctx, "Expected only the layer name.").await?;
-    }
-
+#[rambot_command(
+    description = "Clears all effects from the layer with the given name. As \
+        an optional second argument, this command takes an effect name. If \
+        that is provided, only effects of that name are removed."
+)]
+async fn clear(ctx: &Context, msg: &Message, layer: String,
+        name: Option<String>) -> CommandResult {
     let res = with_mixer_and_layer(ctx, msg, &layer, |mut mixer|
         if let Some(name) = &name {
             mixer.retain_effects(&layer,
@@ -88,11 +74,11 @@ async fn clear(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description(
-    "Prints a list of all effects on the layer with the given name.")]
-async fn list(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    list_layer_key_value_descriptors(ctx, msg, args, "Effects", Layer::effects)
-        .await
+#[rambot_command(
+    description = "Prints a list of all effects on the layer with the given \
+        name."
+)]
+async fn list(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+    list_layer_key_value_descriptors(
+        ctx, msg, layer, "Effects", Layer::effects).await
 }

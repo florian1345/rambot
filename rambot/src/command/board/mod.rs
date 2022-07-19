@@ -1,5 +1,7 @@
 use crate::FrameworkTypeMapKey;
-use crate::command::{get_single_string_arg, with_guild_state};
+use crate::command::{with_guild_state};
+
+use rambot_proc_macro::rambot_command;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -9,7 +11,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use serenity::client::{Context, EventHandler};
-use serenity::framework::standard::{Args, CommandGroup, CommandResult};
+use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
 use serenity::model::channel::{ReactionType, Reaction};
 use serenity::model::id::{MessageId, GuildId};
@@ -29,111 +31,96 @@ pub fn get_board_commands() -> &'static CommandGroup {
     &BOARDCMD_GROUP
 }
 
-async fn get_board_arg(ctx: &Context, msg: &Message, args: Args)
-        -> CommandResult<Option<String>> {
-    get_single_string_arg(ctx, msg, args, "Expected only the board name.")
-        .await
-}
-
-#[command]
-#[only_in(guilds)]
-#[description("Adds a new, empty board with the given name. If there is \
+#[rambot_command(
+    description = "Adds a new, empty board with the given name. If there is \
     already a board with the same name, nothing is changed and an appropriate \
-    reply is sent.")]
-async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(board_name) = get_board_arg(ctx, msg, args).await? {
-        let guild_id = msg.guild_id.unwrap();
+    reply is sent."
+)]
+async fn add(ctx: &Context, msg: &Message, name: String) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let added = with_board_manager_mut(ctx, guild_id, |board_mgr| {
+        board_mgr.add_board(Board {
+            name,
+            buttons: Vec::new()
+        })
+    }).await;
 
-        let added = with_board_manager_mut(ctx, guild_id, |board_mgr| {
-            board_mgr.add_board(Board {
-                name: board_name,
-                buttons: Vec::new()
-            })
-        }).await;
-
-        if !added {
-            msg.reply(ctx, "There is already a board with that name.").await?;
-        }
+    if !added {
+        msg.reply(ctx, "There is already a board with that name.").await?;
     }
 
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Removes the sound board with the given name.")]
-async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(board_name) = get_board_arg(ctx, msg, args).await? {
-        let guild_id = msg.guild_id.unwrap();
-
-        let found = with_board_manager_mut(ctx, guild_id, |board_mgr| {
-            if board_mgr.boards.remove(&board_name).is_some() {
-                board_mgr.active_boards.retain(|_, v| v != &board_name);
-                true
-            }
-            else {
-                false
-            }
-        }).await;
-
-        if !found {
-            msg.reply(ctx, "I did not find any board with that name.").await?;
+#[rambot_command(
+    description = "Removes the sound board with the given name."
+)]
+async fn remove(ctx: &Context, msg: &Message, name: String) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let found = with_board_manager_mut(ctx, guild_id, |board_mgr| {
+        if board_mgr.boards.remove(&name).is_some() {
+            board_mgr.active_boards.retain(|_, v| v != &name);
+            true
         }
+        else {
+            false
+        }
+    }).await;
+
+    if !found {
+        msg.reply(ctx, "I did not find any board with that name.").await?;
     }
 
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Displays the sound board with the given name.")]
-async fn display(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(board_name) = get_board_arg(ctx, msg, args).await? {
-        let guild_id = msg.guild_id.unwrap();
+#[rambot_command(
+    description = "Displays the sound board with the given name."
+)]
+async fn display(ctx: &Context, msg: &Message, name: String) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let board_res = with_board_manager(ctx, guild_id, |board_mgr| {
+        if let Some(board) = board_mgr.boards.get(&name) {
+            Ok(board.clone())
+        }
+        else {
+            Err(format!("I found no board with name `{}`.", name))
+        }
+    }).await;
 
-        let board_res = with_board_manager(ctx, guild_id, |board_mgr| {
-            if let Some(board) = board_mgr.boards.get(&board_name) {
-                Ok(board.clone())
-            }
-            else {
-                Err(format!("I found no board with name `{}`.", board_name))
-            }
-        }).await;
+    match board_res {
+        Ok(board) => {
+            let mut content = format!("Sound board `{}`:", name);
 
-        match board_res {
-            Ok(board) => {
-                let mut content = format!("Sound board `{}`:", board_name);
-
-                for button in &board.buttons {
-                    if !button.description.is_empty() {
-                        content.push_str(&format!("\n{} : {}", &button.emote,
-                            &button.description));
-                    }
+            for button in &board.buttons {
+                if !button.description.is_empty() {
+                    content.push_str(&format!("\n{} : {}", &button.emote,
+                        &button.description));
                 }
-
-                let board_msg = msg.channel_id.say(ctx, content).await?;
-
-                for button in &board.buttons {
-                    board_msg.react(ctx, button.emote.clone()).await?;
-                }
-
-                with_board_manager_mut(ctx, guild_id, |board_mgr| {
-                    board_mgr.active_boards.insert(board_msg.id, board_name);
-                }).await;
-            },
-            Err(e) => {
-                msg.reply(ctx, e).await?;
             }
+
+            let board_msg = msg.channel_id.say(ctx, content).await?;
+
+            for button in &board.buttons {
+                board_msg.react(ctx, button.emote.clone()).await?;
+            }
+
+            with_board_manager_mut(ctx, guild_id, |board_mgr| {
+                board_mgr.active_boards.insert(board_msg.id, name);
+            }).await;
+        },
+        Err(e) => {
+            msg.reply(ctx, e).await?;
         }
     }
 
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Lists all sound boards that are available on this guild.")]
-async fn list(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+#[rambot_command(
+    description = "Lists all sound boards that are available on this guild."
+)]
+async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
     let mut names = with_board_manager(ctx, guild_id, |board_mgr| {
         board_mgr.boards()

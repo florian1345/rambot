@@ -1,7 +1,9 @@
 use crate::command::board::{with_board_manager_mut, Button};
 
+use rambot_proc_macro::rambot_command;
+
 use serenity::client::Context;
-use serenity::framework::standard::{Args, CommandResult};
+use serenity::framework::standard::CommandResult;
 use serenity::framework::standard::macros::{command, group};
 use serenity::model::channel::ReactionType;
 use serenity::model::prelude::Message;
@@ -13,17 +15,15 @@ struct ButtonCmd;
 
 // TODO reduce code duplication among these commands
 
-#[command]
-#[only_in(guilds)]
-#[description("Takes as first argument the board name, as second argument an \
-    emote, and as third argument a command. Adds a button of the board with \
-    the given name represented by the given emote that, when pressed, \
-    executes the given command.")]
-async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let board_name = args.single::<String>()?;
-    let emote = args.single::<ReactionType>()?;
-    let command = args.rest().to_owned();
-
+#[rambot_command(
+    description = "Takes as first argument the board name, as second argument \
+    an emote, and as third argument a command. Adds a button of the board \
+    with the given name represented by the given emote that, when pressed, \
+    executes the given command.",
+    rest
+)]
+async fn add(ctx: &Context, msg: &Message, board_name: String,
+            emote: ReactionType, command: String) -> CommandResult {
     let err = with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
             if board.buttons.iter().any(|btn| &btn.emote == &emote) {
@@ -51,17 +51,15 @@ async fn add(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Takes as first argument the board name, as second argument an \
-    emote, and as third argument a description, which is assigned to the \
+#[rambot_command(
+    description = "Takes as first argument the board name, as second argument \
+    an emote, and as third argument a description, which is assigned to the \
     button represented by the given emote on the board with the given name. \
-    Omit description to remove it from the button.")]
-async fn description(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let board_name = args.single::<String>()?;
-    let emote = args.single::<ReactionType>()?;
-    let description = args.rest().to_owned();
-
+    Omit description to remove it from the button.",
+    rest
+)]
+async fn description(ctx: &Context, msg: &Message, board_name: String,
+        emote: ReactionType, description: String) -> CommandResult {
     let err = with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
             let button = board.buttons.iter_mut()
@@ -88,15 +86,13 @@ async fn description(ctx: &Context, msg: &Message, mut args: Args) -> CommandRes
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Takes as first argument the board name and as second argument \
-    an emote. Removes the button represented by the given emote from the \
-    sound board with the given name.")]
-async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let board_name = args.single::<String>()?;
-    let emote = args.single::<ReactionType>()?;
-
+#[rambot_command(
+    description = "Takes as first argument the board name and as second \
+    argument an emote. Removes the button represented by the given emote from \
+    the sound board with the given name."
+)]
+async fn remove(ctx: &Context, msg: &Message, board_name: String,
+        emote: ReactionType) -> CommandResult {
     let err = with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
             let old_len = board.buttons.len();

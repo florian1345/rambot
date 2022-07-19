@@ -7,13 +7,14 @@ use serenity::client::{Client, Context};
 use serenity::framework::Framework;
 use serenity::framework::standard::{
     Args,
+    CommandError,
     CommandGroup,
     CommandResult,
     help_commands,
     HelpOptions,
     StandardFramework
 };
-use serenity::framework::standard::macros::help;
+use serenity::framework::standard::macros::{help, hook};
 use serenity::model::prelude::{Message, UserId};
 use serenity::prelude::TypeMapKey;
 
@@ -44,6 +45,18 @@ async fn print_help(ctx: &Context, msg: &Message, args: Args,
         owners: HashSet<UserId>) -> CommandResult {
     help_commands::with_embeds(ctx, msg, args, help_options, groups, owners).await;
     Ok(())
+}
+
+#[hook]
+async fn after_hook(ctx: &Context, msg: &Message, _: &str,
+        error: Result<(), CommandError>) {
+    if let Err(e) = error {
+        let message = format!("{}", e);
+
+        if let Err(e) = msg.reply(ctx, message).await {
+            log::error!("Error replying to message: {}", e);
+        }
+    }
 }
 
 #[tokio::main]
@@ -96,6 +109,7 @@ async fn main() {
             .group(command::get_board_commands())
             .group(command::get_effect_commands())
             .group(command::get_layer_commands())
+            .after(after_hook)
             .help(&PRINT_HELP)));
     let client_res = Client::builder(config.token())
         .framework_arc(Arc::clone(&framework))

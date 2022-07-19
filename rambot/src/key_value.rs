@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::iter::Peekable;
 use std::str::{Chars, FromStr};
 
+#[derive(Clone, Debug)]
 pub enum ParseKeyValueDescriptorError {
     MissingClosingQuote,
     MissingDelimiter(char),
@@ -32,6 +34,8 @@ impl Display for ParseKeyValueDescriptorError {
         }
     }
 }
+
+impl Error for ParseKeyValueDescriptorError { }
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KeyValueDescriptor {

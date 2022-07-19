@@ -6,8 +6,10 @@ use crate::state::{State, GuildStateGuard};
 
 use rambot_api::AudioSource;
 
+use rambot_proc_macro::rambot_command;
+
 use serenity::client::Context;
-use serenity::framework::standard::{Args, CommandGroup, CommandResult};
+use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
 use serenity::model::id::GuildId;
 use serenity::model::prelude::Message;
@@ -37,11 +39,10 @@ pub fn get_root_commands() -> &'static CommandGroup {
     &ROOT_GROUP
 }
 
-#[command]
-#[only_in(guilds)]
-#[description(
-    "Connects the bot to the voice channel to which the sender of the command \
-    is currently connected.")]
+#[rambot_command(
+    description = "Connects the bot to the voice channel to which the sender \
+        of the command is currently connected."
+)]
 async fn connect(ctx: &Context, msg: &Message) -> CommandResult {
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
@@ -83,11 +84,10 @@ async fn get_songbird_call(ctx: &Context, msg: &Message)
     songbird.get(guild_id)
 }
 
-#[command]
-#[only_in(guilds)]
-#[description(
-    "Disconnects the bot from the voice channel to which it is currently \
-    connected.")]
+#[rambot_command(
+    description = "Disconnects the bot from the voice channel to which it is \
+    currently connected."
+)]
 async fn disconnect(ctx: &Context, msg: &Message) -> CommandResult {
     match get_songbird_call(ctx, msg).await {
         Some(call) => {
@@ -157,24 +157,6 @@ where
     Ok(result)
 }
 
-async fn get_single_string_arg(ctx: &Context, msg: &Message, mut args: Args,
-        multi_err: &str) -> CommandResult<Option<String>> {
-    let layer = args.single::<String>()?;
-
-    if !args.is_empty() {
-        msg.reply(ctx, multi_err).await?;
-        return Ok(None);
-    }
-
-    Ok(Some(layer))
-}
-
-async fn get_layer_arg(ctx: &Context, msg: &Message, args: Args)
-        -> CommandResult<Option<String>> {
-    get_single_string_arg(ctx, msg, args, "Expected only the layer name.")
-        .await
-}
-
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         call: Arc<TokioMutex<Call>>) -> Option<String> {
     let mixer = get_mixer(ctx, msg).await;
@@ -203,19 +185,17 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     None
 }
 
-#[command]
-#[only_in(guilds)]
-#[description(
-    "Plays the given audio on the given layer. Possible formats for the input \
-    depend on the installed plugins.")]
-#[usage("layer audio")]
-async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let layer = args.single::<String>()?;
-    let command = args.rest();
-
+#[rambot_command(
+    description = "Plays the given audio on the given layer. Possible formats \
+    for the input depend on the installed plugins.",
+    usage = "layer audio",
+    rest
+)]
+async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
+        -> CommandResult {
     match get_songbird_call(ctx, msg).await {
         Some(call) => {
-            let reply = play_do(ctx, msg, &layer, command, call).await;
+            let reply = play_do(ctx, msg, &layer, &command, call).await;
 
             if let Some(reply) = reply {
                 msg.reply(ctx, reply).await?;
@@ -229,19 +209,17 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Plays the next piece of the list currently played on the given \
-    layer. If the last piece of hte list is active, this stops audio on the \
-    layer.")]
-async fn skip(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(layer) = get_layer_arg(ctx, msg, args).await? {
-        let result = with_mixer_and_layer(ctx, msg, &layer,
-            |mut mixer| mixer.skip_on_layer(&layer)).await?;
+#[rambot_command(
+    description = "Plays the next piece of the list currently played on the \
+    given layer. If the last piece of hte list is active, this stops audio on \
+    the layer."
+)]
+async fn skip(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+    let result = with_mixer_and_layer(ctx, msg, &layer,
+        |mut mixer| mixer.skip_on_layer(&layer)).await?;
 
-        if let Some(Err(e)) = result {
-            msg.reply(ctx, e).await?;
-        }
+    if let Some(Err(e)) = result {
+        msg.reply(ctx, e).await?;
     }
 
     Ok(())
@@ -274,17 +252,18 @@ async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
     }
 }
 
-#[command]
-#[only_in(guilds)]
-#[description("Stops the audio currently playing on the given layer.")]
-#[usage("layer")]
-async fn stop(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let reply = if args.is_empty() {
-        stop_all_do(ctx, msg).await
+#[rambot_command(
+    description = "Stops the audio currently playing on the given layer. If \
+    no layer is given, all audio is stopped.",
+    usage = "[layer]"
+)]
+async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
+        -> CommandResult {
+    let reply = if let Some(layer) = layer {
+        stop_do(ctx, msg, &layer).await
     }
     else {
-        let layer = args.single::<String>()?;
-        stop_do(ctx, msg, &layer).await
+        stop_all_do(ctx, msg).await
     };
 
     if let Some(reply) = reply {
@@ -294,12 +273,13 @@ async fn stop(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-#[command("do")]
-#[only_in(guilds)]
-#[description("Takes as input a list of quoted strings separated by spaces. \
-    These are then executed as commands in order.")]
-async fn cmd_do(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let commands = args.raw_quoted().collect::<Vec<_>>();
+#[rambot_command(
+    name = "do",
+    description = "Takes as input a list of quoted strings separated by spaces. \
+    These are then executed as commands in order."
+)]
+async fn cmd_do(ctx: &Context, msg: &Message, commands: Vec<String>)
+        -> CommandResult {
     let framework = Arc::clone(
         ctx.data.read().await.get::<FrameworkTypeMapKey>().unwrap());
 
@@ -313,16 +293,10 @@ async fn cmd_do(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,
-    mut args: Args, name_plural_capital: &str, get: F) -> CommandResult
+    layer: String, name_plural_capital: &str, get: F) -> CommandResult
 where
     F: FnOnce(&Layer) -> &[KeyValueDescriptor]
 {
-    let layer = args.single::<String>()?;
-
-    if !args.is_empty() {
-        msg.reply(ctx, "Expected only the layer name.").await?;
-    }
-
     let descriptors = with_mixer_and_layer(ctx, msg, &layer, |mixer|
         get(mixer.layer(&layer)).iter()
             .map(|e| format!("{}", e))
