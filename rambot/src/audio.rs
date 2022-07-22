@@ -1,5 +1,7 @@
 use rambot_api::{AudioSource, Sample, AudioSourceList};
 
+use slice_deque::SliceDeque;
+
 use songbird::input::reader::MediaSource;
 
 use std::collections::HashMap;
@@ -28,37 +30,6 @@ impl AudioSourceList for SingleAudioSourceList {
     }
 }
 
-struct AudioBuffer {
-    data: Vec<Sample>,
-    active_len: usize
-}
-
-impl AudioBuffer {
-    fn inactive_slice(&mut self, len: usize) -> &mut [Sample] {
-        &mut self.data[self.active_len..(self.active_len + len)]
-    }
-
-    fn extend_capacity(&mut self, target_len: usize) {
-        if target_len > self.data.len() {
-            self.data.append(
-                &mut vec![Sample::ZERO; target_len - self.data.len()]);
-        }
-    }
-
-    fn remove_first(&mut self, amount: usize) {
-        if amount >= self.active_len {
-            self.active_len = 0;
-            return;
-        }
-
-        for i in 0..(self.active_len - amount) {
-            self.data[i] = self.data[amount + i];
-        }
-
-        self.active_len -= amount;
-    }
-}
-
 /// A single layer of a [Mixer] which wraps up to one active [AudioSource]. The
 /// public methods of this type only allow access to the general information
 /// about the structure of this layer, not the actual audio played.
@@ -66,23 +37,23 @@ pub struct Layer {
     name: String,
     source: Option<Box<dyn AudioSource + Send>>,
     list: Option<Box<dyn AudioSourceList + Send>>,
-    buffer: AudioBuffer,
+    buffer: SliceDeque<Sample>,
     effects: Vec<KeyValueDescriptor>,
     adapters: Vec<KeyValueDescriptor>
 }
 
 impl Layer {
     fn active(&self) -> bool {
-        self.buffer.active_len > 0 || self.source.is_some()
+        self.buffer.len() > 0 || self.source.is_some()
     }
 
     fn play(&mut self, source: Box<dyn AudioSource + Send>) {
-        self.buffer.active_len = 0;
+        self.buffer.clear();
         self.source = Some(source);
     }
 
     fn stop(&mut self) -> bool {
-        self.buffer.active_len = 0;
+        self.buffer.clear();
         self.list.take().is_some() | self.source.take().is_some()
     }
 
@@ -220,10 +191,7 @@ impl Mixer {
             name: name.clone(),
             source: None,
             list: None,
-            buffer: AudioBuffer {
-                data: Vec::new(),
-                active_len: 0
-            },
+            buffer: SliceDeque::new(),
             effects: Vec::new(),
             adapters: Vec::new()
         });
@@ -460,17 +428,17 @@ impl AudioSource for Mixer {
                 continue;
             }
 
-            if layer.buffer.active_len < buf.len() {
-                layer.buffer.extend_capacity(buf.len());
+            if layer.buffer.len() < buf.len() {
+                layer.buffer.reserve(buf.len() - layer.buffer.len());
 
                 while let Some(source) = &mut layer.source {
-                    let inactive_len = buf.len() - layer.buffer.active_len;
-                    let inactive_slice =
-                        layer.buffer.inactive_slice(inactive_len);
-                    let sample_count = source.read(inactive_slice)?;
-    
-                    layer.buffer.active_len += sample_count;
-    
+                    let sample_count = unsafe {
+                        let inactive_slice = layer.buffer.tail_head_slice();
+                        let count = source.read(inactive_slice)?;
+                        layer.buffer.move_tail(count as isize);
+                        count
+                    };
+
                     if sample_count == 0 {
                         if let Some(list) = &mut layer.list {
                             if let Some(next) = list.next()? {
@@ -504,7 +472,7 @@ impl AudioSource for Mixer {
                 continue;
             }
 
-            size = size.min(layer.buffer.active_len);
+            size = size.min(layer.buffer.len());
             active_layers.push(layer);
         }
 
@@ -512,18 +480,20 @@ impl AudioSource for Mixer {
             return Ok(0);
         }
 
+        size = size.min(buf.len());
+
         for i in 0..size {
             let mut sum = Sample::ZERO;
 
             for layer in active_layers.iter_mut() {
-                sum += &layer.buffer.data[i];
+                sum += &layer.buffer[i];
             }
 
             buf[i] = sum;
         }
 
         for layer in active_layers {
-            layer.buffer.remove_first(size);
+            layer.buffer.truncate_front(layer.buffer.len() - size);
         }
 
         Ok(size)
