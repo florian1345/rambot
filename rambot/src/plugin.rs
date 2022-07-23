@@ -73,6 +73,123 @@ pub enum AudioDescriptorList {
     List(Box<dyn AudioSourceList + Send>)
 }
 
+trait AudioResolver {
+    type Value;
+
+    fn can_resolve(&self, descriptor: &str) -> bool;
+
+    fn resolve(&self, descriptor: &str) -> Result<Self::Value, String>;
+}
+
+impl AudioResolver for Box<dyn AudioSourceResolver> {
+    type Value = Box<dyn AudioSource + Send>;
+
+    fn can_resolve(&self, descriptor: &str) -> bool {
+        self.as_ref().can_resolve(descriptor)
+    }
+
+    fn resolve(&self, descriptor: &str) -> Result<Self::Value, String> {
+        self.as_ref().resolve(descriptor)
+    }
+}
+
+impl AudioResolver for Box<dyn AudioSourceListResolver> {
+    type Value = Box<dyn AudioSourceList + Send>;
+
+    fn can_resolve(&self, descriptor: &str) -> bool {
+        self.as_ref().can_resolve(descriptor)
+    }
+
+    fn resolve(&self, descriptor: &str) -> Result<Self::Value, String> {
+        self.as_ref().resolve(descriptor)
+    }
+}
+
+trait ModifierResolver {
+    type Value;
+
+    fn name(&self) -> &str;
+
+    fn unique(&self) -> bool;
+
+    fn resolve(&self, key_values: &HashMap<String, String>,
+        child: Self::Value) -> Result<Self::Value, String>;
+}
+
+impl ModifierResolver for Box<dyn EffectResolver> {
+    type Value = Box<dyn AudioSource + Send>;
+
+    fn name(&self) -> &str {
+        self.as_ref().name()
+    }
+
+    fn unique(&self) -> bool {
+        self.as_ref().unique()
+    }
+
+    fn resolve(&self, key_values: &HashMap<String, String>,
+            child: Self::Value) -> Result<Self::Value, String> {
+        self.as_ref().resolve(key_values, child)
+    }
+}
+
+impl ModifierResolver for Box<dyn AdapterResolver> {
+    type Value = Box<dyn AudioSourceList + Send>;
+
+    fn name(&self) -> &str {
+        self.as_ref().name()
+    }
+
+    fn unique(&self) -> bool {
+        self.as_ref().unique()
+    }
+
+    fn resolve(&self, key_values: &HashMap<String, String>,
+            child: Self::Value) -> Result<Self::Value, String> {
+        self.as_ref().resolve(key_values, child)
+    }
+}
+
+fn resolve_audio<V, R>(descriptor: &str, resolvers: &[R])
+    -> Result<V, ResolveError>
+where
+    R: AudioResolver<Value = V>
+{
+    for resolver in resolvers.iter() {
+        if resolver.can_resolve(descriptor) {
+            return resolver.resolve(descriptor)
+                .map_err(|msg| ResolveError::PluginResolveError(msg));
+        }
+    }
+
+    Err(ResolveError::NoPluginFound)
+}
+
+fn is_modifier_unique<V, R>(name: &str, resolvers: &HashMap<String, R>) -> bool
+where
+    R: ModifierResolver<Value = V>
+{
+    resolvers.get(name)
+        .map(|r| r.unique())
+        .unwrap_or(false)
+}
+
+fn resolve_modifier<V, R>(name: &str, key_values: &HashMap<String, String>,
+    child: V, resolvers: &HashMap<String, R>) -> Result<V, ResolveError>
+where
+    R: ModifierResolver<Value = V>
+{
+    if let Some(resolver) = resolvers.get(name) {
+        resolver.resolve(key_values, child)
+            .map_err(|msg| ResolveError::PluginResolveError(msg))
+    }
+    else {
+        Err(ResolveError::NoPluginFound)
+    }
+}
+
+/// Manages loading of plugins and resolution of functionality offered by those
+/// plugins (i.e. audio sources, lists, effects, and adapters).
 pub struct PluginManager {
     audio_source_resolvers: Vec<Box<dyn AudioSourceResolver>>,
     audio_source_list_resolvers: Vec<Box<dyn AudioSourceListResolver>>,
@@ -83,6 +200,18 @@ pub struct PluginManager {
 
 impl PluginManager {
 
+    /// Loads plugins from the plugin directory specified in the given config
+    /// and returns a manager for them.
+    ///
+    /// # Arguments
+    ///
+    /// * `config`: The [Config] which specifies the plugin directory as well
+    /// as the [PluginConfig] provided to the individual plugins during
+    /// initialization.
+    ///
+    /// # Errors
+    ///
+    /// Any [LoadPluginsError] according to their respective documentation.
     pub fn new(config: &Config) -> Result<PluginManager, LoadPluginsError> {
         let mut plugin_manager = PluginManager {
             audio_source_resolvers: Vec::new(),
@@ -151,28 +280,12 @@ impl PluginManager {
 
     pub fn resolve_audio_source(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
-        // TODO avoid code duplication with resolve_audio_source_list
-
-        for resolver in self.audio_source_resolvers.iter() {
-            if resolver.can_resolve(descriptor) {
-                return resolver.resolve(descriptor)
-                    .map_err(|msg| ResolveError::PluginResolveError(msg));
-            }
-        }
-
-        Err(ResolveError::NoPluginFound)
+        resolve_audio(descriptor, &self.audio_source_resolvers)
     }
 
     pub fn resolve_audio_source_list(&self, descriptor: &str)
             -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
-        for resolver in self.audio_source_list_resolvers.iter() {
-            if resolver.can_resolve(descriptor) {
-                return resolver.resolve(descriptor)
-                    .map_err(|msg| ResolveError::PluginResolveError(msg));
-            }
-        }
-    
-        Err(ResolveError::NoPluginFound)
+        resolve_audio(descriptor, &self.audio_source_list_resolvers)
     }
 
     pub fn resolve_audio_descriptor_list(&self, descriptor: &str)
@@ -186,43 +299,25 @@ impl PluginManager {
     }
 
     pub fn is_effect_unique(&self, name: &str) -> bool {
-        self.effect_resolvers.get(name)
-            .map(|r| r.unique())
-            .unwrap_or(false)
+        is_modifier_unique(name, &self.effect_resolvers)
     }
 
     pub fn resolve_effect(&self, name: &str,
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
-        // TODO avoid code duplication with resolve_adapter
-
-        if let Some(resolver) = self.effect_resolvers.get(name) {
-            resolver.resolve(key_values, child)
-                .map_err(|msg| ResolveError::PluginResolveError(msg))
-        }
-        else {
-            Err(ResolveError::NoPluginFound)
-        }
+        resolve_modifier(name, key_values, child, &self.effect_resolvers)
     }
 
     pub fn is_adapter_unique(&self, name: &str) -> bool {
-        self.adapter_resolvers.get(name)
-            .map(|r| r.unique())
-            .unwrap_or(false)
+        is_modifier_unique(name, &self.adapter_resolvers)
     }
 
     pub fn resolve_adapter(&self, name: &str,
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSourceList + Send>)
             -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
-        if let Some(resolver) = self.adapter_resolvers.get(name) {
-            resolver.resolve(key_values, child)
-                .map_err(|msg| ResolveError::PluginResolveError(msg))
-        }
-        else {
-            Err(ResolveError::NoPluginFound)
-        }
+        resolve_modifier(name, key_values, child, &self.adapter_resolvers)
     }
 }
 
