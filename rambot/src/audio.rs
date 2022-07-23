@@ -1,7 +1,5 @@
 use rambot_api::{AudioSource, Sample, AudioSourceList};
 
-use slice_deque::SliceDeque;
-
 use songbird::input::reader::MediaSource;
 
 use std::collections::HashMap;
@@ -9,8 +7,67 @@ use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
+use vmcircbuffer::double_mapped_buffer::DoubleMappedBuffer;
+
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::{PluginManager, AudioDescriptorList, ResolveError};
+
+struct AudioBuffer {
+    data: DoubleMappedBuffer<Sample>,
+    head: usize,
+    len: usize
+}
+
+impl AudioBuffer {
+    fn new() -> AudioBuffer {
+        AudioBuffer {
+            data: DoubleMappedBuffer::new(0).unwrap(),
+            head: 0,
+            len: 0
+        }
+    }
+
+    fn ensure_capacity(&mut self, capacity: usize) {
+        if self.data.capacity() < capacity {
+            let new_data = DoubleMappedBuffer::new(capacity).unwrap();
+            
+            unsafe {
+                new_data.slice_mut().copy_from_slice(self.get_slice(self.len));
+            }
+
+            self.data = new_data;
+            self.head = 0;
+        }
+    }
+
+    unsafe fn get_slice(&self, len: usize) -> &[Sample] {
+        &self.data.slice_with_offset(self.head)[..len]
+    }
+
+    fn advance_head(&mut self, len: usize) {
+        self.head = (self.head + len) % self.data.capacity();
+        self.len -= len;
+    }
+
+    unsafe fn inactive_slice_mut(&mut self) -> &mut [Sample] {
+        let offset = (self.head + self.len) % self.data.capacity();
+        let len = self.data.capacity() - self.len;
+        &mut self.data.slice_with_offset_mut(offset)[..len]
+    }
+
+    fn advance_tail(&mut self, len: usize) {
+        self.len += len;
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn clear(&mut self) {
+        self.head = 0;
+        self.len = 0;
+    }
+}
 
 struct SingleAudioSourceList {
     descriptor: Option<String>
@@ -37,7 +94,7 @@ pub struct Layer {
     name: String,
     source: Option<Box<dyn AudioSource + Send>>,
     list: Option<Box<dyn AudioSourceList + Send>>,
-    buffer: SliceDeque<Sample>,
+    buffer: AudioBuffer,
     effects: Vec<KeyValueDescriptor>,
     adapters: Vec<KeyValueDescriptor>
 }
@@ -191,7 +248,7 @@ impl Mixer {
             name: name.clone(),
             source: None,
             list: None,
-            buffer: SliceDeque::new(),
+            buffer: AudioBuffer::new(),
             effects: Vec::new(),
             adapters: Vec::new()
         });
@@ -429,13 +486,14 @@ impl AudioSource for Mixer {
             }
 
             if layer.buffer.len() < buf.len() {
-                layer.buffer.reserve(buf.len() - layer.buffer.len());
+                layer.buffer.ensure_capacity(buf.len());
 
                 while let Some(source) = &mut layer.source {
                     let sample_count = unsafe {
-                        let inactive_slice = layer.buffer.tail_head_slice();
+                        let inactive_slice =
+                            layer.buffer.inactive_slice_mut();
                         let count = source.read(inactive_slice)?;
-                        layer.buffer.move_tail(count as isize);
+                        layer.buffer.advance_tail(count);
                         count
                     };
 
@@ -482,18 +540,22 @@ impl AudioSource for Mixer {
 
         size = size.min(buf.len());
 
-        for i in 0..size {
-            let mut sum = Sample::ZERO;
+        let mut active_layers = active_layers.into_iter();
+        let first_layer = active_layers.next().unwrap();
 
-            for layer in active_layers.iter_mut() {
-                sum += &layer.buffer[i];
-            }
-
-            buf[i] = sum;
+        unsafe {
+            buf[..size].copy_from_slice(first_layer.buffer.get_slice(size));
+            first_layer.buffer.advance_head(size);
         }
 
         for layer in active_layers {
-            layer.buffer.truncate_front(layer.buffer.len() - size);
+            let slice = unsafe { layer.buffer.get_slice(size) };
+
+            for (i, sample) in slice.iter().enumerate() {
+                buf[i] += sample;
+            }
+
+            layer.buffer.advance_head(size);
         }
 
         Ok(size)
