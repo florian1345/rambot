@@ -16,10 +16,9 @@ struct ButtonCmd;
 // TODO reduce code duplication among these commands
 
 #[rambot_command(
-    description = "Takes as first argument the board name, as second argument \
-    an emote, and as third argument a command. Adds a button of the board \
-    with the given name represented by the given emote that, when pressed, \
-    executes the given command.",
+    description = "Adds a button of the board with the given name represented \
+        by the given emote that, when pressed, executes the given command.",
+    usage = "board emote command",
     rest
 )]
 async fn add(ctx: &Context, msg: &Message, board_name: String,
@@ -52,10 +51,10 @@ async fn add(ctx: &Context, msg: &Message, board_name: String,
 }
 
 #[rambot_command(
-    description = "Takes as first argument the board name, as second argument \
-    an emote, and as third argument a description, which is assigned to the \
-    button represented by the given emote on the board with the given name. \
-    Omit description to remove it from the button.",
+    description = "Assigned the given description to the button represented \
+        by the given emote on the board with the given name. Omit description \
+        to remove it from the button.",
+    usage = "board emote [description]",
     rest
 )]
 async fn description(ctx: &Context, msg: &Message, board_name: String,
@@ -87,9 +86,9 @@ async fn description(ctx: &Context, msg: &Message, board_name: String,
 }
 
 #[rambot_command(
-    description = "Takes as first argument the board name and as second \
-    argument an emote. Removes the button represented by the given emote from \
-    the sound board with the given name."
+    description = "Removes the button represented by the given emote from the \
+        sound board with the given name.",
+    usage = "board emote"
 )]
 async fn remove(ctx: &Context, msg: &Message, board_name: String,
         emote: ReactionType) -> CommandResult {

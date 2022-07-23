@@ -41,7 +41,8 @@ pub fn get_root_commands() -> &'static CommandGroup {
 
 #[rambot_command(
     description = "Connects the bot to the voice channel to which the sender \
-        of the command is currently connected."
+        of the command is currently connected.",
+    usage = ""
 )]
 async fn connect(ctx: &Context, msg: &Message) -> CommandResult {
     let guild = msg.guild(&ctx.cache).await.unwrap();
@@ -86,7 +87,8 @@ async fn get_songbird_call(ctx: &Context, msg: &Message)
 
 #[rambot_command(
     description = "Disconnects the bot from the voice channel to which it is \
-    currently connected."
+        currently connected.",
+    usage = ""
 )]
 async fn disconnect(ctx: &Context, msg: &Message) -> CommandResult {
     match get_songbird_call(ctx, msg).await {
@@ -187,7 +189,7 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
 
 #[rambot_command(
     description = "Plays the given audio on the given layer. Possible formats \
-    for the input depend on the installed plugins.",
+        for the input depend on the installed plugins.",
     usage = "layer audio",
     rest
 )]
@@ -211,8 +213,9 @@ async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
 
 #[rambot_command(
     description = "Plays the next piece of the list currently played on the \
-    given layer. If the last piece of hte list is active, this stops audio on \
-    the layer."
+        given layer. If the last piece of the list is active, this stops \
+        audio on the layer.",
+    usage = "layer"
 )]
 async fn skip(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
     let result = with_mixer_and_layer(ctx, msg, &layer,
@@ -254,7 +257,7 @@ async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
 
 #[rambot_command(
     description = "Stops the audio currently playing on the given layer. If \
-    no layer is given, all audio is stopped.",
+        no layer is given, all audio is stopped.",
     usage = "[layer]"
 )]
 async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
@@ -276,7 +279,8 @@ async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
 #[rambot_command(
     name = "do",
     description = "Takes as input a list of quoted strings separated by spaces. \
-    These are then executed as commands in order."
+        These are then executed as commands in order.",
+    usage = "[command] [command] ..."
 )]
 async fn cmd_do(ctx: &Context, msg: &Message, commands: Vec<String>)
         -> CommandResult {

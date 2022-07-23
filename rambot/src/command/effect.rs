@@ -19,7 +19,13 @@ pub fn get_effect_commands() -> &'static CommandGroup {
 }
 
 #[rambot_command(
-    description = "Adds an effect to the layer with the given name.",
+    description = "Adds an effect to the layer with the given name. Effects \
+        are given in the format `name(key1=value1,key2=value2,...)`, where \
+        the set of available names and their associated required keys and \
+        value formats depends on the installed plugins. You can use the \
+        shortcuts `name` for `name()` and `name=value` for \
+        `name(name=value)`.",
+    usage = "layer effect",
     rest
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String,
@@ -37,7 +43,8 @@ async fn add(ctx: &Context, msg: &Message, layer: String,
 #[rambot_command(
     description = "Clears all effects from the layer with the given name. As \
         an optional second argument, this command takes an effect name. If \
-        that is provided, only effects of that name are removed."
+        that is provided, only effects of that name are removed.",
+    usage = "layer [effect-type]"
 )]
 async fn clear(ctx: &Context, msg: &Message, layer: String,
         name: Option<String>) -> CommandResult {
@@ -76,7 +83,8 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
 
 #[rambot_command(
     description = "Prints a list of all effects on the layer with the given \
-        name."
+        name.",
+    usage = "layer"
 )]
 async fn list(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
     list_layer_key_value_descriptors(
