@@ -67,10 +67,14 @@ impl GuildState {
         Arc::clone(&self.mixer)
     }
 
+    /// Gets a reference to the [BoardManager] for the sound boards in this
+    /// guild.
     pub fn board_manager(&self) -> &BoardManager {
         &self.board_manager
     }
 
+    /// Gets a mutable reference to the [BoardManager] for the sound boards in
+    /// this guild.
     pub fn board_manager_mut(&mut self) -> &mut BoardManager {
         &mut self.board_manager
     }
