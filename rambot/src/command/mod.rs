@@ -73,6 +73,7 @@ async fn connect(ctx: &Context, msg: &Message) -> CommandResult {
         }
     }
 
+    log::debug!("Joining channel {} on guild {}.", channel_id, guild_id);
     songbird.join(guild_id, channel_id).await.1.unwrap();
     Ok(())
 }
@@ -94,6 +95,9 @@ async fn disconnect(ctx: &Context, msg: &Message) -> CommandResult {
     match get_songbird_call(ctx, msg).await {
         Some(call) => {
             let mut guard = call.lock().await;
+            let channel_id = guard.current_channel().unwrap();
+            let guild_id = msg.guild_id.unwrap();
+            log::debug!("Leaving channel {} on guild {}.", channel_id, guild_id);
             guard.leave().await?;
         },
         None => {

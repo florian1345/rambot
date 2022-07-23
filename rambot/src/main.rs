@@ -1,5 +1,7 @@
 use crate::command::board::BoardButtonEventHandler;
 use crate::config::Config;
+use crate::event::EventHandlerComposer;
+use crate::logging::LoggingEventHandler;
 use crate::plugin::PluginManager;
 use crate::state::State;
 
@@ -26,6 +28,7 @@ use std::sync::Arc;
 pub mod audio;
 pub mod command;
 pub mod config;
+pub mod event;
 pub mod key_value;
 pub mod logging;
 pub mod plugin;
@@ -113,7 +116,9 @@ async fn main() {
             .help(&PRINT_HELP)));
     let client_res = Client::builder(config.token())
         .framework_arc(Arc::clone(&framework))
-        .event_handler(BoardButtonEventHandler)
+        .event_handler(EventHandlerComposer::new(BoardButtonEventHandler)
+            .add(LoggingEventHandler)
+            .build())
         .type_map_insert::<PluginManager>(plugin_mgr)
         .type_map_insert::<Config>(config)
         .type_map_insert::<State>(state)
