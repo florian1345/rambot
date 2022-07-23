@@ -18,7 +18,8 @@ pub fn get_layer_commands() -> &'static CommandGroup {
 
 #[rambot_command(
     description = "Adds a layer with the given name to the mixer in this \
-        guild."
+        guild.",
+    usage = "name"
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
     let added = with_mixer(ctx, msg, move |mut mixer|
@@ -33,7 +34,8 @@ async fn add(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
 
 #[rambot_command(
     description = "Removes a layer with the given name from the mixer in this 
-        guild."
+        guild.",
+    usage = "name"
 )]
 async fn remove(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
     let removed = with_mixer(ctx, msg, move |mut mixer|
@@ -48,7 +50,8 @@ async fn remove(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
 
 #[rambot_command(
     description = "Prints a list of the names of all layers of the mixer in \
-        this guild."
+        this guild.",
+    usage = ""
 )]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let layers = with_mixer(ctx, msg, |mixer| {

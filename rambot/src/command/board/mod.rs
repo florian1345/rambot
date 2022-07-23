@@ -33,8 +33,9 @@ pub fn get_board_commands() -> &'static CommandGroup {
 
 #[rambot_command(
     description = "Adds a new, empty board with the given name. If there is \
-    already a board with the same name, nothing is changed and an appropriate \
-    reply is sent."
+        already a board with the same name, nothing is changed and an \
+        appropriate reply is sent.",
+    usage = "name"
 )]
 async fn add(ctx: &Context, msg: &Message, name: String) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
@@ -53,7 +54,8 @@ async fn add(ctx: &Context, msg: &Message, name: String) -> CommandResult {
 }
 
 #[rambot_command(
-    description = "Removes the sound board with the given name."
+    description = "Removes the sound board with the given name.",
+    usage = "name"
 )]
 async fn remove(ctx: &Context, msg: &Message, name: String) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
@@ -75,7 +77,8 @@ async fn remove(ctx: &Context, msg: &Message, name: String) -> CommandResult {
 }
 
 #[rambot_command(
-    description = "Displays the sound board with the given name."
+    description = "Displays the sound board with the given name.",
+    usage = "name"
 )]
 async fn display(ctx: &Context, msg: &Message, name: String) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
@@ -118,7 +121,8 @@ async fn display(ctx: &Context, msg: &Message, name: String) -> CommandResult {
 }
 
 #[rambot_command(
-    description = "Lists all sound boards that are available on this guild."
+    description = "Lists all sound boards that are available on this guild.",
+    usage = ""
 )]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();

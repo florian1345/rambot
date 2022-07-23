@@ -19,7 +19,13 @@ pub fn get_adapter_commands() -> &'static CommandGroup {
 }
 
 #[rambot_command(
-    description = "Adds an adapter to the layer with the given name.",
+    description = "Adds an adapter to the layer with the given name. Adapters \
+        are given in the format `name(key1=value1,key2=value2,...)`, where \
+        the set of available names and their associated required keys and \
+        value formats depends on the installed plugins. You can use the \
+        shortcuts `name` for `name()` and `name=value` for \
+        `name(name=value)`.",
+    usage = "layer adapter",
     rest
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String,
@@ -32,8 +38,9 @@ async fn add(ctx: &Context, msg: &Message, layer: String,
 
 #[rambot_command(
     description = "Clears all adapters from the layer with the given name. As \
-    an optional second argument, this command takes an adapter name. If that \
-    is provided, only adapters of that name are removed."
+        an optional second argument, this command takes an adapter name. If \
+        that is provided, only adapters of that name are removed.",
+    usage = "layer [adapter-type]"
 )]
 async fn clear(ctx: &Context, msg: &Message, layer: String,
         name: Option<String>) -> CommandResult {
@@ -65,7 +72,8 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
 
 #[rambot_command(
     description = "Prints a list of all adapters on the layer with the given \
-        name."
+        name.",
+    usage = "layer"
 )]
 async fn list(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
     list_layer_key_value_descriptors(ctx, msg, layer, "Adapters",
