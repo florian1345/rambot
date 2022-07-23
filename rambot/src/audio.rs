@@ -152,10 +152,6 @@ impl Layers {
         self.names.contains_key(layer)
     }
 
-    fn len(&self) -> usize {
-        self.layers.len()
-    }
-
     fn get(&self, layer: &str) -> &Layer {
         let index = *self.names.get(layer).unwrap();
         self.layers.get(index).unwrap()
@@ -308,7 +304,6 @@ impl Mixer {
             return false;
         }
 
-        let index = self.layers.len();
         self.layers.push(Layer {
             name: name.clone(),
             source: None,
