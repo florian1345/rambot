@@ -134,10 +134,66 @@ impl Layer {
     }
 }
 
-/// A mixer manages multiple [AudioSource]s and adds their outputs.
-pub struct Mixer {
+struct Layers {
     layers: Vec<Layer>,
     names: HashMap<String, usize>,
+}
+
+impl Layers {
+
+    fn new() -> Layers {
+        Layers {
+            layers: Vec::new(),
+            names: HashMap::new()
+        }
+    }
+
+    fn contains(&self, layer: &str) -> bool {
+        self.names.contains_key(layer)
+    }
+
+    fn get(&self, layer: &str) -> &Layer {
+        let index = *self.names.get(layer).unwrap();
+        self.layers.get(index).unwrap()
+    }
+
+    fn get_mut(&mut self, layer: &str) -> &mut Layer {
+        let index = *self.names.get(layer).unwrap();
+        self.layers.get_mut(index).unwrap()
+    }
+
+    fn push(&mut self, layer: Layer) {
+        self.names.insert(layer.name.clone(), self.layers.len());
+        self.layers.push(layer);
+    }
+
+    fn remove(&mut self, layer: &str) -> bool {
+        if let Some(index) = self.names.remove(layer) {
+            self.layers.swap_remove(index);
+
+            if let Some(moved_layer) = self.layers.get(index) {
+                *self.names.get_mut(&moved_layer.name).unwrap() = index;
+            }
+
+            true
+        }
+        else {
+            false
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Layer> {
+        self.layers.iter()
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Layer> {
+        self.layers.iter_mut()
+    }
+}
+
+/// A mixer manages multiple [AudioSource]s and adds their outputs.
+pub struct Mixer {
+    layers: Layers,
     plugin_manager: Arc<PluginManager>
 }
 
@@ -221,15 +277,20 @@ impl Mixer {
     /// Creates a new mixer without layers.
     pub fn new(plugin_manager: Arc<PluginManager>) -> Mixer {
         Mixer {
-            layers: Vec::new(),
-            names: HashMap::new(),
+            layers: Layers::new(),
             plugin_manager
         }
     }
 
     /// Indicates whether this mixer contains a layer with the given name.
     pub fn contains_layer(&self, name: &str) -> bool {
-        self.names.contains_key(name)
+        self.layers.contains(name)
+    }
+
+    /// Gets a reference to the layer with the given `name`. Panics if it does
+    /// not exist.
+    pub fn layer(&self, name: &str) -> &Layer {
+        self.layers.get(name)
     }
 
     /// Adds a new layer with the given name to this mixer, which will
@@ -243,7 +304,6 @@ impl Mixer {
             return false;
         }
 
-        let index = self.layers.len();
         self.layers.push(Layer {
             name: name.clone(),
             source: None,
@@ -252,7 +312,6 @@ impl Mixer {
             effects: Vec::new(),
             adapters: Vec::new()
         });
-        self.names.insert(name, index);
 
         true
     }
@@ -260,18 +319,7 @@ impl Mixer {
     /// Removes the layer with the given name and returns whether a layer was
     /// removed, i.e. there was one with the given name.
     pub fn remove_layer(&mut self, name: &str) -> bool {
-        if let Some(index) = self.names.remove(name) {
-            self.layers.swap_remove(index);
-
-            if let Some(moved_layer) = self.layers.get(index) {
-                *self.names.get_mut(&moved_layer.name).unwrap() = index;
-            }
-
-            true
-        }
-        else {
-            false
-        }
+        self.layers.remove(name)
     }
 
     /// Indicates whether this mixer is currently active, i.e. there is an
@@ -280,22 +328,9 @@ impl Mixer {
         self.layers.iter().map(|l| &l.source).any(Option::is_some)
     }
 
-    pub fn layer(&self, layer: &str) -> &Layer {
-        let index = *self.names.get(layer).unwrap();
-        self.layers.get(index).unwrap()
-    }
-
-    fn layer_mut(&mut self, layer: &str) -> &mut Layer {
-        let index = *self.names.get(layer).unwrap();
-        self.layers.get_mut(index).unwrap()
-    }
-
     pub fn add_effect(&mut self, layer: &str, descriptor: KeyValueDescriptor)
             -> Result<(), ResolveError> {
-        // TODO convince the borrow checker that it is ok to use layer_mut
-
-        let index = *self.names.get(layer).unwrap();
-        let layer = self.layers.get_mut(index).unwrap();
+        let layer = self.layers.get_mut(layer);
 
         if self.plugin_manager.is_effect_unique(&descriptor.name) {
             // We need to remove the old effect of the same name
@@ -323,7 +358,7 @@ impl Mixer {
     }
 
     pub fn clear_effects(&mut self, layer: &str) -> usize {
-        let layer = self.layer_mut(layer);
+        let layer = self.layers.get_mut(layer);
 
         if let Some(mut source) = layer.source.take() {
             while source.has_child() {
@@ -345,11 +380,7 @@ impl Mixer {
     where
         P: FnMut(&KeyValueDescriptor) -> bool
     {
-        // TODO convince the borrow checker that it is ok to use layer_mut
-
-        let index = *self.names.get(layer).unwrap();
-        let layer = self.layers.get_mut(index).unwrap();
-
+        let layer = self.layers.get_mut(layer);
         let mut index = 0;
         let mut first_removed_idx = None;
         let old_len = layer.effects.len();
@@ -377,11 +408,11 @@ impl Mixer {
 
     pub fn add_adapter(&mut self, layer: &str,
             descriptor: KeyValueDescriptor) {
-        self.layer_mut(layer).adapters.push(descriptor);
+        self.layers.get_mut(layer).adapters.push(descriptor);
     }
 
     pub fn clear_adapters(&mut self, layer: &str) -> usize {
-        let layer = self.layer_mut(layer);
+        let layer = self.layers.get_mut(layer);
         let old_len = layer.adapters.len();
         layer.adapters.clear();
         old_len
@@ -393,7 +424,7 @@ impl Mixer {
     where
         P: FnMut(&KeyValueDescriptor) -> bool
     {
-        let layer = self.layer_mut(layer);
+        let layer = self.layers.get_mut(layer);
         let old_len = layer.adapters.len();
         layer.adapters.retain(predicate);
         old_len - layer.adapters.len()
@@ -403,11 +434,7 @@ impl Mixer {
     /// Panics if the layer does not exist.
     pub fn play_on_layer(&mut self, layer: &str, descriptor: &str)
             -> Result<(), io::Error> {
-
-        // TODO convince the borrow checker that it is ok to use layer_mut
-
-        let index = *self.names.get(layer).unwrap();
-        let layer = self.layers.get_mut(index).unwrap();
+        let layer = self.layers.get_mut(layer);
         let audio = to_io_err(self.plugin_manager.resolve_audio_descriptor_list(descriptor))?;
 
         layer.stop();
@@ -430,11 +457,7 @@ impl Mixer {
     /// the given name. If querying the next piece or initiating playback
     /// fails, an appropriate error is returned.
     pub fn skip_on_layer(&mut self, layer: &str) -> Result<(), io::Error> {
-
-        // TODO convince the borrow checker that it is ok to use layer_mut
-
-        let index = *self.names.get(layer).unwrap();
-        let layer = self.layers.get_mut(index).unwrap();
+        let layer = self.layers.get_mut(layer);
 
         match layer.list.as_mut().map(|l| l.next()) {
             Some(Ok(Some(next))) => {
@@ -453,7 +476,7 @@ impl Mixer {
     /// name. Returns true if and only if there was something playing on the
     /// layer before. Panics if the layer does not exist.
     pub fn stop_layer(&mut self, layer: &str) -> bool {
-        let layer = self.layer_mut(layer);
+        let layer = self.layers.get_mut(layer);
         layer.stop()
     }
 
@@ -469,7 +492,7 @@ impl Mixer {
 
     /// Returns a slice of all layers in this mixer.
     pub fn layers(&self) -> &[Layer] {
-        &self.layers
+        &self.layers.layers
     }
 }
 
