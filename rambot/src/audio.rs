@@ -291,6 +291,12 @@ impl Mixer {
         self.layers.contains(name)
     }
 
+    /// Gets a reference to the layer with the given `name`. Panics if it does
+    /// not exist.
+    pub fn layer(&self, name: &str) -> &Layer {
+        self.layers.get(name)
+    }
+
     /// Adds a new layer with the given name to this mixer, which will
     /// initially be inactive. The method returns `true` if and only if the
     /// layer was successfully added, i.e. there was no layer with the same
