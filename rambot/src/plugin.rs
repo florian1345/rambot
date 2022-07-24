@@ -221,6 +221,8 @@ impl PluginManager {
             loaded_libraries: Vec::new()
         };
 
+        fs::create_dir_all(config.plugin_directory())?;
+
         for dir_entry in fs::read_dir(config.plugin_directory())? {
             let dir_entry = dir_entry?;
             let file_type = dir_entry.file_type()?;
