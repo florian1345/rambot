@@ -19,33 +19,39 @@ pub fn get_layer_commands() -> &'static CommandGroup {
 #[rambot_command(
     description = "Adds a layer with the given name to the mixer in this \
         guild.",
-    usage = "name"
+    usage = "name",
+    confirm
 )]
-async fn add(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+async fn add(ctx: &Context, msg: &Message, layer: String)
+        -> CommandResult<Option<String>> {
     let added = with_mixer(ctx, msg, move |mut mixer|
         mixer.add_layer(layer)).await;
 
-    if !added {
-        msg.reply(ctx, "A layer with the same name already exists.").await?;
+    if added {
+        Ok(None)
     }
-
-    Ok(())
+    else {
+        Ok(Some("A layer with the same name already exists.".to_owned()))
+    }
 }
 
 #[rambot_command(
     description = "Removes a layer with the given name from the mixer in this 
         guild.",
-    usage = "name"
+    usage = "name",
+    confirm
 )]
-async fn remove(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+async fn remove(ctx: &Context, msg: &Message, layer: String)
+        -> CommandResult<Option<String>> {
     let removed = with_mixer(ctx, msg, move |mut mixer|
         mixer.remove_layer(&layer)).await;
 
-    if !removed {
-        msg.reply(ctx, "Layer not found.").await?;
+    if removed {
+        Ok(None)
     }
-
-    Ok(())
+    else {
+        Ok(Some("Layer not found.".to_owned()))
+    }
 }
 
 #[rambot_command(
@@ -66,5 +72,5 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     };
 
     msg.reply(ctx, response).await?;
-    Ok(())
+    Ok(None)
 }

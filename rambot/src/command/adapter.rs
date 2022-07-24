@@ -26,24 +26,31 @@ pub fn get_adapter_commands() -> &'static CommandGroup {
         shortcuts `name` for `name()` and `name=value` for \
         `name(name=value)`.",
     usage = "layer adapter",
-    rest
+    rest,
+    confirm
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String,
-        adapter: KeyValueDescriptor) -> CommandResult {
-    with_mixer_and_layer(ctx, msg, &layer,
-        |mut mixer| mixer.add_adapter(&layer, adapter)).await?;
+        adapter: KeyValueDescriptor) -> CommandResult<Option<String>> {
+    let success = with_mixer_and_layer(ctx, msg, &layer,
+        |mut mixer| mixer.add_adapter(&layer, adapter)).await.is_some();
 
-    Ok(())
+    if success {
+        Ok(None)
+    }
+    else {
+        Ok(Some("Layer not found.".to_owned()))
+    }
 }
 
 #[rambot_command(
     description = "Clears all adapters from the layer with the given name. As \
         an optional second argument, this command takes an adapter name. If \
         that is provided, only adapters of that name are removed.",
-    usage = "layer [adapter-type]"
+    usage = "layer [adapter-type]",
+    confirm
 )]
 async fn clear(ctx: &Context, msg: &Message, layer: String,
-        name: Option<String>) -> CommandResult {
+        name: Option<String>) -> CommandResult<Option<String>> {
     let removed = with_mixer_and_layer(ctx, msg, &layer, |mut mixer|
         if let Some(name) = &name {
             mixer.retain_adapters(&layer,
@@ -51,23 +58,27 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
         }
         else {
             mixer.clear_adapters(&layer)
-        }).await?;
+        }).await;
 
-    if let Some(removed) = removed {
-        if removed == 0 {
-            if let Some(name) = name {
-                msg.reply(ctx, format!(
-                    "Found no adapter with name {} on layer {}.", name,
-                    layer)).await?;
+    match removed {
+        Some(count) => {
+            if count == 0 {
+                let message = if let Some(name) = name {
+                    format!("Found no adapter with name {} on layer {}.", name,
+                        layer)
+                }
+                else {
+                    format!("Found no adapter on layer {}.", layer)
+                };
+
+                Ok(Some(message))
             }
             else {
-                msg.reply(ctx, format!(
-                    "Found no adapter on layer {}.", layer)).await?;
+                Ok(None)
             }
-        }
+        },
+        None => Ok(Some("Layer not found.".to_owned()))
     }
-
-    Ok(())
 }
 
 #[rambot_command(
@@ -75,7 +86,8 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
         name.",
     usage = "layer"
 )]
-async fn list(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+async fn list(ctx: &Context, msg: &Message, layer: String)
+        -> CommandResult<Option<String>> {
     list_layer_key_value_descriptors(ctx, msg, layer, "Adapters",
         Layer::adapters).await
 }

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serenity::client::{Context, EventHandler};
 use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
-use serenity::model::channel::{ReactionType, Reaction};
+use serenity::model::channel::{ReactionType, Reaction, MessageType};
 use serenity::model::id::{MessageId, GuildId};
 use serenity::model::prelude::Message;
 
@@ -35,9 +35,11 @@ pub fn get_board_commands() -> &'static CommandGroup {
     description = "Adds a new, empty board with the given name. If there is \
         already a board with the same name, nothing is changed and an \
         appropriate reply is sent.",
-    usage = "name"
+    usage = "name",
+    confirm
 )]
-async fn add(ctx: &Context, msg: &Message, name: String) -> CommandResult {
+async fn add(ctx: &Context, msg: &Message, name: String)
+        -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
     let added = with_board_manager_mut(ctx, guild_id, |board_mgr| {
         board_mgr.add_board(Board {
@@ -46,18 +48,21 @@ async fn add(ctx: &Context, msg: &Message, name: String) -> CommandResult {
         })
     }).await;
 
-    if !added {
-        msg.reply(ctx, "There is already a board with that name.").await?;
+    if added {
+        Ok(None)
     }
-
-    Ok(())
+    else {
+        Ok(Some("There is already a board with that name.".to_owned()))
+    }
 }
 
 #[rambot_command(
     description = "Removes the sound board with the given name.",
-    usage = "name"
+    usage = "name",
+    confirm
 )]
-async fn remove(ctx: &Context, msg: &Message, name: String) -> CommandResult {
+async fn remove(ctx: &Context, msg: &Message, name: String)
+        -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
     let found = with_board_manager_mut(ctx, guild_id, |board_mgr| {
         if board_mgr.boards.remove(&name).is_some() {
@@ -69,18 +74,20 @@ async fn remove(ctx: &Context, msg: &Message, name: String) -> CommandResult {
         }
     }).await;
 
-    if !found {
-        msg.reply(ctx, "I did not find any board with that name.").await?;
+    if found {
+        Ok(None)
     }
-
-    Ok(())
+    else {
+        Ok(Some("I did not find any board with that name.".to_owned()))
+    }
 }
 
 #[rambot_command(
     description = "Displays the sound board with the given name.",
     usage = "name"
 )]
-async fn display(ctx: &Context, msg: &Message, name: String) -> CommandResult {
+async fn display(ctx: &Context, msg: &Message, name: String)
+        -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
     let board_res = with_board_manager(ctx, guild_id, |board_mgr| {
         if let Some(board) = board_mgr.boards.get(&name) {
@@ -111,20 +118,18 @@ async fn display(ctx: &Context, msg: &Message, name: String) -> CommandResult {
             with_board_manager_mut(ctx, guild_id, |board_mgr| {
                 board_mgr.active_boards.insert(board_msg.id, name);
             }).await;
-        },
-        Err(e) => {
-            msg.reply(ctx, e).await?;
-        }
-    }
 
-    Ok(())
+            Ok(None)
+        },
+        Err(e) => Ok(Some(e))
+    }
 }
 
 #[rambot_command(
     description = "Lists all sound boards that are available on this guild.",
     usage = ""
 )]
-async fn list(ctx: &Context, msg: &Message) -> CommandResult {
+async fn list(ctx: &Context, msg: &Message) -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
     let mut names = with_board_manager(ctx, guild_id, |board_mgr| {
         board_mgr.boards()
@@ -141,7 +146,7 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     }
 
     msg.reply(ctx, reply).await?;
-    Ok(())
+    Ok(None)
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -252,6 +257,7 @@ impl EventHandler for BoardButtonEventHandler {
                     msg.content = command;
                     msg.author = sender;
                     msg.webhook_id = None;
+                    msg.kind = MessageType::Unknown; // Prevents :ok_hand:
 
                     // For some reason, this becomes unset
                     msg.guild_id = Some(guild_id);

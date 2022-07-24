@@ -26,28 +26,30 @@ pub fn get_effect_commands() -> &'static CommandGroup {
         shortcuts `name` for `name()` and `name=value` for \
         `name(name=value)`.",
     usage = "layer effect",
-    rest
+    rest,
+    confirm
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String,
-        effect: KeyValueDescriptor) -> CommandResult {
+        effect: KeyValueDescriptor) -> CommandResult<Option<String>> {
     let res = with_mixer_and_layer(ctx, msg, &layer,
-        |mut mixer| mixer.add_effect(&layer, effect)).await?;
+        |mut mixer| mixer.add_effect(&layer, effect)).await;
 
-    if let Some(Err(e)) = res {
-        msg.reply(ctx, e).await?;
+    match res {
+        Some(Ok(())) => Ok(None),
+        Some(Err(e)) => Ok(Some(format!("{}", e))),
+        None => Ok(Some("Layer not found.".to_owned()))
     }
-
-    Ok(())
 }
 
 #[rambot_command(
     description = "Clears all effects from the layer with the given name. As \
         an optional second argument, this command takes an effect name. If \
         that is provided, only effects of that name are removed.",
-    usage = "layer [effect-type]"
+    usage = "layer [effect-type]",
+    confirm
 )]
 async fn clear(ctx: &Context, msg: &Message, layer: String,
-        name: Option<String>) -> CommandResult {
+        name: Option<String>) -> CommandResult<Option<String>> {
     let res = with_mixer_and_layer(ctx, msg, &layer, |mut mixer|
         if let Some(name) = &name {
             mixer.retain_effects(&layer,
@@ -55,30 +57,28 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
         }
         else {
             Ok(mixer.clear_effects(&layer))
-        }).await?;
+        }).await;
 
-    if let Some(res) = res {
-        match res {
-            Ok(count) => {
-                if count == 0 {
-                    if let Some(name) = name {
-                        msg.reply(ctx, format!(
-                            "Found no effect with name {} on layer {}.", name,
-                            layer)).await?;
-                    }
-                    else {
-                        msg.reply(ctx, format!(
-                            "Found no effect on layer {}.", layer)).await?;
-                    }
+    match res {
+        Some(Ok(count)) => {
+            if count == 0 {
+                let message = if let Some(name) = name {
+                    format!("Found no effect with name {} on layer {}.", name,
+                        layer)
                 }
-            },
-            Err(e) => {
-                msg.reply(ctx, e).await?;
-            }
-        }
-    }
+                else {
+                    format!("Found no effect on layer {}.", layer)
+                };
 
-    Ok(())
+                Ok(Some(message))
+            }
+            else {
+                Ok(None)
+            }
+        },
+        Some(Err(e)) => Ok(Some(format!("{}", e))),
+        None => Ok(Some("Layer not found.".to_owned()))
+    }
 }
 
 #[rambot_command(
@@ -86,7 +86,8 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
         name.",
     usage = "layer"
 )]
-async fn list(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+async fn list(ctx: &Context, msg: &Message, layer: String)
+        -> CommandResult<Option<String>> {
     list_layer_key_value_descriptors(
         ctx, msg, layer, "Effects", Layer::effects).await
 }

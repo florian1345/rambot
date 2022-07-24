@@ -11,6 +11,7 @@ use rambot_proc_macro::rambot_command;
 use serenity::client::Context;
 use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
+use serenity::model::channel::MessageType;
 use serenity::model::id::GuildId;
 use serenity::model::prelude::Message;
 
@@ -44,7 +45,8 @@ pub fn get_root_commands() -> &'static CommandGroup {
         of the command is currently connected.",
     usage = ""
 )]
-async fn connect(ctx: &Context, msg: &Message) -> CommandResult {
+async fn connect(ctx: &Context, msg: &Message)
+        -> CommandResult<Option<String>> {
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
     let channel_id_opt = guild.voice_states
@@ -54,10 +56,9 @@ async fn connect(ctx: &Context, msg: &Message) -> CommandResult {
     let channel_id = match channel_id_opt {
         Some(c) => c,
         None => {
-            msg.reply(ctx,
-                "I cannot see your voice channel. Are you connected?")
-                .await?;
-            return Ok(());
+            return Ok(Some(
+                "I cannot see your voice channel. Are you connected?"
+                .to_owned()));
         }
     };
 
@@ -66,16 +67,16 @@ async fn connect(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(call) = songbird.get(guild_id) {
         if let Some(channel) = call.lock().await.current_channel() {
             if channel.0 == channel_id.0 {
-                msg.reply(ctx, "I am already connected to your voice channel.")
-                    .await?;
-                return Ok(());
+                return Ok(Some(
+                    "I am already connected to your voice channel."
+                    .to_owned()));
             }
         }
     }
 
     log::debug!("Joining channel {} on guild {}.", channel_id, guild_id);
     songbird.join(guild_id, channel_id).await.1.unwrap();
-    Ok(())
+    Ok(None)
 }
 
 async fn get_songbird_call(ctx: &Context, msg: &Message)
@@ -91,7 +92,8 @@ async fn get_songbird_call(ctx: &Context, msg: &Message)
         currently connected.",
     usage = ""
 )]
-async fn disconnect(ctx: &Context, msg: &Message) -> CommandResult {
+async fn disconnect(ctx: &Context, msg: &Message)
+        -> CommandResult<Option<String>> {
     match get_songbird_call(ctx, msg).await {
         Some(call) => {
             let mut guard = call.lock().await;
@@ -99,13 +101,10 @@ async fn disconnect(ctx: &Context, msg: &Message) -> CommandResult {
             let guild_id = msg.guild_id.unwrap();
             log::debug!("Leaving channel {} on guild {}.", channel_id, guild_id);
             guard.leave().await?;
+            Ok(None)
         },
-        None => {
-            msg.reply(ctx, "I am not connected to a voice channel").await?;
-        }
+        None => Ok(Some("I am not connected to a voice channel".to_owned()))
     }
-
-    Ok(())
 }
 
 fn to_input<S: AudioSource + Send + 'static>(source: Arc<Mutex<S>>) -> Input {
@@ -143,24 +142,18 @@ where
 }
 
 async fn with_mixer_and_layer<T, F>(ctx: &Context, msg: &Message, layer: &str,
-    f: F) -> CommandResult<Option<T>>
+    f: F) -> Option<T>
 where
     F: FnOnce(MutexGuard<Mixer>) -> T
 {
-    let result = with_mixer(ctx, msg, |mixer| {
+    with_mixer(ctx, msg, |mixer| {
         if mixer.contains_layer(&layer) {
             Some(f(mixer))
         }
         else {
             None
         }
-    }).await;
-
-    if result.is_none() {
-        msg.reply(ctx, "I could not find that layer.").await?;
-    }
-
-    Ok(result)
+    }).await
 }
 
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
@@ -198,21 +191,11 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     rest
 )]
 async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
-        -> CommandResult {
+        -> CommandResult<Option<String>> {
     match get_songbird_call(ctx, msg).await {
-        Some(call) => {
-            let reply = play_do(ctx, msg, &layer, &command, call).await;
-
-            if let Some(reply) = reply {
-                msg.reply(ctx, reply).await?;
-            }
-        },
-        None => {
-            msg.reply(ctx, "I am not connected to a voice channel").await?;
-        }
+        Some(call) => Ok(play_do(ctx, msg, &layer, &command, call).await),
+        None => Ok(Some("I am not connected to a voice channel".to_owned()))
     }
-
-    Ok(())
 }
 
 #[rambot_command(
@@ -221,15 +204,16 @@ async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
         audio on the layer.",
     usage = "layer"
 )]
-async fn skip(ctx: &Context, msg: &Message, layer: String) -> CommandResult {
+async fn skip(ctx: &Context, msg: &Message, layer: String)
+        -> CommandResult<Option<String>> {
     let result = with_mixer_and_layer(ctx, msg, &layer,
-        |mut mixer| mixer.skip_on_layer(&layer)).await?;
+        |mut mixer| mixer.skip_on_layer(&layer)).await;
 
-    if let Some(Err(e)) = result {
-        msg.reply(ctx, e).await?;
+    match result {
+        Some(Ok(())) => Ok(None),
+        Some(Err(e)) => Ok(Some(format!("{}", e))),
+        None => Ok(Some(format!("Found no layer with name {}.", layer)))
     }
-
-    Ok(())
 }
 
 async fn stop_do(ctx: &Context, msg: &Message, layer: &str) -> Option<String> {
@@ -265,7 +249,7 @@ async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
     usage = "[layer]"
 )]
 async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
-        -> CommandResult {
+        -> CommandResult<Option<String>> {
     let reply = if let Some(layer) = layer {
         stop_do(ctx, msg, &layer).await
     }
@@ -273,11 +257,7 @@ async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
         stop_all_do(ctx, msg).await
     };
 
-    if let Some(reply) = reply {
-        msg.reply(ctx, reply).await?;
-    }
-
-    Ok(())
+    Ok(reply)
 }
 
 #[rambot_command(
@@ -287,28 +267,30 @@ async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
     usage = "[command] [command] ..."
 )]
 async fn cmd_do(ctx: &Context, msg: &Message, commands: Vec<String>)
-        -> CommandResult {
+        -> CommandResult<Option<String>> {
     let framework = Arc::clone(
         ctx.data.read().await.get::<FrameworkTypeMapKey>().unwrap());
 
     for command in commands {
         let mut msg = msg.clone();
         msg.content = command.to_owned();
+        msg.kind = MessageType::Unknown; // Prevents :ok_hand:
         framework.dispatch(ctx.clone(), msg).await;
     }
 
-    Ok(())
+    Ok(None)
 }
 
 async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,
-    layer: String, name_plural_capital: &str, get: F) -> CommandResult
+    layer: String, name_plural_capital: &str, get: F)
+    -> CommandResult<Option<String>>
 where
     F: FnOnce(&Layer) -> &[KeyValueDescriptor]
 {
     let descriptors = with_mixer_and_layer(ctx, msg, &layer, |mixer|
         get(mixer.layer(&layer)).iter()
             .map(|e| format!("{}", e))
-            .collect::<Vec<_>>()).await?;
+            .collect::<Vec<_>>()).await;
 
     if let Some(descriptors) = descriptors {
         let mut reply =
@@ -319,7 +301,9 @@ where
         }
 
         msg.reply(ctx, reply).await?;
+        Ok(None)
     }
-
-    Ok(())
+    else {
+        Ok(Some("Layer not found.".to_owned()))
+    }
 }

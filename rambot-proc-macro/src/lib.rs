@@ -21,7 +21,7 @@ use syn::{
     PathArguments,
     PatType,
     Stmt,
-    Type
+    Type, ReturnType, Pat
 };
 use syn::punctuated::Punctuated;
 use syn::token::{Brace, Bracket, Pound};
@@ -30,7 +30,8 @@ struct CommandData {
     name: String,
     description: Option<String>,
     usage: Option<String>,
-    rest: bool
+    rest: bool,
+    confirm: bool
 }
 
 fn path_to_string(p: &Path) -> Option<String> {
@@ -53,6 +54,7 @@ fn apply_arg(cmd_data: &mut CommandData, arg: &NestedMeta) -> bool {
             if let Some(name) = path_to_string(p) {
                 match name.as_str() {
                     "rest" => cmd_data.rest = true,
+                    "confirm" => cmd_data.confirm = true,
                     _ => return false
                 }
     
@@ -152,13 +154,47 @@ fn arg_type(arg: &PatType) -> ArgType {
     }
 }
 
+fn process_return_type(t: &mut Type) -> bool {
+    // TODO check that the type is actually correct
+
+    match t {
+        Type::Path(p) => {
+            let seg = &mut p.path.segments;
+
+            if seg.len() != 1 {
+                return false;
+            }
+
+            let seg = seg.first_mut().unwrap();
+            seg.arguments = PathArguments::None;
+            true
+        },
+        _ => false
+    }
+}
+
+fn get_ident(arg: &FnArg) -> Result<Ident, String> {
+    if let FnArg::Typed(arg) = arg {
+        if let Pat::Ident(ident) = arg.pat.as_ref() {
+            Ok(ident.ident.clone())
+        }
+        else {
+            Err("context or message not identified".to_owned())
+        }
+    }
+    else {
+        Err("self argument on command function".to_owned())
+    }
+}
+
 fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
         -> Result<TokenStream, String> {
     let mut cmd_data = CommandData {
         name: item.sig.ident.to_string(),
         description: None,
         usage: None,
-        rest: false
+        rest: false,
+        confirm: false
     };
 
     load_data(&mut cmd_data, attr)?;
@@ -223,6 +259,9 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
         return Err("cannot have option or vec parsed as rest".to_owned());
     }
 
+    let ctx_ident = get_ident(&item.sig.inputs[0])?;
+    let msg_ident = get_ident(&item.sig.inputs[1])?;
+
     // Construct new signature
 
     let args_ident = Ident::new(ARGS_NAME, Span::call_site());
@@ -231,6 +270,15 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
     };
 
     item.sig.inputs.push(args_param);
+
+    if let ReturnType::Type(_, output_type) = &mut item.sig.output {
+        if !process_return_type(output_type.as_mut()) {
+            return Err("invalid return type".to_owned());
+        }
+    }
+    else {
+        return Err("missing return type".to_owned());
+    }
 
     // Construct new body
 
@@ -278,30 +326,55 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 
     if !cmd_data.rest {
         new_body.stmts.push(syn::parse_quote! {
-            #[derive(Debug)]
-            struct ExpectedEndError;
-        });
-    
-        new_body.stmts.push(syn::parse_quote! {
-            impl std::fmt::Display for ExpectedEndError {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "Expected end, but received more arguments.")
-                }
-            }
-        });
-    
-        new_body.stmts.push(syn::parse_quote! {
-            impl std::error::Error for ExpectedEndError { }
-        });
-    
-        new_body.stmts.push(syn::parse_quote! {
             if !#args_ident.is_empty() {
-                return Err(ExpectedEndError.into());
+                #msg_ident.reply(#ctx_ident,
+                    "Expected end, but received more arguments.").await?;
             }
         });
     }
 
-    new_body.stmts.append(&mut item.block.as_mut().stmts);
+    let old_body = item.block.as_ref();
+
+    new_body.stmts.push(syn::parse_quote! {
+        let result:
+            serenity::framework::standard::CommandResult<Option<String>> =
+                (|| async { return #old_body })().await;
+    });
+
+    new_body.stmts.push(syn::parse_quote! {
+        let result = result?;
+    });
+
+    if cmd_data.confirm {
+        new_body.stmts.push(syn::parse_quote! {
+            match result {
+                Some(message) => {
+                    #msg_ident.reply(#ctx_ident, message).await?;
+                    Ok(())
+                },
+                None => {
+                    if #msg_ident.kind !=
+                            serenity::model::channel::MessageType::Unknown {
+                        #msg_ident.react(#ctx_ident, '\u{1f44c}').await?;
+                    }
+
+                    Ok(())
+                }
+            }
+        });
+    }
+    else {
+        new_body.stmts.push(syn::parse_quote! {
+            match result {
+                Some(message) => {
+                    #msg_ident.reply(#ctx_ident, message).await?;
+                    Ok(())
+                },
+                None => Ok(())
+            }
+        });
+    }
+
     item.block = Box::new(new_body);
 
     Ok(item.to_token_stream().into())
@@ -327,6 +400,8 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 /// * `rest`: A flag which indicates that the last function argument should be
 /// parsed from the rest string after parsing all other arguments. Cannot be
 /// used in conjunction with option or vector arguments
+/// * `confirm`: A flag which indicates whether successful execution of the
+/// command should be indicated by an `:ok_hand:` reaction on the message.
 ///
 /// # Argument parsing
 ///
@@ -336,6 +411,14 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 /// optional arguments and [Vec] for a trailing argument list. Note that all
 /// non-optional values must come first, then all optional ones, and then at
 /// most one [Vec].
+///
+/// # Error handling
+///
+/// The macro transforms functions of the signature
+/// `fn(...) -> CommandResult<Option<String>>` to ones of the signature
+/// `fn(...) -> CommandResult`. If present, the return value may return an
+/// error message, which is automatically responded to the user. Otherwise, if
+/// `confirm` is set, a confirmative reaction is added.
 ///
 /// # Example usage
 ///
@@ -349,7 +432,7 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 ///     rest
 /// )]
 /// async fn add(ctx: &Context, msg: &Message, layer: String, effect: String)
-///         -> CommandResult {
+///         -> CommandResult<Option<String>> {
 ///     [...]
 /// }
 /// ```
