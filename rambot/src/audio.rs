@@ -408,7 +408,13 @@ impl Mixer {
 
     pub fn add_adapter(&mut self, layer: &str,
             descriptor: KeyValueDescriptor) {
-        self.layers.get_mut(layer).adapters.push(descriptor);
+        let layer = self.layers.get_mut(layer);
+
+        if self.plugin_manager.is_adapter_unique(&descriptor.name) {
+            layer.adapters.retain(|d| &d.name != &descriptor.name);
+        }
+
+        layer.adapters.push(descriptor);
     }
 
     pub fn clear_adapters(&mut self, layer: &str) -> usize {
