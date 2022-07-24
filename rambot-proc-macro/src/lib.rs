@@ -16,12 +16,14 @@ use syn::{
     Lit,
     Meta,
     NestedMeta,
+    Pat,
     Path,
-    PathSegment,
     PathArguments,
+    PathSegment,
     PatType,
+    ReturnType,
     Stmt,
-    Type, ReturnType, Pat
+    Type
 };
 use syn::punctuated::Punctuated;
 use syn::token::{Brace, Bracket, Pound};
