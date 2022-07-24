@@ -6,14 +6,31 @@ use std::fmt::{self, Display, Formatter};
 use std::iter::Peekable;
 use std::str::{Chars, FromStr};
 
+/// An enumeration of the errors that can occur when parsing a
+/// [KeyValueDescriptor] in the context of [FromStr].
 #[derive(Clone, Debug)]
 pub enum ParseKeyValueDescriptorError {
+
+    /// A quoted string (name, key, or value) is missing the closing quote.
     MissingClosingQuote,
+
+    /// A delimiter (`=`, `,`, `(`, or `)`) is missing. The missing/expected
+    /// delimiter is provided.
     MissingDelimiter(char),
+
+    /// A delimiter (`=`, `,`, `(`, or `)`) was found in a place where a
+    /// different one was expected.
     InvalidDelimiter {
+
+        /// The delimiter that was expected in the position.
         expected: char,
+
+        /// The delimiter that was found in the position.
         found: char
     },
+
+    /// After the final closing paramtheses, there are still more characters,
+    /// whereas the end was expected.
     UnexpectedContinuation
 }
 
@@ -37,9 +54,19 @@ impl Display for ParseKeyValueDescriptorError {
 
 impl Error for ParseKeyValueDescriptorError { }
 
+/// A descriptor for effects or adapters that has a name and arguments in the
+/// form of a key-value map. Textually, it is represented as
+/// `name(key1=value1,key2=value2,...)`. This format is implemented in the
+/// [Display] and [FromStr] traits.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KeyValueDescriptor {
+
+    /// The name of the effect/adapter identified by this descriptor.
     pub name: String,
+
+    /// A [HashMap] that stores the arguments of the effect/adapter described
+    /// by this descriptor. Each parameter name is mapped to the provided value
+    /// as a string.
     pub key_values: HashMap<String, String>
 }
 

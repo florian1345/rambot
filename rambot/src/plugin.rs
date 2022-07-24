@@ -19,10 +19,18 @@ use std::sync::Arc;
 
 use crate::config::Config;
 
+/// An enumeration of the different errors that can occur when loading plugins.
 #[derive(Debug)]
 pub enum LoadPluginsError {
+
+    /// An IO error that occurred while loading the plugin file.
     IoError(io::Error),
+
+    /// A dynamic library loading error.
     LoadError(libloading::Error),
+
+    /// An initialization error raised by the plugin itself. A message is
+    /// provided.
     InitError(String)
 }
 
@@ -51,9 +59,19 @@ impl Display for LoadPluginsError {
     }
 }
 
+/// An enumeration of the errors that can occur when resolving an audio source,
+/// audio source list, effect, or adapter by a [PluginManager].
 #[derive(Debug)]
 pub enum ResolveError {
+
+    /// No plugin reported that it could resolve the given audio source/audio
+    /// source list descriptor or effect/adapter name.
     NoPluginFound,
+
+    /// A plugin that claimed to be able to resolve the given audio
+    /// source/audio source list descriptor or effect/adapter name was found,
+    /// however it reported an error during the actual resolution. An error
+    /// message is provided.
     PluginResolveError(String)
 }
 
@@ -68,8 +86,15 @@ impl Display for ResolveError {
     }
 }
 
+/// An abstract representation of a list of strings constituting audio source
+/// descriptors.
 pub enum AudioDescriptorList {
+
+    /// A single audio descriptor, which is the string wrapped in this variant.
     Single(String),
+
+    /// An [AudioSourceList] providing audio descriptors, which is wrapped in
+    /// this variant.
     List(Box<dyn AudioSourceList + Send>)
 }
 
@@ -280,16 +305,63 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Resolves an [AudioSource] given a textual descriptor by searching for a
+    /// plugin-provided resolver that can process the descriptor.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of the audio source to resolve.
+    /// The accepted format(s) depends on the installed plugins.
+    ///
+    /// # Returns
+    ///
+    /// A new [AudioSource] trait object resolved by some plugin from the given
+    /// descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_audio_source(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
         resolve_audio(descriptor, &self.audio_source_resolvers)
     }
 
+    /// Resolves an [AudioSourceList] given a textual descriptor by searching
+    /// for a plugin-provided resolver that can process the descriptor.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of the audio source list to
+    /// resolve. The accepted format(s) depends on the installed plugins.
+    ///
+    /// # Returns
+    ///
+    /// A new [AudioSourceList] trait object resolved by some plugin from the
+    /// given descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_audio_source_list(&self, descriptor: &str)
             -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
         resolve_audio(descriptor, &self.audio_source_list_resolvers)
     }
 
+    /// Resolves an [AudioDescriptorList] given a textual descriptor. This is
+    /// achieved by searching for a audio source list plugin that can resolve
+    /// it as a list and, if none is available, returning the descriptor itself
+    /// as a [AudioDescriptorList::Single].
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of the audio descriptor list to
+    /// resolve.
+    ///
+    /// # Errors
+    ///
+    /// * [ResolveError::PluginResolveError] if a plugin claims to be able to
+    /// resolve the descriptor as an audio source list, but fails to do so when
+    /// queried.
     pub fn resolve_audio_descriptor_list(&self, descriptor: &str)
             -> Result<AudioDescriptorList, ResolveError> {
         match self.resolve_audio_source_list(descriptor) {
@@ -300,10 +372,32 @@ impl PluginManager {
         }
     }
 
+    /// Indicates whether the effect with the given name is unique, that is,
+    /// only one can exist per layer. If no effect with the given name exists,
+    /// `false` is returned.
     pub fn is_effect_unique(&self, name: &str) -> bool {
         is_modifier_unique(name, &self.effect_resolvers)
     }
 
+    /// Resolves an effect given the name and parameters as key-values by
+    /// querying a plugin-provided resolver for the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The name of the effect type to resolve. This is the key by
+    /// which the resolver is looked up.
+    /// * `key_values`: A [HashMap] that stores key-value pairs provided as
+    /// arguments for the effect.
+    /// * `child`: The [AudioSource] to which to apply the resolved effect.
+    ///
+    /// # Returns
+    ///
+    /// A new [AudioSource] trait object that represents the resolved effect
+    /// applied to the child.
+    ///
+    /// # Errors
+    ///
+    /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_effect(&self, name: &str,
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
@@ -311,10 +405,32 @@ impl PluginManager {
         resolve_modifier(name, key_values, child, &self.effect_resolvers)
     }
 
+    /// Indicates whether the adapter with the given name is unique, that is,
+    /// only one can exist per layer. If no adapter with the given name exists,
+    /// `false` is returned.
     pub fn is_adapter_unique(&self, name: &str) -> bool {
         is_modifier_unique(name, &self.adapter_resolvers)
     }
 
+    /// Resolves an adapter given the name and parameters as key-values by
+    /// querying a plugin-provided resolver for the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The name of the adapter type to resolve. This is the key by
+    /// which the resolver is looked up.
+    /// * `key_values`: A [HashMap] that stores key-value pairs provided as
+    /// arguments for the adapter.
+    /// * `child`: The [AudioSource] to which to apply the resolved adapter.
+    ///
+    /// # Returns
+    ///
+    /// A new [AudioSource] trait object that represents the resolved adapter
+    /// applied to the child.
+    ///
+    /// # Errors
+    ///
+    /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_adapter(&self, name: &str,
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSourceList + Send>)
