@@ -8,7 +8,7 @@ use std::str::{Chars, FromStr};
 
 /// An enumeration of the errors that can occur when parsing a
 /// [KeyValueDescriptor] in the context of [FromStr].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseKeyValueDescriptorError {
 
     /// A quoted string (name, key, or value) is missing the closing quote.
@@ -58,7 +58,7 @@ impl Error for ParseKeyValueDescriptorError { }
 /// form of a key-value map. Textually, it is represented as
 /// `name(key1=value1,key2=value2,...)`. This format is implemented in the
 /// [Display] and [FromStr] traits.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct KeyValueDescriptor {
 
     /// The name of the effect/adapter identified by this descriptor.
@@ -196,7 +196,10 @@ fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
 
         escaped = new_escaped;
         chars.next();
-        s.push(c);
+        
+        if !new_escaped {
+            s.push(c);
+        }
     }
 
     if quote_mode {
@@ -216,7 +219,7 @@ fn consume_delimiter<'a>(chars: &mut Peekable<Chars<'a>>, delimiter: char)
             }
             else {
                 Err(ParseKeyValueDescriptorError::InvalidDelimiter {
-                    expected: '=',
+                    expected: delimiter,
                     found: c
                 })
             }
@@ -231,6 +234,10 @@ fn parse_key_value<'a>(chars: &mut Peekable<Chars<'a>>)
     let mut result = HashMap::new();
 
     while chars.peek().is_some() {
+        if chars.peek() == Some(&')') {
+            break;
+        }
+
         if first {
             first = false;
         }
@@ -242,11 +249,139 @@ fn parse_key_value<'a>(chars: &mut Peekable<Chars<'a>>)
         consume_delimiter(chars, '=')?;
         let value = parse_string(chars)?;
         result.insert(key, value);
-
-        if chars.peek() == Some(&')') {
-            break;
-        }
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    fn assert_parsed_to(s: &str, name: &str, key_values: &[(&str, &str)]) {
+        let parsed: KeyValueDescriptor = s.parse().unwrap();
+        let expected = KeyValueDescriptor {
+            name: name.to_owned(),
+            key_values: HashMap::from_iter(key_values.iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())))
+        };
+
+        assert_eq!(expected, parsed);
+    }
+
+    #[test]
+    fn no_arguments_no_parentheses() {
+        assert_parsed_to("my-name", "my-name", &[]);
+    }
+
+    #[test]
+    fn no_arguments_with_parentheses() {
+        assert_parsed_to("my-name()", "my-name", &[]);
+    }
+
+    #[test]
+    fn one_argument() {
+        assert_parsed_to("my-name(my-arg=my-value)", "my-name",
+            &[("my-arg", "my-value")]);
+    }
+
+    #[test]
+    fn two_arguments() {
+        assert_parsed_to("my-name(arg1=val1,arg2=val2)", "my-name",
+            &[("arg1", "val1"), ("arg2", "val2")]);
+    }
+
+    #[test]
+    fn quoted_argument_value() {
+        assert_parsed_to("my-name(my-arg=\"quoted-value\")", "my-name",
+            &[("my-arg", "quoted-value")]);
+    }
+
+    #[test]
+    fn quoted_argument_name_with_escape_sequences() {
+        assert_parsed_to("my-name(\"\\\"=\\\\\"=value)", "my-name",
+            &[("\"=\\", "value")]);
+    }
+
+    #[test]
+    fn inline_singleton_argument() {
+        assert_parsed_to("name=value", "name", &[("name", "value")])
+    }
+
+    fn assert_raises_error(s: &str, expected: ParseKeyValueDescriptorError) {
+        match s.parse::<KeyValueDescriptor>() {
+            Ok(_) => panic!("parsing successful when error was expected"),
+            Err(e) => assert_eq!(expected, e)
+        }
+    }
+
+    #[test]
+    fn missing_closing_quote_name() {
+        assert_raises_error("\"some name",
+            ParseKeyValueDescriptorError::MissingClosingQuote);
+    }
+
+    #[test]
+    fn missing_closing_quote_key() {
+        assert_raises_error("name(\"key=value)",
+            ParseKeyValueDescriptorError::MissingClosingQuote);
+    }
+
+    #[test]
+    fn missing_closing_quote_value() {
+        assert_raises_error("name(key=\"value)",
+            ParseKeyValueDescriptorError::MissingClosingQuote);
+    }
+
+    #[test]
+    fn missing_closing_parenthesis() {
+        assert_raises_error("name(key=value",
+            ParseKeyValueDescriptorError::MissingDelimiter(')'))
+    }
+
+    #[test]
+    fn missing_equals() {
+        assert_raises_error("name(key",
+            ParseKeyValueDescriptorError::MissingDelimiter('='))
+    }
+
+    #[test]
+    fn comma_instead_of_opening_parenthesis() {
+        assert_raises_error("name,key=value",
+            ParseKeyValueDescriptorError::InvalidDelimiter {
+                expected: '(',
+                found: ','
+            })
+    }
+
+    #[test]
+    fn closing_parenthesis_instead_of_equals() {
+        assert_raises_error("name(key)",
+            ParseKeyValueDescriptorError::InvalidDelimiter {
+                expected: '=',
+                found: ')'
+            })
+    }
+
+    #[test]
+    fn equals_instead_of_comma() {
+        assert_raises_error("name(key=value=key2=value2)",
+            ParseKeyValueDescriptorError::InvalidDelimiter {
+                expected: ',',
+                found: '='
+            })
+    }
+
+    #[test]
+    fn unexpected_continuation_after_closing_parenthesis() {
+        assert_raises_error("name(key=value)unexpected continuation",
+            ParseKeyValueDescriptorError::UnexpectedContinuation)
+    }
+
+    #[test]
+    fn unexpected_continuation_after_inline_value() {
+        assert_raises_error("name=value,unexpected continuation",
+            ParseKeyValueDescriptorError::UnexpectedContinuation)
+    }
 }
