@@ -14,6 +14,7 @@ use serenity::model::prelude::Message;
 #[commands(add, clear, list)]
 struct Adapter;
 
+/// Gets a [CommandGroup] for the commands with prefix `adapter`.
 pub fn get_adapter_commands() -> &'static CommandGroup {
     &ADAPTER_GROUP
 }

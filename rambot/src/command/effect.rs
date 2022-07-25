@@ -14,6 +14,7 @@ use serenity::model::prelude::Message;
 #[commands(add, clear, list)]
 struct Effect;
 
+/// Gets a [CommandGroup] for the commands with prefix `effect`.
 pub fn get_effect_commands() -> &'static CommandGroup {
     &EFFECT_GROUP
 }
