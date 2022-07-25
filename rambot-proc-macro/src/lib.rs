@@ -331,6 +331,7 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
             if !#args_ident.is_empty() {
                 #msg_ident.reply(#ctx_ident,
                     "Expected end, but received more arguments.").await?;
+                return Ok(());
             }
         });
     }
