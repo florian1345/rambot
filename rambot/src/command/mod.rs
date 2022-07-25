@@ -87,6 +87,8 @@ async fn get_songbird_call(ctx: &Context, msg: &Message)
     songbird.get(guild_id)
 }
 
+const NOT_CONNECTED: &str = "I am not connected to a voice channel";
+
 #[rambot_command(
     description = "Disconnects the bot from the voice channel to which it is \
         currently connected.",
@@ -97,13 +99,17 @@ async fn disconnect(ctx: &Context, msg: &Message)
     match get_songbird_call(ctx, msg).await {
         Some(call) => {
             let mut guard = call.lock().await;
-            let channel_id = guard.current_channel().unwrap();
+            let channel_id = match guard.current_channel() {
+                Some(id) => id,
+                None => return Ok(Some(NOT_CONNECTED.to_owned()))
+            };
+
             let guild_id = msg.guild_id.unwrap();
             log::debug!("Leaving channel {} on guild {}.", channel_id, guild_id);
             guard.leave().await?;
             Ok(None)
         },
-        None => Ok(Some("I am not connected to a voice channel".to_owned()))
+        None => Ok(Some(NOT_CONNECTED.to_owned()))
     }
 }
 
@@ -161,6 +167,10 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     let mixer = get_mixer(ctx, msg).await;
     let mut call_guard = call.lock().await;
 
+    if call_guard.current_channel().is_none() {
+        return Some(NOT_CONNECTED.to_owned());
+    }
+
     let active_before = {
         let mut mixer_guard = mixer.lock().unwrap();
 
@@ -194,7 +204,7 @@ async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
         -> CommandResult<Option<String>> {
     match get_songbird_call(ctx, msg).await {
         Some(call) => Ok(play_do(ctx, msg, &layer, &command, call).await),
-        None => Ok(Some("I am not connected to a voice channel".to_owned()))
+        None => Ok(Some(NOT_CONNECTED.to_owned()))
     }
 }
 
