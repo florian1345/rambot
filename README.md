@@ -34,7 +34,7 @@ Rambot uses [Songbird](https://github.com/serenity-rs/songbird), which requires 
 > You can install the library with apt install libopus-dev on Ubuntu or pacman -S opus on Arch Linux.
 > If you do not have it installed it will be built for you.
 > However, you will need a C compiler and the GNU autotools installed.
-> Again, these can be installed with apt install build-essential autoconf automake libtool m4 on Ubuntu or pacman -S base-devel on Arch Linux.
+> Again, these can be installed with apt install build-essential autoconf automake libtool m4 on Ubuntu or pacman -S base-devel on Arch Linux.  
 > \- [Songbird Readme](https://github.com/serenity-rs/songbird)
 
 ## Repository structure
