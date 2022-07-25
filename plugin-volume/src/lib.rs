@@ -20,8 +20,8 @@ impl AudioSource for VolumeEffect {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         let count = self.child.as_mut().unwrap().read(buf)?;
 
-        for i in 0..count {
-            buf[i] *= self.volume;
+        for sample in buf.iter_mut().take(count) {
+            *sample *= self.volume;
         }
 
         Ok(count)

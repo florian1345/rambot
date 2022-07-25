@@ -56,8 +56,8 @@ impl<S: AudioSource> ResamplingAudioSource<S> {
                 self.fraction_numerator - 1) / self.step + 1;
         let sample_count = sample_count.min(buf.len());
 
-        for i in 0..sample_count {
-            buf[i] = self.linear_combination(
+        for (i, sample) in buf.iter_mut().enumerate().take(sample_count) {
+            *sample = self.linear_combination(
                 self.fraction_numerator + i * self.step);
         }
 
