@@ -331,6 +331,20 @@ impl Mixer {
         self.layers.iter().map(|l| &l.source).any(Option::is_some)
     }
 
+    /// Adds an effect to the layer with the given name. If the effect is
+    /// unique, any old version of it will be removed before. If audio is
+    /// currently being played on the given layer, any changes in the effect
+    /// pipeline will also be applied to that audio.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer to which to apply the effect.
+    /// * `descriptor`: A [KeyValueDescriptor] describing the effect to add.
+    ///
+    /// # Errors
+    ///
+    /// If audio is currently being played, new effects need to be resolved.
+    /// This can cause a [ResolveError].
     pub fn add_effect(&mut self, layer: &str, descriptor: KeyValueDescriptor)
             -> Result<(), ResolveError> {
         let layer = self.layers.get_mut(layer);
@@ -360,6 +374,17 @@ impl Mixer {
         Ok(())
     }
 
+    /// Clears all effects from the layer with the given name. If audio is
+    /// currently being played on the given layer, all effects will be removed
+    /// from it.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer from which to remove all effects.
+    ///
+    /// # Returns
+    ///
+    /// The number of effects that were removed.
     pub fn clear_effects(&mut self, layer: &str) -> usize {
         let layer = self.layers.get_mut(layer);
 
@@ -378,6 +403,24 @@ impl Mixer {
 
     /// Removes all effects from the `layer` with the given name that do not
     /// match the given `predicate`.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer from which to remove effects.
+    /// * `predicate`: A function which takes as input a reference to a
+    /// [KeyValueDescriptor] representing an effect and decides whether this
+    /// effect should be retained (`true`) or not (`false`).
+    ///
+    /// # Returns
+    ///
+    /// The number of effects that were removed.
+    ///
+    /// # Errors
+    ///
+    /// If a lower-level effect was removed while a higher-level one was
+    /// retained, the higher-level effect needs to be re-resolved with audio
+    /// that does not have the lower-level effect. This can cause a
+    /// [ResolveError].
     pub fn retain_effects<P>(&mut self, layer: &str, mut predicate: P)
         -> Result<usize, ResolveError>
     where
@@ -409,6 +452,14 @@ impl Mixer {
         Ok(total_removed)
     }
 
+    /// Adds an adapter to the layer with the given name. If a playlist is
+    /// currently being played, it will remain unaffected. The adapter only
+    /// takes effect once a new playlist is started.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer to which to apply the adapter.
+    /// * `descriptor`: A [KeyValueDescriptor] describing the adapter to add.
     pub fn add_adapter(&mut self, layer: &str,
             descriptor: KeyValueDescriptor) {
         let layer = self.layers.get_mut(layer);
@@ -420,6 +471,17 @@ impl Mixer {
         layer.adapters.push(descriptor);
     }
 
+    /// Removes all adapters from the layer with the given name. If a playlist
+    /// is currently being played, it will remain unaffected. The removal of
+    /// adapters only takes effect once a new playlist is started.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer from which to remove all adapters.
+    ///
+    /// # Returns
+    ///
+    /// The number of adapters that were removed.
     pub fn clear_adapters(&mut self, layer: &str) -> usize {
         let layer = self.layers.get_mut(layer);
         let old_len = layer.adapters.len();
@@ -428,7 +490,20 @@ impl Mixer {
     }
 
     /// Removes all adapters from the `layer` with the given name that do not
-    /// match the given `predicate`.
+    /// match the given `predicate`. If a playlist is currently being played,
+    /// it will remain unaffected. The removal of adapters only takes effect
+    /// once a new playlist is started.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer from which to remove adapters.
+    /// * `predicate`: A function which takes as input a reference to a
+    /// [KeyValueDescriptor] representing an adapter and decides whether this
+    /// adapter should be retained (`true`) or not (`false`).
+    ///
+    /// # Returns
+    ///
+    /// The number of adapters that were removed.
     pub fn retain_adapters<P>(&mut self, layer: &str, predicate: P) -> usize
     where
         P: FnMut(&KeyValueDescriptor) -> bool

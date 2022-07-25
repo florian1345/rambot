@@ -27,6 +27,7 @@ use button::BUTTONCMD_GROUP;
 #[sub_groups(buttoncmd)]
 struct BoardCmd;
 
+/// Gets a [CommandGroup] for the commands with prefix `board`.
 pub fn get_board_commands() -> &'static CommandGroup {
     &BOARDCMD_GROUP
 }
@@ -149,6 +150,8 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult<Option<String>> {
     Ok(None)
 }
 
+/// A single button on a sound board, which is represented by a single reaction
+/// and executes a single command when pressed.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Button {
     emote: ReactionType,
@@ -156,18 +159,23 @@ pub struct Button {
     command: String
 }
 
+/// A sound board which constitutes one message when displayed. The message
+/// will get one reaction for each button.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Board {
     name: String,
     buttons: Vec<Button>
 }
 
+/// Manages all sound boards of a guild.
 pub struct BoardManager {
     boards: HashMap<String, Board>,
     active_boards: HashMap<MessageId, String>
 }
 
 impl BoardManager {
+
+    /// Creates a new board manager with initially no sound boards.
     pub fn new() -> BoardManager {
         BoardManager {
             boards: HashMap::new(),
@@ -175,6 +183,7 @@ impl BoardManager {
         }
     }
 
+    /// Gets an iterator over all sound [Board]s managed by this board manager.
     pub fn boards(&self) -> impl Iterator<Item = &Board> {
         self.boards.values()
     }
@@ -212,6 +221,10 @@ where
     with_guild_state(ctx, guild_id, |mut gs| f(gs.board_manager_mut())).await
 }
 
+/// An [EventHandler] which listens for reactions added to sound board messages
+/// and determines whether these constitute button presses. If such events are
+/// detected, the commands associated with the pressed button are executed and
+/// the reaction is removed, making the button pressable again.
 pub struct BoardButtonEventHandler;
 
 impl EventHandler for BoardButtonEventHandler {

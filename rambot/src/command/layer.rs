@@ -12,6 +12,7 @@ use serenity::model::prelude::Message;
 #[commands(add, remove, list)]
 struct Layer;
 
+/// Gets a [CommandGroup] for the commands with prefix `layer`.
 pub fn get_layer_commands() -> &'static CommandGroup {
     &LAYER_GROUP
 }

@@ -36,6 +36,8 @@ pub use layer::get_layer_commands;
 #[commands(connect, disconnect, cmd_do, play, skip, stop)]
 struct Root;
 
+/// Gets a [CommandGroup] for the root commands (which are not part of any
+/// sub-group).
 pub fn get_root_commands() -> &'static CommandGroup {
     &ROOT_GROUP
 }
