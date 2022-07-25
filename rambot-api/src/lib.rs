@@ -63,7 +63,7 @@ impl Add for &Sample {
     type Output = Sample;
 
     fn add(self, rhs: &Sample) -> Sample {
-        self.clone() + rhs
+        self + rhs
     }
 }
 
@@ -103,7 +103,7 @@ impl Sub for &Sample {
     type Output = Sample;
 
     fn sub(self, rhs: &Sample) -> Sample {
-        self.clone() - rhs
+        self - rhs
     }
 }
 
@@ -127,7 +127,7 @@ impl Mul<f32> for &Sample {
     type Output = Sample;
 
     fn mul(self, rhs: f32) -> Sample {
-        self.clone() * rhs
+        self * rhs
     }
 }
 
@@ -151,7 +151,7 @@ impl Div<f32> for &Sample {
     type Output = Sample;
 
     fn div(self, rhs: f32) -> Sample {
-        self.clone() / rhs
+        self / rhs
     }
 }
 
