@@ -225,6 +225,17 @@ pub struct PluginManager {
 
 impl PluginManager {
 
+    #[cfg(test)]
+    pub(crate) fn mock() -> PluginManager {
+        PluginManager {
+            audio_source_resolvers: Vec::new(),
+            audio_source_list_resolvers: Vec::new(),
+            effect_resolvers: HashMap::new(),
+            adapter_resolvers: HashMap::new(),
+            loaded_libraries: Vec::new()
+        }
+    }
+
     /// Loads plugins from the plugin directory specified in the given config
     /// and returns a manager for them.
     ///

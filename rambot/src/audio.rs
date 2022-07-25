@@ -103,6 +103,18 @@ pub struct Layer {
 }
 
 impl Layer {
+
+    fn new(name: impl Into<String>) -> Layer {
+        Layer {
+            name: name.into(),
+            source: None,
+            list: None,
+            buffer: AudioBuffer::new(),
+            effects: Vec::new(),
+            adapters: Vec::new()
+        }
+    }
+
     fn active(&self) -> bool {
         self.buffer.len() > 0 || self.source.is_some()
     }
@@ -307,14 +319,7 @@ impl Mixer {
             return false;
         }
 
-        self.layers.push(Layer {
-            name: name.clone(),
-            source: None,
-            list: None,
-            buffer: AudioBuffer::new(),
-            effects: Vec::new(),
-            adapters: Vec::new()
-        });
+        self.layers.push(Layer::new(name));
 
         true
     }
@@ -773,5 +778,229 @@ impl<S: AudioSource + Send> MediaSource for PCMRead<S> {
 
     fn len(&self) -> Option<u64> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    struct MockAudioSource {
+        samples: Vec<Sample>,
+        index: usize,
+        segment_size: usize
+    }
+
+    impl MockAudioSource {
+        fn new(samples: Vec<Sample>) -> MockAudioSource {
+            MockAudioSource::with_segment_size(samples, usize::MAX)
+        }
+    
+        fn with_segment_size(samples: Vec<Sample>, segment_size: usize)
+                -> MockAudioSource {
+            MockAudioSource {
+                samples,
+                index: 0,
+                segment_size
+            }
+        }
+    }
+
+    impl AudioSource for MockAudioSource {
+        fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
+            let remaining = &self.samples[self.index..];
+            let len = buf.len().min(remaining.len()).min(self.segment_size);
+            self.index += len;
+
+            buf[..len].copy_from_slice(&remaining[..len]);
+
+            Ok(len)
+        }
+
+        fn has_child(&self) -> bool {
+            false
+        }
+
+        fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+            panic!("mock audio source asked for child")
+        }
+    }
+
+    fn pcm_read_to_end<S>(mut buf: &mut [u8], read: &mut PCMRead<S>) -> usize
+    where
+        S: AudioSource + Send
+    {
+        let mut total = 0;
+
+        loop {
+            let count = read.read(buf).unwrap();
+
+            if count == 0 {
+                return total;
+            }
+
+            buf = &mut buf[count..];
+            total += count;
+
+            if buf.len() == 0 {
+                return total;
+            }
+        }
+    }
+
+    #[test]
+    fn pcm_read_zeros() {
+        let source = MockAudioSource::new(vec![Sample::ZERO; 100]);
+        let mut pcm_read = PCMRead::new(Arc::new(Mutex::new(source)));
+        let mut buf = vec![1; 1024];
+
+        assert_eq!(800, pcm_read_to_end(&mut buf, &mut pcm_read));
+        assert!(buf.into_iter().enumerate()
+            .all(|(i, b)| (i < 800 && b == 0) || (i >= 800 && b == 1)));
+    }
+
+    #[test]
+    fn pcm_read_zeros_split() {
+        let source = MockAudioSource::new(vec![Sample::ZERO; 100]);
+        let mut pcm_read = PCMRead::new(Arc::new(Mutex::new(source)));
+        let mut buf = vec![1; 256];
+
+        assert_eq!(256, pcm_read_to_end(&mut buf, &mut pcm_read));
+        assert!(buf.into_iter().all(|b| b == 0));
+        
+        let mut buf = vec![1; 1024];
+
+        assert_eq!(544, pcm_read_to_end(&mut buf, &mut pcm_read));
+        assert!(buf.into_iter().enumerate()
+            .all(|(i, b)| (i < 544 && b == 0) || (i >= 544 && b == 1)));
+    }
+
+    fn mixer_read_to_end(mut buf: &mut [Sample], mixer: &mut Mixer) -> usize {
+        let mut total = 0;
+
+        loop {
+            let count = mixer.read(buf).unwrap();
+
+            if count == 0 {
+                return total;
+            }
+
+            buf = &mut buf[count..];
+            total += count;
+
+            if buf.len() == 0 {
+                return total;
+            }
+        }
+    }
+
+    fn test_audio_1() -> Vec<Sample> {
+        let mut result = Vec::with_capacity(64);
+
+        for i in 0..64 {
+            let x = i as f32;
+            let left = x + 1.0;
+            let right = 2.0 * x;
+
+            result.push(Sample {
+                left,
+                right
+            })
+        }
+
+        result
+    }
+
+    fn test_audio_2() -> Vec<Sample> {
+        let mut result = Vec::with_capacity(96);
+
+        for i in 0..96 {
+            let x = i as f32;
+            let left = 3.0 * x;
+            let right = x + 2.0;
+
+            result.push(Sample {
+                left,
+                right
+            })
+        }
+
+        result
+    }
+
+    fn test_audio_sum() -> Vec<Sample> {
+        let audio_1 = test_audio_1();
+        let audio_2 = test_audio_2();
+        let mut sum = Vec::with_capacity(96);
+
+        for i in 0..64 {
+            sum.push(audio_1[i] + audio_2[i]);
+        }
+
+        for i in 64..96 {
+            sum.push(audio_2[i]);
+        }
+
+        sum
+    }
+
+    fn assert_approximately_equal(expected: &[Sample], actual: &[Sample]) {
+        const EPS: f32 = 0.001;
+
+        assert_eq!(expected.len(), actual.len());
+
+        let zipped = expected.iter().cloned().zip(actual.iter().cloned());
+
+        for (expected, actual) in zipped {
+            assert!((expected.left - actual.left).abs() < EPS);
+            assert!((expected.right - actual.right).abs() < EPS);
+        }
+    }
+
+    fn add_layer(mixer: &mut Mixer, name: &str, samples: Vec<Sample>,
+            segment_size: Option<usize>) {
+        mixer.layers.push(Layer::new(name));
+
+        let audio = if let Some(segment_size) = segment_size {
+            MockAudioSource::with_segment_size(samples, segment_size)
+        }
+        else {
+            MockAudioSource::new(samples)
+        };
+
+        mixer.layers.get_mut(name).source = Some(Box::new(audio));
+    }
+
+    #[test]
+    fn mixer_single_audio_source() {
+        let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
+        add_layer(&mut mixer, "test", test_audio_1(), None);
+        let mut buf = vec![Sample::ZERO; 100];
+
+        assert_eq!(64, mixer_read_to_end(&mut buf, &mut mixer));
+        assert_approximately_equal(&test_audio_1(), &buf[..64]);
+    }
+
+    #[test]
+    fn mixer_two_audio_sources() {
+        let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
+        add_layer(&mut mixer, "test1", test_audio_1(), None);
+        add_layer(&mut mixer, "test2", test_audio_2(), None);
+        let mut buf = vec![Sample::ZERO; 100];
+
+        assert_eq!(96, mixer_read_to_end(&mut buf, &mut mixer));
+        assert_approximately_equal(&test_audio_sum(), &buf[..96]);
+    }
+
+    #[test]
+    fn mixer_two_segmented_audio_sources() {
+        let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
+        add_layer(&mut mixer, "test1", test_audio_1(), Some(5));
+        add_layer(&mut mixer, "test2", test_audio_2(), Some(7));
+        let mut buf = vec![Sample::ZERO; 100];
+
+        assert_eq!(96, mixer_read_to_end(&mut buf, &mut mixer));
+        assert_approximately_equal(&test_audio_sum(), &buf[..96]);
     }
 }
