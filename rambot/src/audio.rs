@@ -7,6 +7,9 @@ use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "bench")]
+use std::time::{Duration, Instant};
+
 use vmcircbuffer::double_mapped_buffer::DoubleMappedBuffer;
 
 use crate::key_value::KeyValueDescriptor;
@@ -603,7 +606,13 @@ impl AudioSource for Mixer {
 /// 32-bit floating-point PCM audio data.
 pub struct PCMRead<S: AudioSource + Send> {
     source: Arc<Mutex<S>>,
-    sample_buf: Vec<Sample>
+    sample_buf: Vec<Sample>,
+
+    #[cfg(feature = "bench")]
+    bench_sample_count: usize,
+
+    #[cfg(feature = "bench")]
+    bench_duration: Duration
 }
 
 impl<S: AudioSource + Send> PCMRead<S> {
@@ -612,40 +621,63 @@ impl<S: AudioSource + Send> PCMRead<S> {
     pub fn new(source: Arc<Mutex<S>>) -> PCMRead<S> {
         PCMRead {
             source,
-            sample_buf: Vec::new()
+            sample_buf: Vec::new(),
+
+            #[cfg(feature = "bench")]
+            bench_sample_count: 0,
+
+            #[cfg(feature = "bench")]
+            bench_duration: Duration::ZERO
         }
     }
 }
 
 const SAMPLE_SIZE: usize = 8;
 
-fn to_bytes(s: &Sample) -> Vec<u8> {
-    let lle = s.left.to_le_bytes();
-    let rle = s.right.to_le_bytes();
-    [lle, rle].concat()
+#[cfg(feature = "bench")]
+const SAMPLES_FOR_REPORT: usize = 96000;
+
+fn to_bytes(buf: &mut [u8], s: &Sample) {
+    buf[..4].copy_from_slice(&s.left.to_le_bytes());
+    buf[4..8].copy_from_slice(&s.right.to_le_bytes());
 }
 
 impl<S: AudioSource + Send> Read for PCMRead<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        #[cfg(feature = "bench")]
+        let before = Instant::now();
+
         let sample_capacity = buf.len() / SAMPLE_SIZE;
 
         if self.sample_buf.len() < sample_capacity {
-            self.sample_buf = vec![Sample {
-                left: 0.0,
-                right: 0.0
-            }; sample_capacity];
+            self.sample_buf = vec![Sample::ZERO; sample_capacity];
         }
 
         let sample_len = self.source.lock().unwrap()
             .read(&mut self.sample_buf[..sample_capacity])?;
+        let mut buf_stride = buf;
 
         for i in 0..sample_len {
             let sample = &self.sample_buf[i];
-            let bytes = to_bytes(sample);
-            let buf_stride = &mut buf[i * SAMPLE_SIZE..];
+            to_bytes(buf_stride, sample);
+            buf_stride = &mut buf_stride[SAMPLE_SIZE..];
+        }
 
-            for i in 0..SAMPLE_SIZE {
-                buf_stride[i] = bytes[i];
+        #[cfg(feature = "bench")]
+        {
+            let after = Instant::now();
+            self.bench_sample_count += sample_len;
+            self.bench_duration += after - before;
+
+            if self.bench_sample_count >= SAMPLES_FOR_REPORT {
+                let nanos_per_sample = self.bench_duration.as_nanos() as f64 /
+                    self.bench_sample_count as f64;
+
+                self.bench_sample_count = 0;
+                self.bench_duration = Duration::ZERO;
+
+                log::info!("Measured average of {:.02} ns per sample.",
+                    nanos_per_sample);
             }
         }
 
