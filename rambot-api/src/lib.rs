@@ -225,9 +225,10 @@ pub trait AudioSource {
     /// Any IO-[Error](io::Error) that occurs during reading.
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error>;
 
-    /// Indicates whether this audio source wraps around a child source. For
-    /// example, a low-pass filter wraps around the root audio source which is
-    /// filtered.
+    /// Indicates whether this audio source wraps around a child source. This
+    /// must be `true` for any audio source constituting an effect, i.e. which
+    /// was resolved by an [EffectResolver]. For example, a low-pass filter
+    /// wraps around the root audio source which is filtered.
     fn has_child(&self) -> bool;
 
     /// Removes the child from this audio source and returns it. If
@@ -273,6 +274,15 @@ pub trait AudioSourceResolver : Send + Sync {
 
     /// Indicates whether this resolver can construct an audio source from the
     /// given descriptor.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of unspecified format.
+    ///
+    /// # Returns
+    ///
+    /// True, if and only if this resolver can construct an audio source from
+    /// the given descriptor.
     fn can_resolve(&self, descriptor: &str) -> bool;
 
     /// Generates an [AudioSource] trait object from the given descriptor. If
@@ -285,11 +295,24 @@ pub trait AudioSourceResolver : Send + Sync {
     /// a file exists and has the correct extension. Now it should probably
     /// work to load it, but the file format may still be corrupted, which
     /// would cause an error in this method.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of unspecified format.
+    ///
+    /// # Returns
+    ///
+    /// A boxed [AudioSource] playing the audio represented by the given
+    /// descriptor.
+    ///
+    /// # Errors
+    ///
+    /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, descriptor: &str)
         -> Result<Box<dyn AudioSource + Send>, String>;
 }
 
-/// A trait for resolvers which can create effects from string descriptors.
+/// A trait for resolvers which can create effects from key-value arguments.
 /// Similarly to [AudioSourceResolver]s, these effects are realized as
 /// [AudioSource]s, however they receive a child audio source whose output can
 /// be modified, thus constituting an effect. As an example, a volume effect
@@ -297,50 +320,206 @@ pub trait AudioSourceResolver : Send + Sync {
 /// audio data it outputs by the volume number.
 pub trait EffectResolver : Send + Sync {
 
+    /// The name of the kind of effects resolved by this resolver.
     fn name(&self) -> &str;
 
+    /// Indicates whether effects of this kind are unique, i.e. there may exist
+    /// at most one per layer. When another effect of the same kind is added,
+    /// the old one is removed. This makes sense for example for a volume
+    /// effect, where adding volume effects can be seen more like an "update".
     fn unique(&self) -> bool;
 
     /// Generates an [AudioSource] trait object that yields audio constituting
     /// the effect defined by the given key-value pairs applied to the given
     /// child. This may return an error should the provided key-value map
     /// contain invalid inputs.
+    ///
+    /// # Arguments
+    ///
+    /// * `key_values`: A [HashMap] storing arguments for this effect. For each
+    /// supplied argument, the parameter name maps to the string that was given
+    /// as the argument value.
+    /// * `child`: A boxed [AudioSource] to which the effect shall be applied,
+    /// i.e. which should be wrapped in an effect audio source.
+    ///
+    /// # Returns
+    ///
+    /// A boxed [AudioSource] playing the same audio as `child` but with the
+    /// effect applied to it. It must also offer `child` as a child in the
+    /// context of [AudioSource::has_child] and [AudioSource::take_child].
+    ///
+    /// # Errors
+    ///
+    /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
         child: Box<dyn AudioSource + Send>)
         -> Result<Box<dyn AudioSource + Send>, String>;
 }
 
+/// A trait for resolvers which can create [AudioSourceList]s from string
+/// descriptors. A plugin with the purpose of implementing new kinds of
+/// playlists will usually register at least one of these.
 pub trait AudioSourceListResolver : Send + Sync {
+
+    /// Indicates whether this resolver can construct an audio source list from
+    /// the given descriptor.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of unspecified format.
+    ///
+    /// # Returns
+    ///
+    /// True, if and only if this resolver can construct an audio source list
+    /// from the given descriptor.
     fn can_resolve(&self, descriptor: &str) -> bool;
 
+    /// Generates an [AudioSourceList] trait object from the given descriptor.
+    /// If [AudioSourceListResolver::can_resolve] returns `true`, this should
+    /// probably work, however it may still return an error message should an
+    /// unexpected problem occur.
+    ///
+    /// As an example, for a plugin that reads files of some type,
+    /// [AudioSourceListResolver::can_resolve] may be implemented by checking
+    /// that a file exists and has the correct extension. Now it should
+    /// probably work to load it, but the file format may still be corrupted,
+    /// which would cause an error in this method.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor`: A textual descriptor of unspecified format.
+    ///
+    /// # Returns
+    ///
+    /// A boxed [AudioSourceList] providing the playlist represented by the
+    /// given `descriptor`.
+    ///
+    /// # Errors
+    ///
+    /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, descriptor: &str)
         -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 
+/// A trait for resolvers which can create adapters from key-value arguments.
+/// Adapters are essentially effects for [AudioSourceList]s. Similarly to
+/// effects, they are realized as [AudioSourceList]s wrapping other audio
+/// source lists and altering their output. As an example, a shuffle effect
+/// could be realized by wrapping the child audio source list, collecting all
+/// its content, shuffling it, and then iterating over it.
 pub trait AdapterResolver : Send + Sync {
 
+    /// The name of the kind of adapters resolved by this resolver.
     fn name(&self) -> &str;
 
+    /// Indicates whether adapters of this kind are unique, i.e. there may
+    /// exist at most one per layer. When another adapter of the same kind is
+    /// added, the old one is removed. This makes sense for example for a loop
+    /// adapter, because looping an already infinite (because looped) audio
+    /// source list is redundant.
     fn unique(&self) -> bool;
 
+    /// Generates an [AudioSourceList] trait object that yields audio source
+    /// descriptors constituting the output of the adapter defined by the given
+    /// key-value pairs applied to the given child. This may return an error
+    /// should the provided key-value map contain invalid inputs.
+    ///
+    /// # Arguments
+    ///
+    /// * `key_values`: A [HashMap] storing arguments for this adapter. For
+    /// each supplied argument, the parameter name maps to the string that was
+    /// given as the argument value.
+    /// * `child`: A boxed [AudioSourceList] to which the adapter shall be
+    /// applied, i.e. which should be wrapped in an adapter audio source list.
+    ///
+    /// # Returns
+    ///
+    /// A boxed [AudioSourceList] which provides the output of the adapter
+    /// applied to `child`.
+    ///
+    /// # Errors
+    ///
+    /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
         child: Box<dyn AudioSourceList + Send>)
         -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 
+/// The main trait for Rambot plugins. This handles all initialization and
+/// registration of resolvers by this plugin.
 pub trait Plugin : Send + Sync {
+
+    /// Initializes this plugin and allows it to view the config valid for all
+    /// plugins.
+    ///
+    /// # Arguments
+    ///
+    /// * `config`: The [PluginConfig] for all plugins. Currently, plugins
+    /// themselves are responsible for respecting this config.
+    ///
+    /// # Errors
+    ///
+    /// In case initialization fails, an error message may be provided as a
+    /// [String].
     fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String>;
 
+    /// Gets a list of all [AudioSourceResolver] to be registered by this
+    /// plugin.
+    ///
+    /// # Returns
+    ///
+    /// A new vector of [AudioSourceResolver] trait objects for all audio
+    /// source resolvers this plugin wishes to register.
     fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>>;
 
+    /// Gets a list of all [EffectResolver] to be registered by this plugin.
+    ///
+    /// # Returns
+    ///
+    /// A new vector of [EffectResolver] trait objects for all effect resolvers
+    /// this plugin wishes to register.
     fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>>;
 
+    /// Gets a list of all [AudioSourceListResolver] to be registered by this
+    /// plugin.
+    ///
+    /// # Returns
+    ///
+    /// A new vector of [AudioSourceListResolver] trait objects for all audio
+    /// source list resolvers this plugin wishes to register.
     fn audio_source_list_resolvers(&self)
         -> Vec<Box<dyn AudioSourceListResolver>>;
 
+    /// Gets a list of all [AdapterResolver] to be registered by this plugin.
+    ///
+    /// # Returns
+    ///
+    /// A new vector of [AdapterResolver] trait objects for all adapter
+    /// resolvers this plugin wishes to register.
     fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>>;
 }
 
+/// Exports this plugin by creating a common entry point for dynamically loaded
+/// libraries that returns a pointer to a [Plugin] trait object. As an
+/// argument, this macro requires the path to a function which can be called
+/// without arguments and returns an instance of any type implementing
+/// [Plugin].
+///
+/// # Example
+///
+/// ```ignore
+/// use rambot_api::{export_plugin, Plugin};
+///
+/// struct MyPlugin { [...] }
+///
+/// impl Plugin for MyPlugin { [...] }
+///
+/// fn make_my_plugin() -> MyPlugin {
+///     MyPlugin { [...] }
+/// }
+///
+/// export_plugin!(make_my_plugin);
+/// ```
 #[macro_export]
 macro_rules! export_plugin {
     ($constructor:path) => {
