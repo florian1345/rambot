@@ -410,10 +410,10 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 ///
 /// This macro automatically generates code for all parameters beyond the
 /// `&Context` and `&Message` parameters to parse their values. Any argument
-/// of some type that implements [FromStr] can be used here. Use [Option] for
-/// optional arguments and [Vec] for a trailing argument list. Note that all
-/// non-optional values must come first, then all optional ones, and then at
-/// most one [Vec].
+/// of some type that implements [FromStr](std::str::FromStr) can be used here.
+/// Use [Option] for optional arguments and [Vec] for a trailing argument list.
+/// Note that all non-optional values must come first, then all optional ones,
+/// and then at most one [Vec].
 ///
 /// # Error handling
 ///
