@@ -4,13 +4,11 @@ mod util;
 use crate::kernel::KernelFilter;
 
 use rambot_api::{
-    AdapterResolver,
     AudioSource,
-    AudioSourceListResolver,
-    AudioSourceResolver,
     EffectResolver,
     Plugin,
-    PluginConfig
+    PluginConfig,
+    ResolverRegistry
 };
 
 use std::collections::HashMap;
@@ -66,28 +64,13 @@ impl EffectResolver for InvGaussianEffectResolver {
 struct FiltersPlugin;
 
 impl Plugin for FiltersPlugin {
-    fn load_plugin(&mut self, _config: &PluginConfig) -> Result<(), String> {
+
+    fn load_plugin<'registry>(&mut self, _config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_effect_resolver(GaussianEffectResolver);
+        registry.register_effect_resolver(InvGaussianEffectResolver);
+
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        Vec::new()
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        vec![
-            Box::new(GaussianEffectResolver),
-            Box::new(InvGaussianEffectResolver)
-        ]
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        Vec::new()
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        Vec::new()
     }
 }
 

@@ -4,13 +4,11 @@ use std::collections::VecDeque;
 use std::io;
 
 use rambot_api::{
-    AdapterResolver,
     AudioSourceList,
     AudioSourceListResolver,
-    AudioSourceResolver,
-    EffectResolver,
     Plugin,
-    PluginConfig
+    PluginConfig,
+    ResolverRegistry
 };
 
 struct JsonAudioSourceList {
@@ -45,41 +43,23 @@ impl AudioSourceListResolver for JsonAudioSourceListResolver {
     }
 }
 
-struct JsonListPlugin {
-    file_manager: Option<FileManager>
-}
+struct JsonListPlugin;
 
 impl Plugin for JsonListPlugin {
 
-    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
-        self.file_manager = Some(FileManager::new(config));
+    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_audio_source_list_resolver(
+            JsonAudioSourceListResolver {
+                file_manager: FileManager::new(config)
+            });
+
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        Vec::new()
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        Vec::new()
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        vec![Box::new(JsonAudioSourceListResolver {
-            file_manager: self.file_manager.as_ref().unwrap().clone()
-        })]
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        Vec::new()
     }
 }
 
 fn make_json_list_plugin() -> JsonListPlugin {
-    JsonListPlugin {
-        file_manager: None
-    }
+    JsonListPlugin
 }
 
 rambot_api::export_plugin!(make_json_list_plugin);

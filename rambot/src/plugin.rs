@@ -5,7 +5,7 @@ use rambot_api::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin, AudioSourceList, AdapterResolver, PluginConfig
+    Plugin, AudioSourceList, AdapterResolver, PluginConfig, ResolverRegistry
 };
 
 use serenity::prelude::TypeMapKey;
@@ -213,6 +213,25 @@ where
     }
 }
 
+unsafe fn load_plugin(path: PathBuf, config: &PluginConfig,
+        registry: &mut ResolverRegistry, loaded_libraries: &mut Vec<Library>)
+        -> Result<(), LoadPluginsError> {
+    type CreatePlugin = unsafe fn() -> *mut dyn Plugin;
+
+    let lib = Library::new(path)?;
+    loaded_libraries.push(lib);
+    let lib = loaded_libraries.last().unwrap();
+    let create_plugin: Symbol<CreatePlugin> = lib.get(b"_create_plugin")?;
+    let raw = create_plugin();
+    let mut plugin: Box<dyn Plugin> = Box::from_raw(raw);
+
+    if let Err(msg) = plugin.load_plugin(config, registry) {
+        return Err(LoadPluginsError::InitError(msg));
+    }
+
+    Ok(())
+}
+
 /// Manages loading of plugins and resolution of functionality offered by those
 /// plugins (i.e. audio sources, lists, effects, and adapters).
 pub struct PluginManager {
@@ -256,6 +275,18 @@ impl PluginManager {
             adapter_resolvers: HashMap::new(),
             loaded_libraries: Vec::new()
         };
+        let mut resolver_registry = ResolverRegistry::new(
+            |r| plugin_manager.audio_source_resolvers.push(r),
+            |r| plugin_manager.audio_source_list_resolvers.push(r),
+            |r| {
+                let name = r.name().to_owned();
+                plugin_manager.effect_resolvers.insert(name, r);
+            },
+            |r| {
+                let name = r.name().to_owned();
+                plugin_manager.adapter_resolvers.insert(name, r);
+            }
+        );
 
         fs::create_dir_all(config.plugin_directory())?;
 
@@ -267,11 +298,16 @@ impl PluginManager {
                 // TODO this is probably truly unsafe -- how to contain?
 
                 unsafe {
-                    plugin_manager.load_plugin(
-                        dir_entry.path(), config.plugin_config())?;
+                    load_plugin(
+                        dir_entry.path(),
+                        config.plugin_config(),
+                        &mut resolver_registry,
+                        &mut plugin_manager.loaded_libraries)?;
                 }
             }
         }
+
+        drop(resolver_registry);
 
         log::info!("Loaded {} plugins with {} audio sources, {} lists, {} \
             effects, and {} adapters.", plugin_manager.loaded_libraries.len(),
@@ -281,39 +317,6 @@ impl PluginManager {
             plugin_manager.adapter_resolvers.len());
 
         Ok(plugin_manager)
-    }
-
-    unsafe fn load_plugin(&mut self, path: PathBuf, config: &PluginConfig)
-            -> Result<(), LoadPluginsError> {
-        type CreatePlugin = unsafe fn() -> *mut dyn Plugin;
-        
-        let lib = Library::new(path)?;
-        self.loaded_libraries.push(lib);
-        let lib = self.loaded_libraries.last().unwrap();
-        let create_plugin: Symbol<CreatePlugin> = lib.get(b"_create_plugin")?;
-        let raw = create_plugin();
-        let mut plugin: Box<dyn Plugin> = Box::from_raw(raw);
-
-        if let Err(msg) = plugin.load_plugin(config) {
-            return Err(LoadPluginsError::InitError(msg));
-        }
-
-        self.audio_source_resolvers.append(
-            &mut plugin.audio_source_resolvers());
-        self.audio_source_list_resolvers.append(
-            &mut plugin.audio_source_list_resolvers());
-
-        for effect_resolver in plugin.effect_resolvers() {
-            let name = effect_resolver.name().to_owned();
-            self.effect_resolvers.insert(name, effect_resolver);
-        }
-
-        for adapter_resolver in plugin.adapter_resolvers() {
-            let name = adapter_resolver.name().to_owned();
-            self.adapter_resolvers.insert(name, adapter_resolver);
-        }
-
-        Ok(())
     }
 
     /// Resolves an [AudioSource] given a textual descriptor by searching for a

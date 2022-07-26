@@ -3,14 +3,14 @@
 use hound::{SampleFormat, WavIntoSamples, WavReader};
 
 use plugin_commons::FileManager;
+
 use rambot_api::{
-    AdapterResolver,
     AudioSource,
-    AudioSourceListResolver,
     AudioSourceResolver,
-    EffectResolver,
     Plugin,
-    Sample, PluginConfig
+    PluginConfig,
+    ResolverRegistry,
+    Sample
 };
 
 use std::io::{ErrorKind, Read, self};
@@ -188,40 +188,21 @@ impl AudioSourceResolver for WaveAudioSourceResolver {
     }
 }
 
-struct WavePlugin {
-    file_manager: Option<FileManager>
-}
+struct WavePlugin;
 
 impl Plugin for WavePlugin {
-    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
-        self.file_manager = Some(FileManager::new(config));
+    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_audio_source_resolver(WaveAudioSourceResolver {
+            file_manager: FileManager::new(config)
+        });
+
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        vec![Box::new(WaveAudioSourceResolver {
-            file_manager: self.file_manager.as_ref().unwrap().clone()
-        })]
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        Vec::new()
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        Vec::new()
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        Vec::new()
     }
 }
 
 fn make_wave_plugin() -> WavePlugin {
-    WavePlugin {
-        file_manager: None
-    }
+    WavePlugin
 }
 
 rambot_api::export_plugin!(make_wave_plugin);

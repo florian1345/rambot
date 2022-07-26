@@ -1,11 +1,9 @@
 use rambot_api::{
-    AdapterResolver,
     AudioSourceList,
     AudioSourceListResolver,
-    AudioSourceResolver,
-    EffectResolver,
     Plugin,
-    PluginConfig
+    PluginConfig,
+    ResolverRegistry
 };
 
 use std::fs::{self, ReadDir};
@@ -59,41 +57,22 @@ impl AudioSourceListResolver for FolderListResolver {
     }
 }
 
-struct FolderListPlugin {
-    root: String
-}
+struct FolderListPlugin;
 
 impl Plugin for FolderListPlugin {
 
-    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
-        self.root = config.root_directory().to_owned();
+    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_audio_source_list_resolver(FolderListResolver {
+            root: config.root_directory().to_owned()
+        });
+
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        Vec::new()
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        Vec::new()
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        vec![Box::new(FolderListResolver {
-            root: self.root.clone()
-        })]
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        Vec::new()
     }
 }
 
 fn make_folder_list_plugin() -> FolderListPlugin {
-    FolderListPlugin {
-        root: String::new()
-    }
+    FolderListPlugin
 }
 
 rambot_api::export_plugin!(make_folder_list_plugin);
