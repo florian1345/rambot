@@ -13,9 +13,9 @@ rambot-api = { path = "../rambot-api" }
 rambot-proc-macro = { path = "../rambot-proc-macro" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_json = "1.0"
-serenity = "0.10"
+serenity = "0.11"
 simplelog = "0.12"
-songbird = "0.2"
+songbird = "0.3"
 tokio = { version = "1.0", features = [ "macros", "rt-multi-thread" ] }
 vmcircbuffer = "0.0.9"
 

@@ -18,7 +18,7 @@ use serenity::framework::standard::{
 };
 use serenity::framework::standard::macros::{help, hook};
 use serenity::model::prelude::{Message, UserId};
-use serenity::prelude::TypeMapKey;
+use serenity::prelude::{TypeMapKey, GatewayIntents};
 
 use songbird::SerenityInit;
 
@@ -46,7 +46,8 @@ impl TypeMapKey for FrameworkTypeMapKey {
 async fn print_help(ctx: &Context, msg: &Message, args: Args,
         help_options: &'static HelpOptions, groups: &[&'static CommandGroup],
         owners: HashSet<UserId>) -> CommandResult {
-    help_commands::with_embeds(ctx, msg, args, help_options, groups, owners).await;
+    help_commands::with_embeds(ctx, msg, args, help_options, groups, owners)
+        .await?;
     Ok(())
 }
 
@@ -114,7 +115,9 @@ async fn main() {
             .group(command::get_layer_commands())
             .after(after_hook)
             .help(&PRINT_HELP)));
-    let client_res = Client::builder(config.token())
+    let intents = GatewayIntents::non_privileged() |
+        GatewayIntents::MESSAGE_CONTENT;
+    let client_res = Client::builder(config.token(), intents)
         .framework_arc(Arc::clone(&framework))
         .event_handler(EventHandlerComposer::new(BoardButtonEventHandler)
             .push(LoggingEventHandler)

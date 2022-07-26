@@ -776,7 +776,7 @@ impl<S: AudioSource + Send> MediaSource for PCMRead<S> {
         false
     }
 
-    fn len(&self) -> Option<u64> {
+    fn byte_len(&self) -> Option<u64> {
         None
     }
 }
