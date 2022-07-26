@@ -42,6 +42,10 @@ impl FileManager {
     /// extension.
     pub fn is_file_with_extension(&self, descriptor: &str, extension: &str)
             -> bool {
+        if descriptor.len() < extension.len() {
+            return false;
+        }
+
         let file_extension = descriptor[(descriptor.len() - extension.len())..]
             .to_lowercase();
         let path = self.resolve_file(descriptor);
