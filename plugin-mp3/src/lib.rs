@@ -73,15 +73,15 @@ impl<R: Read + Seek> AudioSource for Mp3AudioSource<R> {
             }
         }
         else {
-            for sample_idx in 0..sample_count {
+            for (sample_idx, sample) in buf.iter_mut().enumerate().take(sample_count) {
                 let data_idx = sample_idx * channels;
                 let left = to_f32(remaining_data[data_idx]);
                 let right = to_f32(remaining_data[data_idx + 1]);
 
-                buf[sample_idx] = Sample {
+                *sample = Sample {
                     left,
                     right
-                }
+                };
             }
         }
 

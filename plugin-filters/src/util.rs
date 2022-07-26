@@ -33,11 +33,8 @@ impl AudioSource for RightPaddedAudioSource {
         }
 
         let zeros = self.padding.min(buf.len());
+        (&mut buf[..zeros]).fill(Sample::ZERO);
 
-        for i in 0..zeros {
-            buf[i] = Sample::ZERO;
-        }
-    
         self.padding -= zeros;
         Ok(zeros)
     }

@@ -61,11 +61,11 @@ fn read<F>(f: &mut F, buf: &mut [Sample]) -> Result<usize, io::Error>
 where
     F: FloatSamples
 {
-    for i in 0..buf.len() {
+    for (i, buf_sample) in buf.iter_mut().enumerate() {
         if let Some(sample) = f.next_sample() {
             let sample = sample.map_err(|e|
                 io::Error::new(ErrorKind::Other, format!("{}", e)))?;
-            buf[i] = sample;
+            *buf_sample = sample;
         }
         else {
             return Ok(i);

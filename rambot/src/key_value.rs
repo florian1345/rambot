@@ -94,7 +94,7 @@ impl Display for KeyValueDescriptor {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", &self.name)?;
 
-        if self.key_values.len() > 0 {
+        if !self.key_values.is_empty() {
             write!(f, "(")?;
 
             for (i, (k, v)) in self.key_values.iter().enumerate() {
@@ -160,7 +160,7 @@ fn is_delimiter(c: char) -> bool {
     c == '(' || c == ')' || c == ',' || c == '='
 }
 
-fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
+fn parse_string(chars: &mut Peekable<Chars<'_>>)
         -> Result<String, ParseKeyValueDescriptorError> {
     let mut s = String::new();
     let mut quote_mode = false;
@@ -187,11 +187,9 @@ fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
                 new_escaped = true;
             }
         }
-        else if c == '\"' {
-            if quote_mode && !escaped {
-                chars.next();
-                return Ok(s);
-            }
+        else if c == '\"' && quote_mode && !escaped {
+            chars.next();
+            return Ok(s);
         }
 
         escaped = new_escaped;
@@ -210,7 +208,7 @@ fn parse_string<'a>(chars: &mut Peekable<Chars<'a>>)
     }
 }
 
-fn consume_delimiter<'a>(chars: &mut Peekable<Chars<'a>>, delimiter: char)
+fn consume_delimiter(chars: &mut Peekable<Chars<'_>>, delimiter: char)
         -> Result<(), ParseKeyValueDescriptorError> {
     match chars.next() {
         Some(c) => {
@@ -228,7 +226,7 @@ fn consume_delimiter<'a>(chars: &mut Peekable<Chars<'a>>, delimiter: char)
     }
 }
 
-fn parse_key_value<'a>(chars: &mut Peekable<Chars<'a>>)
+fn parse_key_value(chars: &mut Peekable<Chars<'_>>)
         -> Result<HashMap<String, String>, ParseKeyValueDescriptorError> {
     let mut first = true;
     let mut result = HashMap::new();

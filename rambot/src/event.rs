@@ -106,7 +106,7 @@ impl<E> EventHandlerComposer<E> {
 
     /// Adds a new event handler to the composite. Returns the altered composer
     /// for chaining.
-    pub fn add<E2>(self, event_handler: E2)
+    pub fn push<E2>(self, event_handler: E2)
             -> EventHandlerComposer<CompositeEventHandler<E, E2>> {
         EventHandlerComposer {
             event_handler: CompositeEventHandler {

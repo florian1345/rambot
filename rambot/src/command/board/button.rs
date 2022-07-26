@@ -40,7 +40,7 @@ async fn add(ctx: &Context, msg: &Message, board_name: String,
         emote: ReactionType, command: String)
         -> CommandResult<Option<String>> {
     with_board(ctx, msg, board_name, |board| {
-        if board.buttons.iter().any(|btn| &btn.emote == &emote) {
+        if board.buttons.iter().any(|btn| btn.emote == emote) {
             Some(format!("Duplicate button: {}.", emote))
         }
         else {
@@ -67,7 +67,7 @@ async fn description(ctx: &Context, msg: &Message, board_name: String,
         -> CommandResult<Option<String>> {
     with_board(ctx, msg, board_name, |board| {
         let button = board.buttons.iter_mut()
-            .find(|btn| &btn.emote == &emote);
+            .find(|btn| btn.emote == emote);
 
         if let Some(button) = button {
             button.description = description;
@@ -90,7 +90,7 @@ async fn remove(ctx: &Context, msg: &Message, board_name: String,
     with_board(ctx, msg, board_name, |board| {
         let old_len = board.buttons.len();
 
-        board.buttons.retain(|btn| &btn.emote != &emote);
+        board.buttons.retain(|btn| btn.emote != emote);
 
         if board.buttons.len() == old_len {
             Some(format!("I found no button with the emote {}.", emote))

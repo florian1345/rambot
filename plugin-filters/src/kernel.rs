@@ -49,8 +49,8 @@ impl AudioSource for KernelFilter {
         let count = self.child.read(
             &mut self.buf[(kernel_size - 1)..required_buf_len])?;
 
-        for i in 0..count {
-            buf[i] = fold(&self.buf[i..(i + kernel_size)], &self.kernel);
+        for (i, sample) in buf.iter_mut().enumerate().take(count) {
+            *sample = fold(&self.buf[i..(i + kernel_size)], &self.kernel);
         }
 
         self.buf.copy_within(count..(count + kernel_size - 1), 0);

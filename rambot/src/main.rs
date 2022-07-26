@@ -117,7 +117,7 @@ async fn main() {
     let client_res = Client::builder(config.token())
         .framework_arc(Arc::clone(&framework))
         .event_handler(EventHandlerComposer::new(BoardButtonEventHandler)
-            .add(LoggingEventHandler)
+            .push(LoggingEventHandler)
             .build())
         .type_map_insert::<PluginManager>(plugin_mgr)
         .type_map_insert::<Config>(config)
