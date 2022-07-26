@@ -358,7 +358,7 @@ impl Mixer {
             // We need to remove the old effect of the same name
 
             let removed_idx = layer.effects.iter().enumerate()
-                .find(|(_, e)| &e.name == &descriptor.name)
+                .find(|(_, e)| e.name == descriptor.name)
                 .map(|(i, _)| i);
 
             if let Some(idx) = removed_idx {
@@ -470,7 +470,7 @@ impl Mixer {
         let layer = self.layers.get_mut(layer);
 
         if self.plugin_manager.is_adapter_unique(&descriptor.name) {
-            layer.adapters.retain(|d| &d.name != &descriptor.name);
+            layer.adapters.retain(|d| d.name != descriptor.name);
         }
 
         layer.adapters.push(descriptor);

@@ -4,6 +4,7 @@ use crate::command::{with_guild_state};
 use rambot_proc_macro::rambot_command;
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -105,8 +106,8 @@ async fn display(ctx: &Context, msg: &Message, name: String)
 
             for button in &board.buttons {
                 if !button.description.is_empty() {
-                    content.push_str(&format!("\n{} : {}", &button.emote,
-                        &button.description));
+                    write!(content, "\n{} : {}", &button.emote,
+                        &button.description).unwrap();
                 }
             }
 
@@ -171,6 +172,12 @@ pub struct Board {
 pub struct BoardManager {
     boards: HashMap<String, Board>,
     active_boards: HashMap<MessageId, String>
+}
+
+impl Default for BoardManager {
+    fn default() -> BoardManager{
+        BoardManager::new()
+    }
 }
 
 impl BoardManager {
@@ -252,7 +259,7 @@ impl EventHandler for BoardButtonEventHandler {
                 let command = with_board_manager(&ctx, guild_id, |board_mgr|
                     board_mgr.active_board(add_reaction.message_id)
                         .and_then(|b| b.buttons.iter()
-                            .find(|btn| &btn.emote == &add_reaction.emoji)
+                            .find(|btn| btn.emote == add_reaction.emoji)
                             .map(|btn| &btn.command))
                         .cloned()).await;
 
@@ -275,7 +282,7 @@ impl EventHandler for BoardButtonEventHandler {
                     // For some reason, this becomes unset
                     msg.guild_id = Some(guild_id);
 
-                    let framework = Arc::clone(&ctx.data
+                    let framework = Arc::clone(ctx.data
                         .read()
                         .await
                         .get::<FrameworkTypeMapKey>()

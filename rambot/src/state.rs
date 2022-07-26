@@ -197,7 +197,7 @@ impl<'a> Deref for GuildStateGuard<'a> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
-        &self.guild_state
+        self.guild_state
     }
 }
 
@@ -236,7 +236,7 @@ pub struct State {
     directory: String
 }
 
-fn is_json(p: &PathBuf) -> bool {
+fn is_json(p: &Path) -> bool {
     if !p.is_file() {
         return false;
     }
@@ -280,7 +280,7 @@ impl State {
             let matches = fs::read_dir(&path)?
                 .flat_map(|e| e.into_iter())
                 .map(|e| e.path())
-                .filter(is_json);
+                .filter(|p| is_json(p));
             let mut state = State::new(directory)?;
 
             for json_path in matches {

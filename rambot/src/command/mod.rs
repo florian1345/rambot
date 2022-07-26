@@ -18,6 +18,7 @@ use serenity::model::prelude::Message;
 use songbird::Call;
 use songbird::input::{Input, Reader};
 
+use std::fmt::Write;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::Mutex as TokioMutex;
@@ -155,7 +156,7 @@ where
     F: FnOnce(MutexGuard<Mixer>) -> T
 {
     with_mixer(ctx, msg, |mixer| {
-        if mixer.contains_layer(&layer) {
+        if mixer.contains_layer(layer) {
             Some(f(mixer))
         }
         else {
@@ -176,7 +177,7 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     let active_before = {
         let mut mixer_guard = mixer.lock().unwrap();
 
-        if !mixer_guard.contains_layer(&layer) {
+        if !mixer_guard.contains_layer(layer) {
             return Some(format!("No layer of name {}.", &layer));
         }
 
@@ -309,7 +310,7 @@ where
             format!("{} on layer `{}`:", name_plural_capital, &layer);
 
         for (i, descriptor) in descriptors.iter().enumerate() {
-            reply.push_str(&format!("\n{}. {}", i + 1, descriptor));
+            write!(reply, "\n{}. {}", i + 1, descriptor).unwrap();
         }
 
         msg.reply(ctx, reply).await?;

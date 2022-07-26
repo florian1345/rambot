@@ -183,7 +183,7 @@ where
     for resolver in resolvers.iter() {
         if resolver.can_resolve(descriptor) {
             return resolver.resolve(descriptor)
-                .map_err(|msg| ResolveError::PluginResolveError(msg));
+                .map_err(ResolveError::PluginResolveError);
         }
     }
 
@@ -206,7 +206,7 @@ where
 {
     if let Some(resolver) = resolvers.get(name) {
         resolver.resolve(key_values, child)
-            .map_err(|msg| ResolveError::PluginResolveError(msg))
+            .map_err(ResolveError::PluginResolveError)
     }
     else {
         Err(ResolveError::NoPluginFound)
