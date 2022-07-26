@@ -1,11 +1,9 @@
 use rambot_api::{
     AdapterResolver,
     AudioSourceList,
-    AudioSourceListResolver,
-    AudioSourceResolver,
-    EffectResolver,
     Plugin,
-    PluginConfig
+    PluginConfig,
+    ResolverRegistry
 };
 
 use rand::{Rng, SeedableRng};
@@ -80,25 +78,10 @@ impl AdapterResolver for ShuffleAdapterResolver {
 struct ShufflePlugin;
 
 impl Plugin for ShufflePlugin {
-    fn load_plugin(&mut self, _config: &PluginConfig) -> Result<(), String> {
+    fn load_plugin<'registry>(&mut self, _config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_adapter_resolver(ShuffleAdapterResolver);
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        Vec::new()
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        Vec::new()
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        Vec::new()
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        vec![Box::new(ShuffleAdapterResolver)]
     }
 }
 

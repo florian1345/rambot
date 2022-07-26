@@ -3,13 +3,11 @@ use minimp3::{self, Decoder, Frame};
 use plugin_commons::FileManager;
 
 use rambot_api::{
-    AdapterResolver,
     AudioSource,
-    AudioSourceListResolver,
     AudioSourceResolver,
-    EffectResolver,
     Plugin,
     PluginConfig,
+    ResolverRegistry,
     Sample
 };
 
@@ -128,41 +126,22 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
     }
 }
 
-struct Mp3Plugin {
-    file_manager: Option<FileManager>
-}
+struct Mp3Plugin;
 
 impl Plugin for Mp3Plugin {
 
-    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
-        self.file_manager = Some(FileManager::new(config));
+    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_audio_source_resolver(Mp3AudioSourceResolver {
+            file_manager: FileManager::new(config)
+        });
+
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        vec![Box::new(Mp3AudioSourceResolver {
-            file_manager: self.file_manager.as_ref().unwrap().clone()
-        })]
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        Vec::new()
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        Vec::new()
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        Vec::new()
     }
 }
 
 fn make_mp3_plugin() -> Mp3Plugin {
-    Mp3Plugin {
-        file_manager: None
-    }
+    Mp3Plugin
 }
 
 rambot_api::export_plugin!(make_mp3_plugin);

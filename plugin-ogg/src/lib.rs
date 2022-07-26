@@ -3,11 +3,9 @@ use lewton::inside_ogg::OggStreamReader;
 use plugin_commons::FileManager;
 
 use rambot_api::{
-    AdapterResolver,
     AudioSource,
-    AudioSourceListResolver,
     AudioSourceResolver,
-    EffectResolver,
+    ResolverRegistry,
     Plugin,
     PluginConfig,
     Sample
@@ -113,41 +111,22 @@ impl AudioSourceResolver for OggAudioSourceResolver {
     }
 }
 
-struct OggPlugin {
-    file_manager: Option<FileManager>
-}
+struct OggPlugin;
 
 impl Plugin for OggPlugin {
 
-    fn load_plugin(&mut self, config: &PluginConfig) -> Result<(), String> {
-        self.file_manager = Some(FileManager::new(config));
+    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+        registry.register_audio_source_resolver(OggAudioSourceResolver {
+            file_manager: FileManager::new(config)
+        });
+
         Ok(())
-    }
-
-    fn audio_source_resolvers(&self) -> Vec<Box<dyn AudioSourceResolver>> {
-        vec![Box::new(OggAudioSourceResolver {
-            file_manager: self.file_manager.as_ref().unwrap().clone()
-        })]
-    }
-
-    fn effect_resolvers(&self) -> Vec<Box<dyn EffectResolver>> {
-        Vec::new()
-    }
-
-    fn audio_source_list_resolvers(&self)
-            -> Vec<Box<dyn AudioSourceListResolver>> {
-        Vec::new()
-    }
-
-    fn adapter_resolvers(&self) -> Vec<Box<dyn AdapterResolver>> {
-        Vec::new()
     }
 }
 
 fn make_ogg_plugin() -> OggPlugin {
-    OggPlugin {
-        file_manager: None
-    }
+    OggPlugin
 }
 
 rambot_api::export_plugin!(make_ogg_plugin);
