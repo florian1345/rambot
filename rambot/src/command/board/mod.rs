@@ -251,7 +251,7 @@ impl EventHandler for BoardButtonEventHandler {
                 }
             };
 
-            if sender.id == ctx.cache.current_user_id().await {
+            if sender.id == ctx.cache.current_user_id() {
                 return;
             }
 

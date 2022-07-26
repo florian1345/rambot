@@ -50,7 +50,7 @@ pub fn get_root_commands() -> &'static CommandGroup {
 )]
 async fn connect(ctx: &Context, msg: &Message)
         -> CommandResult<Option<String>> {
-    let guild = msg.guild(&ctx.cache).await.unwrap();
+    let guild = msg.guild(&ctx.cache).unwrap();
     let guild_id = guild.id;
     let channel_id_opt = guild.voice_states
         .get(&msg.author.id)
@@ -84,7 +84,7 @@ async fn connect(ctx: &Context, msg: &Message)
 
 async fn get_songbird_call(ctx: &Context, msg: &Message)
         -> Option<Arc<TokioMutex<Call>>> {
-    let guild = msg.guild(&ctx.cache).await?;
+    let guild = msg.guild(&ctx.cache)?;
     let guild_id = guild.id;
     let songbird = songbird::get(ctx).await?;
     songbird.get(guild_id)
