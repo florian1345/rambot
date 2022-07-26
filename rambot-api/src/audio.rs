@@ -179,8 +179,9 @@ pub trait AudioSource {
 
     /// Indicates whether this audio source wraps around a child source. This
     /// must be `true` for any audio source constituting an effect, i.e. which
-    /// was resolved by an [EffectResolver]. For example, a low-pass filter
-    /// wraps around the root audio source which is filtered.
+    /// was resolved by an [EffectResolver](crate::resolver::EffectResolver).
+    /// For example, a low-pass filter wraps around the root audio source which
+    /// is filtered.
     fn has_child(&self) -> bool;
 
     /// Removes the child from this audio source and returns it. If
