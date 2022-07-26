@@ -1,6 +1,7 @@
 use crate::audio::{AudioSource, AudioSourceList};
 
 use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
 
 /// A trait for resolvers which can create [AudioSource]s from string
 /// descriptors. A plugin with the purpose of creating new ways of generating
@@ -50,6 +51,50 @@ pub trait AudioSourceResolver : Send + Sync {
         -> Result<Box<dyn AudioSource + Send>, String>;
 }
 
+/// An error that occurs when a plugin attempts to resolve an effect, i.e.
+/// [EffectResolver::resolve] is called. In addition to the ordinary message
+/// provided with plugin errors, this type also contains the child to which the
+/// effect was supposed to be applied. This allows the plugin to return the
+/// unmodified child and therefore the bot can restore the audio after a failed
+/// resolution.
+pub struct ResolveEffectError {
+    message: String,
+    child: Box<dyn AudioSource + Send>
+}
+
+impl ResolveEffectError {
+
+    /// Creates a new resolve effect error from message and child.
+    ///
+    /// # Arguments
+    ///
+    /// * `message`: The error message to be displayed to the user.
+    /// * `child`: The child audio source to which the effect should have been
+    /// applied.
+    pub fn new<S>(message: S, child: Box<dyn AudioSource + Send>)
+        -> ResolveEffectError
+    where
+        S: Into<String>
+    {
+        ResolveEffectError {
+            message: message.into(),
+            child
+        }
+    }
+
+    /// Destructures this resolve effect error into its raw parts, i.e. the
+    /// error message as the first and intended child as the second part.
+    pub fn into_parts(self) -> (String, Box<dyn AudioSource + Send>) {
+        (self.message, self.child)
+    }
+}
+
+impl Display for ResolveEffectError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.message)
+    }
+}
+
 /// A trait for resolvers which can create effects from key-value arguments.
 /// Similarly to [AudioSourceResolver]s, these effects are realized as
 /// [AudioSource]s, however they receive a child audio source whose output can
@@ -88,10 +133,11 @@ pub trait EffectResolver : Send + Sync {
     ///
     /// # Errors
     ///
-    /// An error message provided as a [String] in case resolution fails.
+    /// A [ResolveEffectError] containing an error message as well as the given
+    /// `child` in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
         child: Box<dyn AudioSource + Send>)
-        -> Result<Box<dyn AudioSource + Send>, String>;
+        -> Result<Box<dyn AudioSource + Send>, ResolveEffectError>;
 }
 
 /// A trait for resolvers which can create [AudioSourceList]s from string

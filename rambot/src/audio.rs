@@ -224,7 +224,8 @@ where
 {
     for effect in &layer.effects {
         source = to_io_err(plugin_manager.as_ref()
-            .resolve_effect(&effect.name, &effect.key_values, source))?;
+            .resolve_effect(&effect.name, &effect.key_values, source)
+            .map_err(|(e, _)| e))?;
     }
 
     layer.play(source);
@@ -267,9 +268,9 @@ fn reapply_effects_after_removal<P>(layer: &mut Layer,
 where
     P: AsRef<PluginManager>
 {
-    if let Some(mut source) = layer.source.take() {
-        // TODO find a way to recover the audio source if this fails
+    let mut result = Ok(());
 
+    if let Some(mut source) = layer.source.take() {
         let old_len = layer.effects.len() + total_removed;
 
         for _ in 0..(old_len - first_removed_idx) {
@@ -277,14 +278,22 @@ where
         }
 
         for old_effect in &layer.effects[first_removed_idx..] {
-            source = plugin_manager.as_ref().resolve_effect(
-                &old_effect.name, &old_effect.key_values, source)?;
+            let effect_res = plugin_manager.as_ref().resolve_effect(
+                &old_effect.name, &old_effect.key_values, source);
+
+            match effect_res {
+                Ok(effect) => source = effect,
+                Err((err, child)) => {
+                    result = Err(err);
+                    source = child;
+                }
+            }
         }
 
         layer.source = Some(source);
     }
 
-    Ok(())
+    result
 }
 
 impl Mixer {
@@ -369,10 +378,16 @@ impl Mixer {
         }
 
         if let Some(source) = layer.source.take() {
-            // TODO find a way to recover the audio source if this fails
-            
-            layer.source = Some(self.plugin_manager.resolve_effect(
-                &descriptor.name, &descriptor.key_values, source)?);
+            let effect_res = self.plugin_manager.resolve_effect(
+                &descriptor.name, &descriptor.key_values, source);
+
+            match effect_res {
+                Ok(effect) => layer.source = Some(effect),
+                Err((err, child)) => {
+                    layer.source = Some(child);
+                    return Err(err);
+                }
+            }
         }
 
         layer.effects.push(descriptor);
