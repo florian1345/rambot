@@ -4,6 +4,7 @@ use rambot_api::{
     Plugin,
     Sample,
     PluginConfig,
+    ResolveEffectError,
     ResolverRegistry
 };
 
@@ -34,6 +35,13 @@ impl AudioSource for VolumeEffect {
     }
 }
 
+fn get_volume(key_values: &HashMap<String, String>) -> Result<f32, String> {
+    key_values.get("volume")
+        .map(|v| v.parse::<f32>()
+            .map_err(|e| format!("Error parsing volume number: {}", e)))
+        .unwrap_or_else(|| Err("Missing \"volume\" key.".to_owned()))
+}
+
 struct VolumeEffectResolver;
 
 impl EffectResolver for VolumeEffectResolver {
@@ -47,11 +55,11 @@ impl EffectResolver for VolumeEffectResolver {
 
     fn resolve(&self, key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
-            -> Result<Box<dyn AudioSource + Send>, String> {
-        let volume = key_values.get("volume")
-            .map(|v| v.parse::<f32>()
-                .map_err(|e| format!("Error parsing volume number: {}", e)))
-            .unwrap_or_else(|| Err("Missing \"volume\" key.".to_owned()))?;
+            -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+        let volume = match get_volume(key_values) {
+            Ok(v) => v,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
 
         Ok(Box::new(VolumeEffect {
             child: Some(child),

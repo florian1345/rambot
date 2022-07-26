@@ -12,6 +12,7 @@ pub use resolver::{
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
+    ResolveEffectError,
     ResolverRegistry
 };
 

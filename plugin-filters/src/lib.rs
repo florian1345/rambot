@@ -8,6 +8,7 @@ use rambot_api::{
     EffectResolver,
     Plugin,
     PluginConfig,
+    ResolveEffectError,
     ResolverRegistry
 };
 
@@ -35,8 +36,12 @@ impl EffectResolver for GaussianEffectResolver {
 
     fn resolve(&self, key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
-            -> Result<Box<dyn AudioSource + Send>, String> {
-        let sigma = get_sigma(key_values)?;
+            -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+        let sigma = match get_sigma(key_values) {
+            Ok(s) => s,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
+
         Ok(Box::new(KernelFilter::new(child, kernel::gaussian(sigma))))
     }
 }
@@ -55,8 +60,12 @@ impl EffectResolver for InvGaussianEffectResolver {
 
     fn resolve(&self, key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
-            -> Result<Box<dyn AudioSource + Send>, String> {
-        let sigma = get_sigma(key_values)?;
+            -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+        let sigma = match get_sigma(key_values) {
+            Ok(s) => s,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
+
         Ok(Box::new(KernelFilter::new(child, kernel::inv_gaussian(sigma))))
     }
 }

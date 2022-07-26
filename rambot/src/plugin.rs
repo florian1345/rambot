@@ -1,11 +1,15 @@
 use libloading::{Library, Symbol};
 
 use rambot_api::{
+    AdapterResolver,
     AudioSource,
+    AudioSourceList,
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    Plugin, AudioSourceList, AdapterResolver, PluginConfig, ResolverRegistry
+    Plugin,
+    PluginConfig,
+    ResolverRegistry
 };
 
 use serenity::prelude::TypeMapKey;
@@ -80,8 +84,8 @@ impl Display for ResolveError {
         match self {
             ResolveError::NoPluginFound =>
                 write!(f, "No plugin matches the input."),
-            ResolveError::PluginResolveError(msg) =>
-                write!(f, "Plugin reported error during resolution: {}", msg)
+            ResolveError::PluginResolveError(e) =>
+                write!(f, "Plugin reported error during resolution: {}", e)
         }
     }
 }
@@ -131,18 +135,13 @@ impl AudioResolver for Box<dyn AudioSourceListResolver> {
 }
 
 trait ModifierResolver {
-    type Value;
 
     fn name(&self) -> &str;
 
     fn unique(&self) -> bool;
-
-    fn resolve(&self, key_values: &HashMap<String, String>,
-        child: Self::Value) -> Result<Self::Value, String>;
 }
 
 impl ModifierResolver for Box<dyn EffectResolver> {
-    type Value = Box<dyn AudioSource + Send>;
 
     fn name(&self) -> &str {
         self.as_ref().name()
@@ -150,16 +149,10 @@ impl ModifierResolver for Box<dyn EffectResolver> {
 
     fn unique(&self) -> bool {
         self.as_ref().unique()
-    }
-
-    fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Self::Value) -> Result<Self::Value, String> {
-        self.as_ref().resolve(key_values, child)
     }
 }
 
 impl ModifierResolver for Box<dyn AdapterResolver> {
-    type Value = Box<dyn AudioSourceList + Send>;
 
     fn name(&self) -> &str {
         self.as_ref().name()
@@ -167,11 +160,6 @@ impl ModifierResolver for Box<dyn AdapterResolver> {
 
     fn unique(&self) -> bool {
         self.as_ref().unique()
-    }
-
-    fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Self::Value) -> Result<Self::Value, String> {
-        self.as_ref().resolve(key_values, child)
     }
 }
 
@@ -190,27 +178,13 @@ where
     Err(ResolveError::NoPluginFound)
 }
 
-fn is_modifier_unique<V, R>(name: &str, resolvers: &HashMap<String, R>) -> bool
+fn is_modifier_unique<R>(name: &str, resolvers: &HashMap<String, R>) -> bool
 where
-    R: ModifierResolver<Value = V>
+    R: ModifierResolver
 {
     resolvers.get(name)
         .map(|r| r.unique())
         .unwrap_or(false)
-}
-
-fn resolve_modifier<V, R>(name: &str, key_values: &HashMap<String, String>,
-    child: V, resolvers: &HashMap<String, R>) -> Result<V, ResolveError>
-where
-    R: ModifierResolver<Value = V>
-{
-    if let Some(resolver) = resolvers.get(name) {
-        resolver.resolve(key_values, child)
-            .map_err(ResolveError::PluginResolveError)
-    }
-    else {
-        Err(ResolveError::NoPluginFound)
-    }
 }
 
 unsafe fn load_plugin(path: PathBuf, config: &PluginConfig,
@@ -415,8 +389,18 @@ impl PluginManager {
     pub fn resolve_effect(&self, name: &str,
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
-            -> Result<Box<dyn AudioSource + Send>, ResolveError> {
-        resolve_modifier(name, key_values, child, &self.effect_resolvers)
+            -> Result<Box<dyn AudioSource + Send>,
+                (ResolveError, Box<dyn AudioSource + Send>)> {
+        if let Some(resolver) = self.effect_resolvers.get(name) {
+            resolver.resolve(key_values, child)
+                .map_err(|e| {
+                    let (msg, child) = e.into_parts();
+                    (ResolveError::PluginResolveError(msg), child)
+                })
+        }
+        else {
+            Err((ResolveError::NoPluginFound, child))
+        }
     }
 
     /// Indicates whether the adapter with the given name is unique, that is,
@@ -449,7 +433,13 @@ impl PluginManager {
             key_values: &HashMap<String, String>,
             child: Box<dyn AudioSourceList + Send>)
             -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
-        resolve_modifier(name, key_values, child, &self.adapter_resolvers)
+        if let Some(resolver) = self.adapter_resolvers.get(name) {
+            resolver.resolve(key_values, child)
+                .map_err(ResolveError::PluginResolveError)
+        }
+        else {
+            Err(ResolveError::NoPluginFound)
+        }
     }
 }
 
