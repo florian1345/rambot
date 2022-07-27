@@ -136,7 +136,7 @@ impl Display for ModifierDocumentation {
             return Ok(());
         }
 
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         for parameter in &self.parameters {
             write!(f, "\n- {}", parameter)?;
@@ -277,6 +277,12 @@ impl ModifierDocumentationBuilder {
                 long_summary,
                 parameters: self.parameters
             })
+    }
+}
+
+impl Default for ModifierDocumentationBuilder {
+    fn default() -> ModifierDocumentationBuilder {
+        ModifierDocumentationBuilder::new()
     }
 }
 
