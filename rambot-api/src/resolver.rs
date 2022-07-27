@@ -150,9 +150,9 @@ impl Display for ModifierDocumentation {
 /// documentation, create a new builder using
 /// [ModifierDocumentationBuilder::new], specify at least a short summary
 /// using [ModifierDocumentationBuilder::with_short_summary], and then build
-/// the final documentation using [ModifierDocumentation::build]. Further
-/// information can be provided with other methods. You do not need to provide
-/// the effect/adapter name, as that is taken from context.
+/// the final documentation using [ModifierDocumentationBuilder::build].
+/// Further information can be provided with other methods. You do not need to
+/// provide the effect/adapter name, as that is taken from context.
 ///
 /// A simple usage example is shown below.
 ///
