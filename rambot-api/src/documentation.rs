@@ -35,11 +35,11 @@ impl Display for AudioDocumentation {
 }
 
 /// A builder for [AudioDocumentation]s. To construct an audio documentation,
-/// create a new builder using [AudioDocumentation::new], specify at least a
-/// name and summary using [AudioDocumentation::with_name] and
-/// [AudioDocumentation::with_summary] respectively, and then build the final
-/// documentation using [AudioDocumentation::build]. Further information can be
-/// provided with other methods.
+/// create a new builder using [AudioDocumentationBuilder::new], specify at
+/// least a name and summary using [AudioDocumentationBuilder::with_name] and
+/// [AudioDocumentationBuilder::with_summary] respectively, and then build the
+/// final documentation using [AudioDocumentationBuilder::build]. Further
+/// information can be provided with other methods.
 ///
 /// A simple usage example is shown below.
 ///
