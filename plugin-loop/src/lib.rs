@@ -1,6 +1,8 @@
 use rambot_api::{
     AdapterResolver,
     AudioSourceList,
+    ModifierDocumentation,
+    ModifierDocumentationBuilder,
     Plugin,
     PluginConfig,
     ResolverRegistry
@@ -41,6 +43,13 @@ impl AdapterResolver for LoopAdapterResolver {
 
     fn unique(&self) -> bool {
         true
+    }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        ModifierDocumentationBuilder::new()
+            .with_short_summary(
+                "Loops a playlist or single piece indefinitely.")
+            .build().unwrap()
     }
 
     fn resolve(&self, _key_values: &HashMap<String, String>,

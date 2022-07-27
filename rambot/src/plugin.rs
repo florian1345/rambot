@@ -9,12 +9,13 @@ use rambot_api::{
     EffectResolver,
     Plugin,
     PluginConfig,
-    ResolverRegistry
+    ResolverRegistry, ModifierDocumentation
 };
 
 use serenity::prelude::TypeMapKey;
 
 use std::collections::HashMap;
+use std::collections::hash_map::Keys;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::io;
@@ -139,6 +140,8 @@ trait ModifierResolver {
     fn name(&self) -> &str;
 
     fn unique(&self) -> bool;
+
+    fn documentation(&self) -> ModifierDocumentation;
 }
 
 impl ModifierResolver for Box<dyn EffectResolver> {
@@ -150,6 +153,10 @@ impl ModifierResolver for Box<dyn EffectResolver> {
     fn unique(&self) -> bool {
         self.as_ref().unique()
     }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        self.as_ref().documentation()
+    }
 }
 
 impl ModifierResolver for Box<dyn AdapterResolver> {
@@ -160,6 +167,10 @@ impl ModifierResolver for Box<dyn AdapterResolver> {
 
     fn unique(&self) -> bool {
         self.as_ref().unique()
+    }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        self.as_ref().documentation()
     }
 }
 
@@ -185,6 +196,15 @@ where
     resolvers.get(name)
         .map(|r| r.unique())
         .unwrap_or(false)
+}
+
+fn get_modifier_documentation<R>(name: &str, resolvers: &HashMap<String, R>)
+    -> Option<ModifierDocumentation>
+where
+    R: ModifierResolver
+{
+    resolvers.get(name)
+        .map(|r| r.documentation())
 }
 
 unsafe fn load_plugin(path: PathBuf, config: &PluginConfig,
@@ -360,6 +380,12 @@ impl PluginManager {
         }
     }
 
+    /// Gets an iterator over the names of all effects that have been
+    /// registered by plugins.
+    pub fn effect_names(&self) -> Keys<'_, String, Box<dyn EffectResolver>> {
+        self.effect_resolvers.keys()
+    }
+
     /// Indicates whether the effect with the given name is unique, that is,
     /// only one can exist per layer. If no effect with the given name exists,
     /// `false` is returned.
@@ -403,6 +429,28 @@ impl PluginManager {
         }
     }
 
+    /// Gets the documentation for the effect with the given name. The
+    /// documentation is provided by plugins themselves.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The name of the effect of which to get the documentation.
+    ///
+    /// # Returns
+    ///
+    /// `Some(_)` with the [ModifierDocumentation] for the effect with the
+    /// given name and `None` if no such effect exists.
+    pub fn get_effect_documentation(&self, name: &str)
+            -> Option<ModifierDocumentation> {
+        get_modifier_documentation(name, &self.effect_resolvers)
+    }
+
+    /// Gets an iterator over the names of all adapters that have been
+    /// registered by plugins.
+    pub fn adapter_names(&self) -> Keys<'_, String, Box<dyn AdapterResolver>> {
+        self.adapter_resolvers.keys()
+    }
+
     /// Indicates whether the adapter with the given name is unique, that is,
     /// only one can exist per layer. If no adapter with the given name exists,
     /// `false` is returned.
@@ -440,6 +488,22 @@ impl PluginManager {
         else {
             Err(ResolveError::NoPluginFound)
         }
+    }
+
+    /// Gets the documentation for the adapter with the given name. The
+    /// documentation is provided by plugins themselves.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The name of the adapter of which to get the documentation.
+    ///
+    /// # Returns
+    ///
+    /// `Some(_)` with the [ModifierDocumentation] for the adapter with the
+    /// given name and `None` if no such adapter exists.
+    pub fn get_adapter_documentation(&self, name: &str)
+            -> Option<ModifierDocumentation> {
+        get_modifier_documentation(name, &self.adapter_resolvers)
     }
 }
 

@@ -6,6 +6,8 @@ use crate::kernel::KernelFilter;
 use rambot_api::{
     AudioSource,
     EffectResolver,
+    ModifierDocumentation,
+    ModifierDocumentationBuilder,
     Plugin,
     PluginConfig,
     ResolveEffectError,
@@ -34,6 +36,17 @@ impl EffectResolver for GaussianEffectResolver {
         false
     }
 
+    fn documentation(&self) -> ModifierDocumentation {
+        ModifierDocumentationBuilder::new()
+            .with_short_summary("Applies a gaussian lowpass filter to the \
+                audio.")
+            .with_parameter("sigma", "The width of the gaussian kernel. \
+                Higher values cause lower frequencies to be cut. \
+                Experimentation is required. Typical values are in the range \
+                1 to 100.")
+            .build().unwrap()
+    }
+
     fn resolve(&self, key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
@@ -56,6 +69,17 @@ impl EffectResolver for InvGaussianEffectResolver {
 
     fn unique(&self) -> bool {
         false
+    }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        ModifierDocumentationBuilder::new()
+            .with_short_summary("Subtracts a gaussian lowpass filter from the \
+                audio, thus obtaining a highpass filter.")
+            .with_parameter("sigma", "The width of the gaussian kernel. \
+                Higher values cause less higher frequencies to be cut. \
+                Experimentation is required. Typical values are in the range \
+                1 to 100.")
+            .build().unwrap()
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,

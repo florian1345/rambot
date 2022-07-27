@@ -4,7 +4,7 @@ use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildStateGuard};
 
-use rambot_api::AudioSource;
+use rambot_api::{AudioSource, ModifierDocumentation};
 
 use rambot_proc_macro::rambot_command;
 
@@ -18,6 +18,7 @@ use serenity::model::prelude::Message;
 use songbird::Call;
 use songbird::input::{Input, Reader};
 
+use std::collections::hash_map::Keys;
 use std::fmt::Write;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -318,5 +319,46 @@ where
     }
     else {
         Ok(Some("Layer not found.".to_owned()))
+    }
+}
+
+async fn help_modifiers<D, N, R>(ctx: &Context, msg: &Message,
+    modifier: Option<String>, name_plural_upper: &str,
+    name_singular_lower: &str, mut get_documentation: D, get_names: N)
+    -> CommandResult<Option<String>>
+where
+    D: FnMut(&PluginManager, &str) -> Option<ModifierDocumentation>,
+    N: FnOnce(&PluginManager) -> Keys<'_, String, R>
+{
+    let data_guard = ctx.data.read().await;
+    let plugin_manager =
+        Arc::clone(data_guard.get::<PluginManager>().unwrap());
+
+    if let Some(name) = modifier {
+        if let Some(documentation) =
+                get_documentation(plugin_manager.as_ref(), &name) {
+            msg.reply(ctx, format!("**{}**\n\n{}", name, documentation))
+                .await?;
+            Ok(None)
+        }
+        else {
+            Ok(Some(format!("No {} of name {}.", name_singular_lower, name)))
+        }
+    }
+    else {
+        let mut response = format!("{} provided by plugins:", name_plural_upper);
+
+        for name in get_names(plugin_manager.as_ref()) {
+            let doc =
+                get_documentation(plugin_manager.as_ref(), name.as_str())
+                .unwrap();
+
+            write!(&mut response, "\n- **{}**: {}", name, doc.short_summary())
+                .unwrap();
+        }
+
+        msg.reply(ctx, response)
+            .await?;
+        Ok(None)
     }
 }
