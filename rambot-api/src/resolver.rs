@@ -157,6 +157,8 @@ impl Display for ModifierDocumentation {
 /// A simple usage example is shown below.
 ///
 /// ```
+/// use rambot_api::ModifierDocumentationBuilder;
+///
 /// // Documentation for a volume effect
 ///
 /// let doc = ModifierDocumentationBuilder::new()
