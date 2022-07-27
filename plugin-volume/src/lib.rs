@@ -1,11 +1,13 @@
 use rambot_api::{
     AudioSource,
     EffectResolver,
+    ModifierDocumentation,
+    ModifierDocumentationBuilder,
     Plugin,
-    Sample,
     PluginConfig,
     ResolveEffectError,
-    ResolverRegistry
+    ResolverRegistry,
+    Sample
 };
 
 use std::{io, collections::HashMap};
@@ -51,6 +53,18 @@ impl EffectResolver for VolumeEffectResolver {
 
     fn unique(&self) -> bool {
         true
+    }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        ModifierDocumentationBuilder::new()
+            .with_short_summary("Controls the volume.")
+            .with_long_summary(
+                "Controls the volume by multiplying all audio with a factor. \
+                You can use this effect by writing `volume=...`.")
+            .with_parameter("volume",
+                "The factor by which the volume is multiplied where 1 \
+                represents full volume and 0 is absolutely quiet.")
+            .build().unwrap()
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,

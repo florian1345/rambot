@@ -1,6 +1,11 @@
 use crate::audio::Layer;
-use crate::command::{list_layer_key_value_descriptors, with_mixer_and_layer};
+use crate::command::{
+    help_modifiers,
+    list_layer_key_value_descriptors,
+    with_mixer_and_layer
+};
 use crate::key_value::KeyValueDescriptor;
+use crate::plugin::PluginManager;
 
 use rambot_proc_macro::rambot_command;
 
@@ -11,7 +16,7 @@ use serenity::model::prelude::Message;
 
 #[group]
 #[prefix("effect")]
-#[commands(add, clear, list)]
+#[commands(add, clear, help, list)]
 struct Effect;
 
 /// Gets a [CommandGroup] for the commands with prefix `effect`.
@@ -91,4 +96,17 @@ async fn list(ctx: &Context, msg: &Message, layer: String)
         -> CommandResult<Option<String>> {
     list_layer_key_value_descriptors(
         ctx, msg, layer, "Effects", Layer::effects).await
+}
+
+#[rambot_command(
+    description = "Lists all available effects with a short description. If \
+        an effect name is provided, a detailled description of the effect and \
+        its parameters is given.",
+    usage = "[effect]"
+)]
+async fn help(ctx: &Context, msg: &Message, effect: Option<String>)
+        -> CommandResult<Option<String>> {
+    help_modifiers(ctx, msg, effect, "Effects", "effect",
+        PluginManager::get_effect_documentation, PluginManager::effect_names)
+        .await
 }

@@ -1,6 +1,8 @@
 use rambot_api::{
     AdapterResolver,
     AudioSourceList,
+    ModifierDocumentation,
+    ModifierDocumentationBuilder,
     Plugin,
     PluginConfig,
     ResolverRegistry
@@ -61,6 +63,16 @@ impl AdapterResolver for ShuffleAdapterResolver {
 
     fn unique(&self) -> bool {
         true
+    }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        ModifierDocumentationBuilder::new()
+            .with_short_summary("Shuffles a playlist randomly.")
+            .with_long_summary("Shuffles a playlist randomly. In case of an \
+                infinite list (e.g. a looped list), the first segment of \
+                distinct entries until the first duplicate is shuffled, \
+                followed by the second segment etc.")
+            .build().unwrap()
     }
 
     fn resolve(&self, _key_values: &HashMap<String, String>,

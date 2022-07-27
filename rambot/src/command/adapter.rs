@@ -1,6 +1,11 @@
 use crate::audio::Layer;
-use crate::command::{list_layer_key_value_descriptors, with_mixer_and_layer};
+use crate::command::{
+    help_modifiers,
+    list_layer_key_value_descriptors,
+    with_mixer_and_layer
+};
 use crate::key_value::KeyValueDescriptor;
+use crate::plugin::PluginManager;
 
 use rambot_proc_macro::rambot_command;
 
@@ -11,7 +16,7 @@ use serenity::model::prelude::Message;
 
 #[group]
 #[prefix("adapter")]
-#[commands(add, clear, list)]
+#[commands(add, clear, help, list)]
 struct Adapter;
 
 /// Gets a [CommandGroup] for the commands with prefix `adapter`.
@@ -91,4 +96,17 @@ async fn list(ctx: &Context, msg: &Message, layer: String)
         -> CommandResult<Option<String>> {
     list_layer_key_value_descriptors(ctx, msg, layer, "Adapters",
         Layer::adapters).await
+}
+
+#[rambot_command(
+    description = "Lists all available adapters with a short description. If \
+        an adapter name is provided, a detailled description of the adapter and \
+        its parameters is given.",
+    usage = "[adapter]"
+)]
+async fn help(ctx: &Context, msg: &Message, adapter: Option<String>)
+        -> CommandResult<Option<String>> {
+    help_modifiers(ctx, msg, adapter, "Adapters", "adapter",
+        PluginManager::get_adapter_documentation, PluginManager::adapter_names)
+        .await
 }
