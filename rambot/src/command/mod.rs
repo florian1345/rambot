@@ -329,8 +329,7 @@ async fn audio(ctx: &Context, msg: &Message, audio: String)
     else {
         let audio_lower = audio.to_lowercase();
         let doc = plugin_manager.get_audio_documentations()
-            .filter(|d| d.name().to_lowercase() == audio_lower)
-            .next();
+            .find(|d| d.name().to_lowercase() == audio_lower);
 
         if let Some(doc) = doc {
             msg.reply(ctx, doc).await?;

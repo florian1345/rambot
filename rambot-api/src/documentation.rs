@@ -156,6 +156,12 @@ impl AudioDocumentationBuilder {
     }
 }
 
+impl Default for AudioDocumentationBuilder {
+    fn default() -> AudioDocumentationBuilder {
+        AudioDocumentationBuilder::new()
+    }
+}
+
 struct ModifierParameterDocumentation {
     name: String,
     description: String
