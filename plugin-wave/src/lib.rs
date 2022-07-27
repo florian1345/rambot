@@ -5,6 +5,8 @@ use hound::{SampleFormat, WavIntoSamples, WavReader};
 use plugin_commons::FileManager;
 
 use rambot_api::{
+    AudioDocumentation,
+    AudioDocumentationBuilder,
     AudioSource,
     AudioSourceResolver,
     Plugin,
@@ -156,6 +158,17 @@ struct WaveAudioSourceResolver {
 }
 
 impl AudioSourceResolver for WaveAudioSourceResolver {
+
+    fn documentation(&self) -> AudioDocumentation {
+        AudioDocumentationBuilder::new()
+            .with_name("Wave")
+            .with_summary("Playback wave audio files.")
+            .with_description("Specify the path of a file with the `.wav` \
+                extension relative to the bot root directory. This plugin \
+                will playback the given file.")
+            .build().unwrap()
+    }
+
     fn can_resolve(&self, descriptor: &str) -> bool {
         self.file_manager.is_file_with_extension(descriptor, ".wav")
     }

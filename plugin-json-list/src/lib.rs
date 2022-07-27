@@ -4,6 +4,8 @@ use std::collections::VecDeque;
 use std::io;
 
 use rambot_api::{
+    AudioDocumentation,
+    AudioDocumentationBuilder,
     AudioSourceList,
     AudioSourceListResolver,
     Plugin,
@@ -26,6 +28,17 @@ struct JsonAudioSourceListResolver {
 }
 
 impl AudioSourceListResolver for JsonAudioSourceListResolver {
+
+    fn documentation(&self) -> AudioDocumentation {
+        AudioDocumentationBuilder::new()
+            .with_name("Json Playlist")
+            .with_summary("Load JSON files as playlists.")
+            .with_description("Specify the path of a file with the `.json` \
+                extension relative to the bot root directory. This plugin \
+                will read the given file as a JSON array of strings and \
+                provide the individual elements as pieces of a playlist.")
+            .build().unwrap()
+    }
 
     fn can_resolve(&self, descriptor: &str) -> bool {
         self.file_manager.is_file_with_extension(descriptor, ".json")

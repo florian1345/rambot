@@ -1,4 +1,6 @@
 use rambot_api::{
+    AudioDocumentation,
+    AudioDocumentationBuilder,
     AudioSourceList,
     AudioSourceListResolver,
     Plugin,
@@ -39,6 +41,17 @@ struct FolderListResolver {
 }
 
 impl AudioSourceListResolver for FolderListResolver {
+
+    fn documentation(&self) -> AudioDocumentation {
+        AudioDocumentationBuilder::new()
+            .with_name("Folder Playlist")
+            .with_summary("Load directories as playlists.")
+            .with_description("Specify the path of a directory containing \
+                audio files relative to the bot root directory. This plugin \
+                will play all files in the directory as pieces of a playlist.")
+            .build().unwrap()
+    }
+
     fn can_resolve(&self, descriptor: &str) -> bool {
         match fs::metadata(descriptor) {
             Ok(meta) => meta.is_dir(),

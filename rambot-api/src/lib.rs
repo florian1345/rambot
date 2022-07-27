@@ -4,16 +4,21 @@ use std::env;
 use std::io;
 
 mod audio;
+mod documentation;
 mod resolver;
 
 pub use audio::{AudioSource, AudioSourceList, Sample};
+pub use documentation::{
+    AudioDocumentation,
+    AudioDocumentationBuilder,
+    ModifierDocumentation,
+    ModifierDocumentationBuilder
+};
 pub use resolver::{
     AdapterResolver,
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
-    ModifierDocumentation,
-    ModifierDocumentationBuilder,
     ResolveEffectError,
     ResolverRegistry
 };

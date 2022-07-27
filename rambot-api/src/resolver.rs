@@ -1,4 +1,6 @@
+use crate::AudioDocumentation;
 use crate::audio::{AudioSource, AudioSourceList};
+use crate::documentation::ModifierDocumentation;
 
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
@@ -10,6 +12,10 @@ use std::fmt::{self, Display, Formatter};
 /// as descriptors paths to WAV files and generates audio sources which decode
 /// and stream those files.
 pub trait AudioSourceResolver : Send + Sync {
+
+    /// Constructs an [AudioDocumentation] for this kind of audio source. This
+    /// is displayed when executing the audio command.
+    fn documentation(&self) -> AudioDocumentation;
 
     /// Indicates whether this resolver can construct an audio source from the
     /// given descriptor.
@@ -95,199 +101,6 @@ impl Display for ResolveEffectError {
     }
 }
 
-struct ModifierParameterDocumentation {
-    name: String,
-    description: String
-}
-
-impl Display for ModifierParameterDocumentation {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "`{}`: {}", &self.name, &self.description)
-    }
-}
-
-/// Documentation of a modifier (effect or adapter) to be displayed to the user
-/// of the bot. The short form can be accessed by
-/// [ModifierDocumentation::short_summary] while a long markdown version is
-/// available behind the implementation of the [Display] trait.
-///
-/// To construct instances of this type, use the
-/// [ModifierDocumentationBuilder].
-pub struct ModifierDocumentation {
-    short_summary: String,
-    long_summary: String,
-    parameters: Vec<ModifierParameterDocumentation>
-}
-
-impl ModifierDocumentation {
-
-    /// Gets a short summary of the functionality of the documented modifier.
-    /// This is used for the overview page.
-    pub fn short_summary(&self) -> &str {
-        &self.short_summary
-    }
-}
-
-impl Display for ModifierDocumentation {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.long_summary)?;
-
-        if self.parameters.is_empty() {
-            return Ok(());
-        }
-
-        writeln!(f)?;
-
-        for parameter in &self.parameters {
-            write!(f, "\n- {}", parameter)?;
-        }
-
-        Ok(())
-    }
-}
-
-/// A builder for [ModifierDocumentation]s. To construct a modifier
-/// documentation, create a new builder using
-/// [ModifierDocumentationBuilder::new], specify at least a short summary
-/// using [ModifierDocumentationBuilder::with_short_summary], and then build
-/// the final documentation using [ModifierDocumentationBuilder::build].
-/// Further information can be provided with other methods. You do not need to
-/// provide the effect/adapter name, as that is taken from context.
-///
-/// A simple usage example is shown below.
-///
-/// ```
-/// use rambot_api::ModifierDocumentationBuilder;
-///
-/// // Documentation for a volume effect
-///
-/// let doc = ModifierDocumentationBuilder::new()
-///     .with_short_summary("Controls the volume of a layer.")
-///     .with_long_summary(
-///         "Controls the volume of a layer by multiplying all audio with a \
-///         given factor.")
-///     .with_parameter("volume", "The factor by which audio is multiplied.")
-///     .build();
-/// ```
-pub struct ModifierDocumentationBuilder {
-    short_summary: Option<String>,
-    long_summary: Option<String>,
-    parameters: Vec<ModifierParameterDocumentation>
-}
-
-impl ModifierDocumentationBuilder {
-
-    /// Creates a new modifier documentation builder.
-    pub fn new() -> ModifierDocumentationBuilder {
-        ModifierDocumentationBuilder {
-            short_summary: None,
-            long_summary: None,
-            parameters: Vec::new()
-        }
-    }
-
-    /// Specify a short summary for this effect/adapter to be displayed in the
-    /// overview. If no long summary has been specified, it will be assigned to
-    /// the given short summary as well.
-    ///
-    /// # Arguments
-    ///
-    /// * `summary`: A short summary for this effect/adapter. Markdown is
-    /// supported.
-    ///
-    /// # Returns
-    ///
-    /// This builder after the operation. Useful for chaining.
-    pub fn with_short_summary<S>(mut self, summary: S)
-        -> ModifierDocumentationBuilder
-    where
-        S: Into<String>
-    {
-        let summary = summary.into();
-
-        self.long_summary.get_or_insert_with(|| summary.clone());
-        self.short_summary = Some(summary);
-        self
-    }
-
-    /// Specify a long summary for this effect/adapter to be displayed in the
-    /// effect/adapter specific help page.
-    ///
-    /// # Arguments
-    ///
-    /// * `summary`: A long summary for this effect/adapter. Markdown is
-    /// supported.
-    ///
-    /// # Returns
-    ///
-    /// This builder after the operation. Useful for chaining.
-    pub fn with_long_summary<S>(mut self, summary: S)
-        -> ModifierDocumentationBuilder
-    where
-        S: Into<String>
-    {
-        self.long_summary = Some(summary.into());
-        self
-    }
-
-    /// Adds a parameter documentation for a new parameter to the constructed
-    /// modifier documentation. To add multiple parameters, call this method
-    /// multiple times. The parameters will be displayed top-to-bottom in the
-    /// order this method is called.
-    ///
-    /// # Arguments
-    ///
-    /// * `name`: The name of the documented parameter.
-    /// * `description`: A description to be displayed for the documented
-    /// parameter.
-    ///
-    /// # Returns
-    ///
-    /// This builder after the operation. Useful for chaining.
-    pub fn with_parameter<S1, S2>(mut self, name: S1, description: S2)
-        -> ModifierDocumentationBuilder
-    where
-        S1: Into<String>,
-        S2: Into<String>
-    {
-        let name = name.into();
-        let description = description.into();
-
-        self.parameters.push(ModifierParameterDocumentation {
-            name,
-            description
-        });
-
-        self
-    }
-
-    /// Builds the modifier documentation constructed from the data provided
-    /// with previous method calls. At least
-    /// [ModifierDocumentationBuilder::with_short_summary] is required to be
-    /// called before this.
-    ///
-    /// # Returns
-    ///
-    /// `Some(_)` with a new [ModifierDocumentation] instance with the
-    /// previously provided information. If no short summary has been
-    /// specified, `None` is returned.
-    pub fn build(self) -> Option<ModifierDocumentation> {
-        self.short_summary
-            .and_then(|short| self.long_summary.map(|long| (short, long)))
-            .map(|(short_summary, long_summary)| ModifierDocumentation {
-                short_summary,
-                long_summary,
-                parameters: self.parameters
-            })
-    }
-}
-
-impl Default for ModifierDocumentationBuilder {
-    fn default() -> ModifierDocumentationBuilder {
-        ModifierDocumentationBuilder::new()
-    }
-}
-
 /// A trait for resolvers which can create effects from key-value arguments.
 /// Similarly to [AudioSourceResolver]s, these effects are realized as
 /// [AudioSource]s, however they receive a child audio source whose output can
@@ -341,6 +154,10 @@ pub trait EffectResolver : Send + Sync {
 /// descriptors. A plugin with the purpose of implementing new kinds of
 /// playlists will usually register at least one of these.
 pub trait AudioSourceListResolver : Send + Sync {
+
+    /// Constructs an [AudioDocumentation] for this kind of audio source list.
+    /// This is displayed when executing the audio command.
+    fn documentation(&self) -> AudioDocumentation;
 
     /// Indicates whether this resolver can construct an audio source list from
     /// the given descriptor.
