@@ -3,6 +3,8 @@ use minimp3::{self, Decoder, Frame};
 use plugin_commons::FileManager;
 
 use rambot_api::{
+    AudioDocumentation,
+    AudioDocumentationBuilder,
     AudioSource,
     AudioSourceResolver,
     Plugin,
@@ -101,6 +103,16 @@ struct Mp3AudioSourceResolver {
 }
 
 impl AudioSourceResolver for Mp3AudioSourceResolver {
+
+    fn documentation(&self) -> AudioDocumentation {
+        AudioDocumentationBuilder::new()
+            .with_name("Mp3")
+            .with_summary("Playback MP3 audio files.")
+            .with_description("Specify the path of a file with the `.mp3` \
+                extension relative to the bot root directory. This plugin \
+                will playback the given file.")
+            .build().unwrap()
+    }
 
     fn can_resolve(&self, descriptor: &str) -> bool {
         self.file_manager.is_file_with_extension(descriptor, ".mp3")

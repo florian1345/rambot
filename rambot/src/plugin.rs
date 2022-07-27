@@ -9,7 +9,7 @@ use rambot_api::{
     EffectResolver,
     Plugin,
     PluginConfig,
-    ResolverRegistry, ModifierDocumentation
+    ResolverRegistry, ModifierDocumentation, AudioDocumentation
 };
 
 use serenity::prelude::TypeMapKey;
@@ -378,6 +378,16 @@ impl PluginManager {
                 Err(ResolveError::PluginResolveError(e)),
             _ => Ok(AudioDescriptorList::Single(descriptor.to_owned()))
         }
+    }
+
+    /// Gets an iterator over the [AudioDocumentation]s for all audio sources
+    /// and audio source lists provided by plugins.
+    pub fn get_audio_documentations(&self)
+            -> impl Iterator<Item = AudioDocumentation> + '_ {
+        self.audio_source_resolvers.iter()
+            .map(|r| r.documentation())
+            .chain(self.audio_source_list_resolvers.iter()
+                .map(|r| r.documentation()))
     }
 
     /// Gets an iterator over the names of all effects that have been

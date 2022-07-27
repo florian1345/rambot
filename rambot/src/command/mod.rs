@@ -36,7 +36,7 @@ pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 
 #[group]
-#[commands(connect, disconnect, cmd_do, play, skip, stop)]
+#[commands(audio, connect, disconnect, cmd_do, play, skip, stop)]
 struct Root;
 
 /// Gets a [CommandGroup] for the root commands (which are not part of any
@@ -298,6 +298,49 @@ async fn cmd_do(ctx: &Context, msg: &Message, commands: Vec<String>)
     Ok(None)
 }
 
+#[rambot_command(
+    description = "Lists all plugin-provided types of audio with a short \
+        summary. If an audio name is provided, a more detailed documentation \
+        page for that audio is displayed.",
+    usage = "[audio]",
+    rest
+)]
+async fn audio(ctx: &Context, msg: &Message, audio: String)
+        -> CommandResult<Option<String>> {
+    let data_guard = ctx.data.read().await;
+    let plugin_manager = data_guard.get::<PluginManager>().unwrap();
+
+    if audio.is_empty() {
+        let mut message = "Audio types:".to_owned();
+        let mut first = true;
+
+        for doc in plugin_manager.get_audio_documentations() {
+            if first {
+                writeln!(message).unwrap();
+                first = false;
+            }
+
+            write!(message, "\n- {}", doc.overview_entry()).unwrap();
+        }
+
+        msg.reply(ctx, message).await?;
+        Ok(None)
+    }
+    else {
+        let audio_lower = audio.to_lowercase();
+        let doc = plugin_manager.get_audio_documentations()
+            .find(|d| d.name().to_lowercase() == audio_lower);
+
+        if let Some(doc) = doc {
+            msg.reply(ctx, doc).await?;
+            Ok(None)
+        }
+        else {
+            Ok(Some(format!("I found no audio of name {}.", audio)))
+        }
+    }
+}
+
 async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,
     layer: String, name_plural_capital: &str, get: F)
     -> CommandResult<Option<String>>
@@ -360,8 +403,7 @@ where
                 .unwrap();
         }
 
-        msg.reply(ctx, response)
-            .await?;
+        msg.reply(ctx, response).await?;
         Ok(None)
     }
 }
