@@ -16,6 +16,7 @@ use serenity::model::id::GuildId;
 use serenity::model::prelude::Message;
 
 use songbird::Call;
+use songbird::error::JoinError;
 use songbird::input::{Input, Reader};
 
 use std::collections::hash_map::Keys;
@@ -100,20 +101,22 @@ const NOT_CONNECTED: &str = "I am not connected to a voice channel";
 )]
 async fn disconnect(ctx: &Context, msg: &Message)
         -> CommandResult<Option<String>> {
-    match get_songbird_call(ctx, msg).await {
-        Some(call) => {
-            let mut guard = call.lock().await;
-            let channel_id = match guard.current_channel() {
-                Some(id) => id,
-                None => return Ok(Some(NOT_CONNECTED.to_owned()))
-            };
+    if let Some(songbird) = songbird::get(ctx).await {
+        let guild_id = msg.guild_id.unwrap();
 
-            let guild_id = msg.guild_id.unwrap();
-            log::debug!("Leaving channel {} on guild {}.", channel_id, guild_id);
-            guard.leave().await?;
-            Ok(None)
-        },
-        None => Ok(Some(NOT_CONNECTED.to_owned()))
+        match songbird.remove(guild_id).await {
+            Ok(_) => {
+                stop_all_do(ctx, msg).await; // drop audio sources
+                log::debug!("Left voice on guild {}.", guild_id);
+                Ok(None)
+            },
+            Err(JoinError::NoCall) => Ok(Some(NOT_CONNECTED.to_owned())),
+            Err(e) => Err(e.into())
+        }
+    }
+    else {
+        log::error!("No songbird instance found.");
+        Ok(Some("Internal error: No songbird instance found.".to_owned()))
     }
 }
 
