@@ -3,6 +3,7 @@
 members = [
     "plugin-commons",
     "plugin-filters",
+    "plugin-flac",
     "plugin-folder-list",
     "plugin-json-list",
     "plugin-loop",

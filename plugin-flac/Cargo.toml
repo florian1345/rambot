@@ -1,0 +1,15 @@
+[package]
+name = "plugin-flac"
+version = "0.1.2"
+edition = "2021"
+
+[lib]
+crate-type = [ "cdylib" ]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+claxon = "0.4"
+ouroboros = "0.15"
+plugin-commons = { path = "../plugin-commons" }
+rambot-api = { path = "../rambot-api" }
