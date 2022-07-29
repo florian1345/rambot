@@ -1,7 +1,7 @@
-use plugin_commons::FileManager;
+use plugin_commons::{FileManager, OpenedFile};
 
 use std::collections::VecDeque;
-use std::io;
+use std::io::{self, Read};
 
 use rambot_api::{
     AudioDocumentation,
@@ -27,6 +27,21 @@ struct JsonAudioSourceListResolver {
     file_manager: FileManager
 }
 
+impl JsonAudioSourceListResolver {
+    fn resolve_reader<R>(&self, reader: R)
+        -> Result<Box<dyn AudioSourceList + Send>, String>
+    where
+        R: Read + Send + 'static
+    {
+        let audio_sources: Vec<String> = serde_json::from_reader(reader)
+            .map_err(|e| format!("{}", e))?;
+
+        Ok(Box::new(JsonAudioSourceList {
+            audio_sources: VecDeque::from(audio_sources)
+        }))
+    }
+}
+
 impl AudioSourceListResolver for JsonAudioSourceListResolver {
 
     fn documentation(&self) -> AudioDocumentation {
@@ -46,13 +61,12 @@ impl AudioSourceListResolver for JsonAudioSourceListResolver {
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSourceList + Send>, String> {
-        let reader = self.file_manager.open_file_buf(descriptor)?;
-        let audio_sources: Vec<String> = serde_json::from_reader(reader)
-            .map_err(|e| format!("{}", e))?;
+        let file = self.file_manager.open_file_buf(descriptor)?;
 
-        Ok(Box::new(JsonAudioSourceList {
-            audio_sources: VecDeque::from(audio_sources)
-        }))
+        match file {
+            OpenedFile::Local(reader) => self.resolve_reader(reader),
+            OpenedFile::Web(reader) => self.resolve_reader(reader)
+        }
     }
 }
 

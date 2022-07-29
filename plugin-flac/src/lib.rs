@@ -5,7 +5,7 @@ use claxon::FlacReader;
 use claxon::frame::{Block, FrameReader};
 use claxon::input::BufferedReader;
 
-use plugin_commons::FileManager;
+use plugin_commons::{FileManager, OpenedFile};
 
 use rambot_api::{
     AudioDocumentation,
@@ -117,6 +117,21 @@ struct FlacAudioSourceResolver {
     file_manager: FileManager
 }
 
+impl FlacAudioSourceResolver {
+    fn resolve_reader<R>(&self, reader: R)
+        -> Result<Box<dyn AudioSource + Send>, String>
+    where
+        R: Read + Send + 'static
+    {
+        let reader = FlacReader::new(reader)
+            .map_err(|e| format!("{}", e))?;
+        let sampling_rate = reader.streaminfo().sample_rate;
+
+        Ok(plugin_commons::adapt_sampling_rate(
+            FlacAudioSource::new(reader), sampling_rate))
+    }
+}
+
 impl AudioSourceResolver for FlacAudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
@@ -135,13 +150,12 @@ impl AudioSourceResolver for FlacAudioSourceResolver {
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = self.file_manager.open_file_buf(descriptor)?;
-        let reader = FlacReader::new(reader)
-            .map_err(|e| format!("{}", e))?;
-        let sampling_rate = reader.streaminfo().sample_rate;
+        let file = self.file_manager.open_file_buf(descriptor)?;
 
-        Ok(plugin_commons::adapt_sampling_rate(
-            FlacAudioSource::new(reader), sampling_rate))
+        match file {
+            OpenedFile::Local(reader) => self.resolve_reader(reader),
+            OpenedFile::Web(reader) => self.resolve_reader(reader)
+        }
     }
 }
 
