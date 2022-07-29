@@ -1,6 +1,6 @@
 use minimp3::{self, Decoder, Frame};
 
-use plugin_commons::{FileManager, OpenedFile, SeekWrapper};
+use plugin_commons::{FileManager, OpenedFile};
 
 use rambot_api::{
     AudioDocumentation,
@@ -13,7 +13,7 @@ use rambot_api::{
     Sample
 };
 
-use std::io::{self, ErrorKind, Read, Seek};
+use std::io::{self, ErrorKind, Read};
 
 struct FrameIterator<R> {
     decoder: Decoder<R>
@@ -43,7 +43,7 @@ struct Mp3AudioSource<R: Read> {
     current_frame_idx: usize
 }
 
-impl<R: Read + Seek> AudioSource for Mp3AudioSource<R> {
+impl<R: Read> AudioSource for Mp3AudioSource<R> {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         if self.current_frame_idx >= self.current_frame.data.len() {
             if let Some(next_frame) = self.frames.next() {
@@ -106,7 +106,7 @@ impl Mp3AudioSourceResolver {
     fn resolve_reader<R>(&self, reader: R)
         -> Result<Box<dyn AudioSource + Send>, String>
     where
-        R: Read + Seek + Send + 'static
+        R: Read + Send + 'static
     {
         let decoder = Decoder::new(reader);
         let mut frames = FrameIterator {
@@ -147,8 +147,7 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
     
         match file {
             OpenedFile::Local(reader) => self.resolve_reader(reader),
-            OpenedFile::Web(reader) =>
-                self.resolve_reader(SeekWrapper::new(reader))
+            OpenedFile::Web(reader) => self.resolve_reader(reader)
         }
     }
 }
