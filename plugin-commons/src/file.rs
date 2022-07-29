@@ -63,6 +63,12 @@ impl FileManager {
         }
     }
 
+    /// Gets a reference to the [PluginConfig] used by this file manager. This
+    /// is a copy of the config provided in the constructor.
+    pub fn config(&self) -> &PluginConfig {
+        &self.config
+    }
+
     /// Gets a [ResolvedFile] pointing to the file with the given path either
     /// locally relative to the root directory or, if the [PluginConfig]
     /// provided in the constructor permits it, on the internet.

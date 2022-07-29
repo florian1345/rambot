@@ -128,12 +128,20 @@ impl Mp3AudioSourceResolver {
 impl AudioSourceResolver for Mp3AudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
+        let web_descr = if self.file_manager.config().allow_web_access() {
+            "Alternatively, a URL to an `.mp3` file on the internet can be \
+                provided. "
+        }
+        else {
+            ""
+        };
+
         AudioDocumentationBuilder::new()
             .with_name("Mp3")
             .with_summary("Playback MP3 audio files.")
-            .with_description("Specify the path of a file with the `.mp3` \
-                extension relative to the bot root directory. This plugin \
-                will playback the given file.")
+            .with_description(format!("Specify the path of a file with the \
+                `.mp3` extension relative to the bot root directory. {}This \
+                plugin will playback the given file.", web_descr))
             .build().unwrap()
     }
 

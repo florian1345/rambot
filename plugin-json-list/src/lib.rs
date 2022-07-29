@@ -45,13 +45,22 @@ impl JsonAudioSourceListResolver {
 impl AudioSourceListResolver for JsonAudioSourceListResolver {
 
     fn documentation(&self) -> AudioDocumentation {
+        let web_descr = if self.file_manager.config().allow_web_access() {
+            "Alternatively, a URL to a `.json` file on the internet can be \
+                provided. "
+        }
+        else {
+            ""
+        };
+
         AudioDocumentationBuilder::new()
             .with_name("Json Playlist")
             .with_summary("Load JSON files as playlists.")
-            .with_description("Specify the path of a file with the `.json` \
-                extension relative to the bot root directory. This plugin \
-                will read the given file as a JSON array of strings and \
-                provide the individual elements as pieces of a playlist.")
+            .with_description(format!("Specify the path of a file with the \
+                `.json` extension relative to the bot root directory. {}This \
+                plugin will read the given file as a JSON array of strings \
+                and provide the individual elements as pieces of a playlist.",
+                web_descr))
             .build().unwrap()
     }
 
