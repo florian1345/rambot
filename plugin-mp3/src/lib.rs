@@ -1,6 +1,6 @@
 use minimp3::{self, Decoder, Frame};
 
-use plugin_commons::FileManager;
+use plugin_commons::{FileManager, OpenedFile, SeekWrapper};
 
 use rambot_api::{
     AudioDocumentation,
@@ -102,6 +102,29 @@ struct Mp3AudioSourceResolver {
     file_manager: FileManager
 }
 
+impl Mp3AudioSourceResolver {
+    fn resolve_reader<R>(&self, reader: R)
+        -> Result<Box<dyn AudioSource + Send>, String>
+    where
+        R: Read + Seek + Send + 'static
+    {
+        let decoder = Decoder::new(reader);
+        let mut frames = FrameIterator {
+            decoder
+        };
+        let first_frame = frames.next()
+            .ok_or_else(|| "File is empty.".to_owned())?
+            .map_err(|e| format!("{}", e))?;
+        let sampling_rate = first_frame.sample_rate as u32;
+
+        Ok(plugin_commons::adapt_sampling_rate(Mp3AudioSource {
+            frames,
+            current_frame: first_frame,
+            current_frame_idx: 0
+        }, sampling_rate))
+    }
+}
+
 impl AudioSourceResolver for Mp3AudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
@@ -120,21 +143,13 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = self.file_manager.open_file_buf(descriptor)?;
-        let decoder = Decoder::new(reader);
-        let mut frames = FrameIterator {
-            decoder
-        };
-        let first_frame = frames.next()
-            .ok_or_else(|| "File is empty.".to_owned())?
-            .map_err(|e| format!("{}", e))?;
-        let sampling_rate = first_frame.sample_rate as u32;
-
-        Ok(plugin_commons::adapt_sampling_rate(Mp3AudioSource {
-            frames,
-            current_frame: first_frame,
-            current_frame_idx: 0
-        }, sampling_rate))
+        let file = self.file_manager.open_file_buf(descriptor)?;
+    
+        match file {
+            OpenedFile::Local(reader) => self.resolve_reader(reader),
+            OpenedFile::Web(reader) =>
+                self.resolve_reader(SeekWrapper::new(reader))
+        }
     }
 }
 

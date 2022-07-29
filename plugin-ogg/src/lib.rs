@@ -1,6 +1,6 @@
 use lewton::inside_ogg::OggStreamReader;
 
-use plugin_commons::FileManager;
+use plugin_commons::{FileManager, OpenedFile, SeekWrapper};
 
 use rambot_api::{
     AudioDocumentation,
@@ -93,6 +93,23 @@ struct OggAudioSourceResolver {
     file_manager: FileManager
 }
 
+impl OggAudioSourceResolver {
+    fn resolve_reader<R>(&self, reader: R)
+        -> Result<Box<dyn AudioSource + Send>, String>
+    where
+        R: Read + Seek + Send + 'static
+    {
+        let ogg_reader = OggStreamReader::new(reader)
+            .map_err(|e| format!("{}", e))?;
+        let sampling_rate = ogg_reader.ident_hdr.audio_sample_rate;
+
+        Ok(plugin_commons::adapt_sampling_rate(OggAudioSource {
+            reader: ogg_reader,
+            remaining: VecDeque::new()
+        }, sampling_rate))
+    }
+}
+
 impl AudioSourceResolver for OggAudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
@@ -111,15 +128,13 @@ impl AudioSourceResolver for OggAudioSourceResolver {
 
     fn resolve(&self, descriptor: &str)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = self.file_manager.open_file_buf(descriptor)?;
-        let ogg_reader = OggStreamReader::new(reader)
-            .map_err(|e| format!("{}", e))?;
-        let sampling_rate = ogg_reader.ident_hdr.audio_sample_rate;
-
-        Ok(plugin_commons::adapt_sampling_rate(OggAudioSource {
-            reader: ogg_reader,
-            remaining: VecDeque::new()
-        }, sampling_rate))
+        let file = self.file_manager.open_file_buf(descriptor)?;
+    
+        match file {
+            OpenedFile::Local(reader) => self.resolve_reader(reader),
+            OpenedFile::Web(reader) =>
+                self.resolve_reader(SeekWrapper::new(reader))
+        }
     }
 }
 

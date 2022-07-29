@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 rambot-api = { path = "../rambot-api" }
+ureq = "2.5"
+url = "2.2"

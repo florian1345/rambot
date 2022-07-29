@@ -2,7 +2,7 @@
 
 use hound::{SampleFormat, WavIntoSamples, WavReader};
 
-use plugin_commons::FileManager;
+use plugin_commons::{FileManager, OpenedFile};
 
 use rambot_api::{
     AudioDocumentation,
@@ -157,25 +157,12 @@ struct WaveAudioSourceResolver {
     file_manager: FileManager
 }
 
-impl AudioSourceResolver for WaveAudioSourceResolver {
-
-    fn documentation(&self) -> AudioDocumentation {
-        AudioDocumentationBuilder::new()
-            .with_name("Wave")
-            .with_summary("Playback wave audio files.")
-            .with_description("Specify the path of a file with the `.wav` \
-                extension relative to the bot root directory. This plugin \
-                will playback the given file.")
-            .build().unwrap()
-    }
-
-    fn can_resolve(&self, descriptor: &str) -> bool {
-        self.file_manager.is_file_with_extension(descriptor, ".wav")
-    }
-
-    fn resolve(&self, descriptor: &str)
-            -> Result<Box<dyn AudioSource + Send>, String> {
-        let reader = self.file_manager.open_file_buf(descriptor)?;
+impl WaveAudioSourceResolver {
+    fn resolve_reader<R>(&self, reader: R)
+        -> Result<Box<dyn AudioSource + Send>, String>
+    where
+        R: Read + Send + 'static
+    {
         let wav_reader = WavReader::new(reader).map_err(|e| format!("{}", e))?;
         let spec = wav_reader.spec();
 
@@ -197,6 +184,33 @@ impl AudioSourceResolver for WaveAudioSourceResolver {
                     channels: spec.channels
                 }, spec.sample_rate))
             }
+        }
+    }
+}
+
+impl AudioSourceResolver for WaveAudioSourceResolver {
+
+    fn documentation(&self) -> AudioDocumentation {
+        AudioDocumentationBuilder::new()
+            .with_name("Wave")
+            .with_summary("Playback wave audio files.")
+            .with_description("Specify the path of a file with the `.wav` \
+                extension relative to the bot root directory. This plugin \
+                will playback the given file.")
+            .build().unwrap()
+    }
+
+    fn can_resolve(&self, descriptor: &str) -> bool {
+        self.file_manager.is_file_with_extension(descriptor, ".wav")
+    }
+
+    fn resolve(&self, descriptor: &str)
+            -> Result<Box<dyn AudioSource + Send>, String> {
+        let file = self.file_manager.open_file_buf(descriptor)?;
+
+        match file {
+            OpenedFile::Local(reader) => self.resolve_reader(reader),
+            OpenedFile::Web(reader) => self.resolve_reader(reader)
         }
     }
 }
