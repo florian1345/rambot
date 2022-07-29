@@ -191,12 +191,20 @@ impl WaveAudioSourceResolver {
 impl AudioSourceResolver for WaveAudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
+        let web_descr = if self.file_manager.config().allow_web_access() {
+            "Alternatively, a URL to a `.wav` file on the internet can be \
+                provided. "
+        }
+        else {
+            ""
+        };
+
         AudioDocumentationBuilder::new()
             .with_name("Wave")
             .with_summary("Playback wave audio files.")
-            .with_description("Specify the path of a file with the `.wav` \
-                extension relative to the bot root directory. This plugin \
-                will playback the given file.")
+            .with_description(format!("Specify the path of a file with the \
+                `.wav` extension relative to the bot root directory. {}This \
+                plugin will playback the given file.", web_descr))
             .build().unwrap()
     }
 

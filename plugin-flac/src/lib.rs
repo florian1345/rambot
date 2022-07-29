@@ -135,12 +135,20 @@ impl FlacAudioSourceResolver {
 impl AudioSourceResolver for FlacAudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
+        let web_descr = if self.file_manager.config().allow_web_access() {
+            "Alternatively, a URL to a `.flac` file on the internet can be \
+                provided. "
+        }
+        else {
+            ""
+        };
+
         AudioDocumentationBuilder::new()
             .with_name("Flac")
             .with_summary("Playback FLAC audio files.")
-            .with_description("Specify the path of a file with the `.flac` \
-                extension relative to the bot root directory. This plugin \
-                will playback the given file.")
+            .with_description(format!("Specify the path of a file with the \
+                `.flac` extension relative to the bot root directory. {}This \
+                plugin will playback the given file.", web_descr))
             .build().unwrap()
     }
 

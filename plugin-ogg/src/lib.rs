@@ -113,12 +113,20 @@ impl OggAudioSourceResolver {
 impl AudioSourceResolver for OggAudioSourceResolver {
 
     fn documentation(&self) -> AudioDocumentation {
+        let web_descr = if self.file_manager.config().allow_web_access() {
+            "Alternatively, a URL to an `.ogg` file on the internet can be \
+                provided. "
+        }
+        else {
+            ""
+        };
+
         AudioDocumentationBuilder::new()
             .with_name("Ogg")
             .with_summary("Playback OGG audio files.")
-            .with_description("Specify the path of a file with the `.ogg` \
-                extension relative to the bot root directory. This plugin \
-                will playback the given file.")
+            .with_description(format!("Specify the path of a file with the \
+                `.ogg` extension relative to the bot root directory. {}This \
+                plugin will playback the given file.", web_descr))
             .build().unwrap()
     }
 
