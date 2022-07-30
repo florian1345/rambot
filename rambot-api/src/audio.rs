@@ -1,8 +1,11 @@
 use std::io;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
-/// A single stereo audio sample in 32-bit float PCM format.
+/// A single stereo audio sample in 32-bit float PCM format. In memory, a
+/// a sample is laid out as the left channel (4 bytes) followed by the right
+/// channel (4 bytes) for a total of 8 bytes.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub struct Sample {
 
     /// The current amplitude on the left channel. Usually on a scale from -1

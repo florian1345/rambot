@@ -5,8 +5,71 @@ use rambot_api::{AudioSource, Sample};
 use std::f32::consts;
 use std::io;
 
-fn fold(a: &[Sample], b: &[f32]) -> Sample {
+#[cfg(all(target_arch = "x86", target_feature = "sse"))]
+use std::arch::x86::{
+    __m128,
+    _mm_add_ps,
+    _mm_cvtss_f32,
+    _mm_loadu_ps,
+    _mm_mul_ps,
+    _mm_setzero_ps,
+    _mm_shuffle_ps
+};
+
+#[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
+use std::arch::x86_64::{
+    __m128,
+    _mm_add_ps,
+    _mm_cvtss_f32,
+    _mm_loadu_ps,
+    _mm_mul_ps,
+    _mm_setzero_ps,
+    _mm_shuffle_ps
+};
+
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "sse"))]
+#[inline]
+unsafe fn sum_ps(mut a: __m128) -> f32 {
+    let mut shuffled = _mm_shuffle_ps::<0xb1>(a, a);
+    a = _mm_add_ps(a, shuffled);
+    shuffled = _mm_shuffle_ps::<0x1b>(a, a);
+    a = _mm_add_ps(a, shuffled);
+    _mm_cvtss_f32(a)
+}
+
+fn fold(mut a: &[Sample], mut b: &[f32]) -> Sample {
     let mut sum = Sample::ZERO;
+
+    #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "sse"))]
+    unsafe {
+        let sse_steps = b.len() / 4;
+        let mut left = _mm_setzero_ps();
+        let mut right = _mm_setzero_ps();
+        let mut a_ptr = a.as_ptr() as *const f32;
+        let mut b_ptr = b.as_ptr();
+
+        for _ in 0..sse_steps {
+            let a_1 = _mm_loadu_ps(a_ptr);
+            let a_2 = _mm_loadu_ps(a_ptr.add(4));
+            let a_left = _mm_shuffle_ps::<0xdd>(a_1, a_2);
+            let a_right = _mm_shuffle_ps::<0x88>(a_1, a_2);
+            let b = _mm_loadu_ps(b_ptr);
+
+            left = _mm_add_ps(_mm_mul_ps(a_left, b), left);
+            right = _mm_add_ps(_mm_mul_ps(a_right, b), right);
+
+            a_ptr = a_ptr.add(8);
+            b_ptr = b_ptr.add(4);
+        }
+
+        sum.left = sum_ps(left);
+        sum.right = sum_ps(right);
+
+        a = &a[sse_steps * 2..];
+        b = &b[sse_steps * 4..];
+    }
 
     for (s, &f) in a.iter().zip(b.iter()) {
         sum += s * f;
