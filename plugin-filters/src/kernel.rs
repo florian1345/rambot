@@ -38,6 +38,7 @@ unsafe fn sum_ps(mut a: __m128) -> f32 {
     _mm_cvtss_f32(a)
 }
 
+#[allow(unused_mut)] // if compiled without SSE, "mut" modifiers are unused
 fn fold(mut a: &[Sample], mut b: &[f32]) -> Sample {
     let mut sum = Sample::ZERO;
 
