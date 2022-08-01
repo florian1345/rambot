@@ -14,7 +14,8 @@ members = [
     "plugin-wave",
     "rambot",
     "rambot-api",
-    "rambot-proc-macro"
+    "rambot-proc-macro",
+    "rambot-test-util"
 ]
 
 [profile.release]

@@ -161,43 +161,9 @@ where
 #[cfg(test)]
 mod tests {
 
-    // TODO reduce code duplication with rambot::audio unit tests
-
     use super::*;
 
-    struct MockAudioSource {
-        samples: Vec<Sample>,
-        index: usize
-    }
-
-    impl MockAudioSource {
-        fn new(samples: Vec<Sample>)-> MockAudioSource {
-            MockAudioSource {
-                samples,
-                index: 0
-            }
-        }
-    }
-
-    impl AudioSource for MockAudioSource {
-        fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
-            let remaining = &self.samples[self.index..];
-            let len = buf.len().min(remaining.len());
-            self.index += len;
-
-            buf[..len].copy_from_slice(&remaining[..len]);
-
-            Ok(len)
-        }
-
-        fn has_child(&self) -> bool {
-            false
-        }
-
-        fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
-            panic!("mock audio source asked for child")
-        }
-    }
+    use rambot_test_util::MockAudioSource;
 
     fn assert_within_eps(a: f32, b: f32) {
         // 1 / 100000 => less than one unit in 16-bit integer PCM
@@ -240,20 +206,21 @@ mod tests {
             buf: &mut [Sample], segment_size: usize) -> usize {
         let mut total = 0;
 
-        for i in 0..((buf.len() + segment_size - 1) / segment_size) {
-            let start = i * segment_size;
-            let end = (start + segment_size).min(buf.len());
-            let count = resampled.read(&mut buf[start..end]).unwrap();
+        loop {
+            let end = (total + segment_size).min(buf.len());
+            let count = resampled.read(&mut buf[total..end]).unwrap();
 
             total += count;
 
-            if count < end - start {
+            if count == 0 || total == buf.len() {
                 return total;
             }
         }
-
-        return total;
     }
+
+    const AUDIO_SOURCE_SEGMENT_SIZE_MEAN: f64 = 50.0;
+    const AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV: f64 = 10.0;
+    const QUERY_SEGMENT_SIZE: usize = 77;
 
     #[test]
     fn resample_with_identical_sampling_rate_is_noop() {
@@ -271,11 +238,15 @@ mod tests {
     fn reduction_of_sampling_rate_works() {
         let to_resample = test_data(120000, 0.002);
         let mut resampled = adapt_sampling_rate(
-            MockAudioSource::new(to_resample.clone()),
+            MockAudioSource::with_normally_distributed_segment_size(
+                to_resample.clone(),
+                AUDIO_SOURCE_SEGMENT_SIZE_MEAN,
+                AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV).unwrap(),
             TARGET_SAMPLING_RATE * 3 / 2);
         let mut buf = vec![Sample::ZERO; 200000];
 
-        assert_eq!(80000, segmented_query(&mut resampled, &mut buf, 77));
+        assert_eq!(80000,
+            segmented_query(&mut resampled, &mut buf, QUERY_SEGMENT_SIZE));
         assert_approximately_equal(&test_data(80000, 0.003), &buf[..80000]);
     }
 
@@ -283,11 +254,15 @@ mod tests {
     fn increasing_sampling_rate_works() {
         let to_resample = test_data(120000, 0.003);
         let mut resampled = adapt_sampling_rate(
-            MockAudioSource::new(to_resample.clone()),
+            MockAudioSource::with_normally_distributed_segment_size(
+                to_resample.clone(),
+                AUDIO_SOURCE_SEGMENT_SIZE_MEAN,
+                AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV).unwrap(),
             TARGET_SAMPLING_RATE * 2 / 3);
         let mut buf = vec![Sample::ZERO; 200000];
 
-        assert_eq!(179999, segmented_query(&mut resampled, &mut buf, 77));
+        assert_eq!(179999,
+            segmented_query(&mut resampled, &mut buf, QUERY_SEGMENT_SIZE));
         assert_approximately_equal(&test_data(179999, 0.002),
             &buf[..179999]);
     }
@@ -300,11 +275,15 @@ mod tests {
 
         let to_resample = test_data(120000, 0.003);
         let mut resampled = adapt_sampling_rate(
-            MockAudioSource::new(to_resample.clone()),
+            MockAudioSource::with_normally_distributed_segment_size(
+                to_resample.clone(),
+                AUDIO_SOURCE_SEGMENT_SIZE_MEAN,
+                AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV).unwrap(),
             44100);
         let mut buf = vec![Sample::ZERO; 200000];
 
-        assert_eq!(130612, segmented_query(&mut resampled, &mut buf, 77));
+        assert_eq!(130612,
+            segmented_query(&mut resampled, &mut buf, QUERY_SEGMENT_SIZE));
         assert_approximately_equal(&test_data(130612, 0.00275625),
             &buf[..130612]);
     }
