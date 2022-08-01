@@ -6,14 +6,15 @@ use std::mem;
 struct ResamplingAudioSource<S> {
     base: S,
     buf: Vec<Sample>,
+    base_buf_len: usize,
     step: usize,
-    fraction_numerator: usize
+    frac_index: usize
 }
 
 impl<S> ResamplingAudioSource<S> {
-    fn linear_combination(&self, frac_index: usize) -> Sample {
-        let base = frac_index / TARGET_SAMPLING_RATE_USIZE;
-        let rem = frac_index - base * TARGET_SAMPLING_RATE_USIZE;
+    fn linear_combination(&self) -> Sample {
+        let base = self.frac_index / TARGET_SAMPLING_RATE_USIZE;
+        let rem = self.frac_index - base * TARGET_SAMPLING_RATE_USIZE;
 
         if rem > 0 {
             let fraction = rem as f32 / TARGET_SAMPLING_RATE_USIZE as f32;
@@ -30,11 +31,13 @@ impl<S> ResamplingAudioSource<S> {
 impl<S: AudioSource> ResamplingAudioSource<S> {
     fn read_maybe_zero(&mut self, buf: &mut [Sample])
             -> Result<Option<usize>, io::Error> {
-        // TODO these computations are weird. maybe there is a way to make it
-        // more obvious that they are correct?
+        // < self.fraction_numerator + (buf.len() - 1) * self.step > is the
+        // required fraction index space. We divide that by
+        // TARGET_SAMPLING_RATE_USIZE (rounding up) to obtain the required base
+        // index space and add 1 to convert from index to length.
 
         let required_base_buf_len =
-            (self.fraction_numerator + (buf.len() - 1) * self.step +
+            (self.frac_index + (buf.len() - 1) * self.step +
                 TARGET_SAMPLING_RATE_USIZE - 1) /
                 TARGET_SAMPLING_RATE_USIZE + 1;
 
@@ -44,27 +47,49 @@ impl<S: AudioSource> ResamplingAudioSource<S> {
             }
         }
 
-        let base_sample_count =
-            self.base.read(&mut self.buf[1..required_base_buf_len])?;
+        if required_base_buf_len > self.base_buf_len {
+            // If the audio source is non-empty, we need to output at least one
+            // sample at the current fractional index.
 
-        if base_sample_count == 0 {
-            return Ok(None);
+            let bare_minimum_base_buf_len =
+                self.frac_index / TARGET_SAMPLING_RATE_USIZE + 1;
+
+            loop {
+                let base_sample_count = self.base.read(
+                    &mut self.buf[self.base_buf_len..required_base_buf_len])?;
+
+                if base_sample_count == 0 {
+                    return Ok(None);
+                }
+
+                self.base_buf_len += base_sample_count;
+
+                if self.base_buf_len >= bare_minimum_base_buf_len {
+                    break;
+                }
+            }
         }
+
+        // < (self.base_buf_len - 1) * TARGET_SAMPLING_RATE_USIZE -
+        // self.frac_index > is the available fractional index space we have
+        // from our base buffer. We divide that by the step and add 1 to
+        // account for the first sample at the current fractional index.
 
         let sample_count =
-            ((base_sample_count + 1) * TARGET_SAMPLING_RATE_USIZE -
-                self.fraction_numerator - 1) / self.step + 1;
+            ((self.base_buf_len - 1) * TARGET_SAMPLING_RATE_USIZE -
+                self.frac_index) / self.step + 1;
         let sample_count = sample_count.min(buf.len());
 
-        for (i, sample) in buf.iter_mut().enumerate().take(sample_count) {
-            *sample = self.linear_combination(
-                self.fraction_numerator + i * self.step);
+        for sample in buf.iter_mut().take(sample_count) {
+            *sample = self.linear_combination();
+            self.frac_index += self.step;
         }
 
-        self.buf[0] = self.buf[base_sample_count];
-        self.fraction_numerator =
-            (self.fraction_numerator + sample_count * self.step) -
-            (base_sample_count * TARGET_SAMPLING_RATE_USIZE);
+        let shift = self.frac_index / TARGET_SAMPLING_RATE_USIZE;
+
+        self.buf.drain(..shift);
+        self.base_buf_len -= shift;
+        self.frac_index -= shift * TARGET_SAMPLING_RATE_USIZE;
 
         Ok(Some(sample_count))
     }
@@ -92,8 +117,9 @@ impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
         Box::new(ResamplingAudioSource {
             base: self.base.take_child(),
             buf: mem::take(&mut self.buf),
+            base_buf_len: self.base_buf_len,
             step: self.step,
-            fraction_numerator: self.fraction_numerator
+            frac_index: self.frac_index
         })
     }
 }
@@ -125,8 +151,9 @@ where
         Box::new(ResamplingAudioSource {
             base: audio_source,
             buf: Vec::new(),
+            base_buf_len: 0,
             step: sampling_rate as usize,
-            fraction_numerator: TARGET_SAMPLING_RATE_USIZE
+            frac_index: 0
         })
     }
 }
@@ -173,7 +200,8 @@ mod tests {
     }
 
     fn assert_within_eps(a: f32, b: f32) {
-        const EPS: f32 = 0.001;
+        // 1 / 100000 => less than one unit in 16-bit integer PCM
+        const EPS: f32 = 0.00001;
 
         if (a - b).abs() > EPS {
             panic!("floats not within epsilon: {} and {}", a, b);
@@ -191,13 +219,13 @@ mod tests {
         }
     }
 
-    fn test_data(len: usize, step: f32) -> Vec<Sample> {
+    fn test_data(len: usize, step: f64) -> Vec<Sample> {
         let mut result = Vec::with_capacity(len);
 
         for i in 0..len {
-            let x = step * i as f32;
-            let left = x - x * x;
-            let right = 1.0 - x + x * x;
+            let x = step * i as f64;
+            let left = x.sin() as f32;
+            let right = x.cos() as f32;
 
             result.push(Sample {
                 left,
@@ -208,7 +236,8 @@ mod tests {
         result
     }
 
-    fn segmented_query(resampled: &mut Box<dyn AudioSource + Send>, buf: &mut [Sample], segment_size: usize) -> usize {
+    fn segmented_query(resampled: &mut Box<dyn AudioSource + Send>,
+            buf: &mut [Sample], segment_size: usize) -> usize {
         let mut total = 0;
 
         for i in 0..((buf.len() + segment_size - 1) / segment_size) {
@@ -240,26 +269,43 @@ mod tests {
 
     #[test]
     fn reduction_of_sampling_rate_works() {
-        let to_resample = test_data(1200, 0.001);
+        let to_resample = test_data(120000, 0.002);
         let mut resampled = adapt_sampling_rate(
             MockAudioSource::new(to_resample.clone()),
             TARGET_SAMPLING_RATE * 3 / 2);
-        let mut buf = vec![Sample::ZERO; 1200];
+        let mut buf = vec![Sample::ZERO; 200000];
 
-        assert_eq!(800, segmented_query(&mut resampled, &mut buf, 77));
-        assert_approximately_equal(&test_data(800, 0.0015), &buf[..800]);
+        assert_eq!(80000, segmented_query(&mut resampled, &mut buf, 77));
+        assert_approximately_equal(&test_data(80000, 0.003), &buf[..80000]);
     }
 
     #[test]
     fn increasing_sampling_rate_works() {
-        let to_resample = test_data(1200, 0.00045);
+        let to_resample = test_data(120000, 0.003);
         let mut resampled = adapt_sampling_rate(
             MockAudioSource::new(to_resample.clone()),
             TARGET_SAMPLING_RATE * 2 / 3);
-        let mut buf = vec![Sample::ZERO; 2000];
+        let mut buf = vec![Sample::ZERO; 200000];
 
-        assert_eq!(1800, segmented_query(&mut resampled, &mut buf, 77));
-        assert_approximately_equal(&test_data(1800, 0.0003),
-            &buf[..1800]);
+        assert_eq!(179999, segmented_query(&mut resampled, &mut buf, 77));
+        assert_approximately_equal(&test_data(179999, 0.002),
+            &buf[..179999]);
+    }
+
+    #[test]
+    fn convert_from_44100_to_48000_works() {
+        // This weird ratio is actually quite common in audio processing (44.1
+        // kHz to 48 kHz). It also caused a bug previously. Hence, this test
+        // case is included.
+
+        let to_resample = test_data(120000, 0.003);
+        let mut resampled = adapt_sampling_rate(
+            MockAudioSource::new(to_resample.clone()),
+            44100);
+        let mut buf = vec![Sample::ZERO; 200000];
+
+        assert_eq!(130612, segmented_query(&mut resampled, &mut buf, 77));
+        assert_approximately_equal(&test_data(130612, 0.00275625),
+            &buf[..130612]);
     }
 }
