@@ -19,5 +19,8 @@ songbird = "0.3"
 tokio = { version = "1.0", features = [ "macros", "rt-multi-thread" ] }
 vmcircbuffer = "0.0.9"
 
+[dev-dependencies]
+rambot-test-util = { path = "../rambot-test-util", features = [ "testing" ] }
+
 [features]
 bench = []

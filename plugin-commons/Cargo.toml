@@ -9,3 +9,6 @@ edition = "2021"
 rambot-api = { path = "../rambot-api" }
 ureq = "2.5"
 url = "2.2"
+
+[dev-dependencies]
+rambot-test-util = { path = "../rambot-test-util", features = [ "testing" ] }

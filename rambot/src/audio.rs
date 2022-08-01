@@ -801,46 +801,7 @@ mod tests {
 
     use super::*;
 
-    struct MockAudioSource {
-        samples: Vec<Sample>,
-        index: usize,
-        segment_size: usize
-    }
-
-    impl MockAudioSource {
-        fn new(samples: Vec<Sample>) -> MockAudioSource {
-            MockAudioSource::with_segment_size(samples, usize::MAX)
-        }
-    
-        fn with_segment_size(samples: Vec<Sample>, segment_size: usize)
-                -> MockAudioSource {
-            MockAudioSource {
-                samples,
-                index: 0,
-                segment_size
-            }
-        }
-    }
-
-    impl AudioSource for MockAudioSource {
-        fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
-            let remaining = &self.samples[self.index..];
-            let len = buf.len().min(remaining.len()).min(self.segment_size);
-            self.index += len;
-
-            buf[..len].copy_from_slice(&remaining[..len]);
-
-            Ok(len)
-        }
-
-        fn has_child(&self) -> bool {
-            false
-        }
-
-        fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
-            panic!("mock audio source asked for child")
-        }
-    }
+    use rambot_test_util::MockAudioSource;
 
     fn pcm_read_to_end<S>(mut buf: &mut [u8], read: &mut PCMRead<S>) -> usize
     where
