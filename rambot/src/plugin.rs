@@ -208,8 +208,8 @@ where
 }
 
 unsafe fn load_plugin(path: PathBuf, config: PluginConfig,
-        registry: &mut ResolverRegistry, loaded_libraries: &mut Vec<Library>)
-        -> Result<(), LoadPluginsError> {
+        registry: &mut ResolverRegistry, plugins: &mut Vec<Box<dyn Plugin>>,
+        loaded_libraries: &mut Vec<Library>) -> Result<(), LoadPluginsError> {
     type CreatePlugin = unsafe fn() -> *mut Box<dyn Plugin>;
 
     let lib = Library::new(path)?;
@@ -217,7 +217,8 @@ unsafe fn load_plugin(path: PathBuf, config: PluginConfig,
     let lib = loaded_libraries.last().unwrap();
     let create_plugin: Symbol<CreatePlugin> = lib.get(b"_create_plugin")?;
     let raw = create_plugin();
-    let plugin = Box::from_raw(raw);
+    plugins.push(*Box::from_raw(raw));
+    let plugin = plugins.last().unwrap();
 
     if let Err(msg) = plugin.load_plugin(config, registry) {
         return Err(LoadPluginsError::InitError(msg));
@@ -233,6 +234,7 @@ pub struct PluginManager {
     audio_source_list_resolvers: Vec<Box<dyn AudioSourceListResolver>>,
     effect_resolvers: HashMap<String, Box<dyn EffectResolver>>,
     adapter_resolvers: HashMap<String, Box<dyn AdapterResolver>>,
+    plugins: Vec<Box<dyn Plugin>>,
     loaded_libraries: Vec<Library>
 }
 
@@ -245,6 +247,7 @@ impl PluginManager {
             audio_source_list_resolvers: Vec::new(),
             effect_resolvers: HashMap::new(),
             adapter_resolvers: HashMap::new(),
+            plugins: Vec::new(),
             loaded_libraries: Vec::new()
         }
     }
@@ -267,6 +270,7 @@ impl PluginManager {
             audio_source_list_resolvers: Vec::new(),
             effect_resolvers: HashMap::new(),
             adapter_resolvers: HashMap::new(),
+            plugins: Vec::new(),
             loaded_libraries: Vec::new()
         };
         let mut resolver_registry = ResolverRegistry::new(
@@ -300,6 +304,7 @@ impl PluginManager {
                         dir_entry.path(),
                         plugin_config,
                         &mut resolver_registry,
+                        &mut plugin_manager.plugins,
                         &mut plugin_manager.loaded_libraries)?;
                 }
             }
@@ -519,8 +524,30 @@ impl PluginManager {
             -> Option<ModifierDocumentation> {
         get_modifier_documentation(name, &self.adapter_resolvers)
     }
+
+    fn unload(&mut self) {
+        let count = self.plugins.len();
+
+        for plugin in self.plugins.drain(..) {
+            plugin.unload_plugin();
+        }
+
+        for library in self.loaded_libraries.drain(..) {
+            drop(library);
+        }
+
+        log::debug!("Unloaded {} plugins.", count);
+    }
 }
 
 impl TypeMapKey for PluginManager {
     type Value = Arc<PluginManager>;
+}
+
+impl Drop for PluginManager {
+    fn drop(&mut self) {
+        if !self.plugins.is_empty() || !self.loaded_libraries.is_empty() {
+            self.unload()
+        }
+    }
 }
