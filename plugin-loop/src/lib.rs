@@ -67,7 +67,7 @@ struct LoopPlugin;
 
 impl Plugin for LoopPlugin {
 
-    fn load_plugin<'registry>(&mut self, _config: &PluginConfig,
+    fn load_plugin<'registry>(&self, _config: PluginConfig,
             registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
         registry.register_adapter_resolver(LoopAdapterResolver);
         Ok(())
@@ -79,4 +79,3 @@ fn make_loop_plugin() -> LoopPlugin {
 }
 
 rambot_api::export_plugin!(make_loop_plugin);
-

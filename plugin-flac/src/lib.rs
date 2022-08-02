@@ -171,7 +171,7 @@ struct FlacPlugin;
 
 impl Plugin for FlacPlugin {
 
-    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+    fn load_plugin<'registry>(&self, config: PluginConfig,
             registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
         registry.register_audio_source_resolver(FlacAudioSourceResolver {
             file_manager: FileManager::new(config)

@@ -1,6 +1,8 @@
+mod config;
 mod kernel;
 mod util;
 
+use crate::config::Config;
 use crate::kernel::KernelFilter;
 
 use rambot_api::{
@@ -24,7 +26,24 @@ fn get_sigma(key_values: &HashMap<String, String>) -> Result<f32, String> {
                 |e| format!("Error parsing value for \"sigma\": {}.", e)))
 }
 
-struct GaussianEffectResolver;
+fn get_kernel_size_sigmas(key_values: &HashMap<String, String>, config: &Config) -> Result<f32, String> {
+    key_values.get("kernel_size")
+        .map(|s| s.parse())
+        .unwrap_or_else(|| Ok(config.default_gaussian_kernel_size_sigmas()))
+        .map_err(|e|
+            format!("Error parsing value for \"kernel_size\": {}.", e))
+}
+
+fn get_kernel_size_doc(config: &Config) -> String {
+    format!("Optional. The size of the discrete kernel used for the \
+        computation, measured in `sigma`s. Higher values result in higher \
+        effect quality, but slower computation. Default is {}.",
+        config.default_gaussian_kernel_size_sigmas())
+}
+
+struct GaussianEffectResolver {
+    config: Config
+}
 
 impl EffectResolver for GaussianEffectResolver {
 
@@ -40,10 +59,11 @@ impl EffectResolver for GaussianEffectResolver {
         ModifierDocumentationBuilder::new()
             .with_short_summary("Applies a gaussian lowpass filter to the \
                 audio.")
-            .with_parameter("sigma", "The width of the gaussian kernel. \
-                Higher values cause lower frequencies to be cut. \
-                Experimentation is required. Typical values are in the range \
-                1 to 100.")
+            .with_parameter("sigma", "The width of the gaussian curve \
+                described by the kernel. Higher values cause lower \
+                frequencies to be cut. Experimentation is required. Typical \
+                values are in the range 1 to 100.")
+            .with_parameter("kernel_size", get_kernel_size_doc(&self.config))
             .build().unwrap()
     }
 
@@ -54,12 +74,21 @@ impl EffectResolver for GaussianEffectResolver {
             Ok(s) => s,
             Err(msg) => return Err(ResolveEffectError::new(msg, child))
         };
+        let kernel_size_sigmas_res =
+            get_kernel_size_sigmas(key_values, &self.config);
+        let kernel_size_sigmas = match kernel_size_sigmas_res {
+            Ok(ks) => ks,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
 
-        Ok(Box::new(KernelFilter::new(child, kernel::gaussian(sigma))))
+        Ok(Box::new(KernelFilter::new(
+            child, kernel::gaussian(sigma, kernel_size_sigmas))))
     }
 }
 
-struct InvGaussianEffectResolver;
+struct InvGaussianEffectResolver {
+    config: Config
+}
 
 impl EffectResolver for InvGaussianEffectResolver {
 
@@ -75,10 +104,11 @@ impl EffectResolver for InvGaussianEffectResolver {
         ModifierDocumentationBuilder::new()
             .with_short_summary("Subtracts a gaussian lowpass filter from the \
                 audio, thus obtaining a highpass filter.")
-            .with_parameter("sigma", "The width of the gaussian kernel. \
-                Higher values cause less higher frequencies to be cut. \
-                Experimentation is required. Typical values are in the range \
-                1 to 100.")
+            .with_parameter("sigma", "The width of the gaussian curve \
+                described by the kernel. Lower values cause higher \
+                frequencies to be cut. Experimentation is required. Typical \
+                values are in the range 1 to 100.")
+            .with_parameter("kernel_size", get_kernel_size_doc(&self.config))
             .build().unwrap()
     }
 
@@ -89,8 +119,15 @@ impl EffectResolver for InvGaussianEffectResolver {
             Ok(s) => s,
             Err(msg) => return Err(ResolveEffectError::new(msg, child))
         };
+        let kernel_size_sigmas_res =
+            get_kernel_size_sigmas(key_values, &self.config);
+        let kernel_size_sigmas = match kernel_size_sigmas_res {
+            Ok(ks) => ks,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
 
-        Ok(Box::new(KernelFilter::new(child, kernel::inv_gaussian(sigma))))
+        Ok(Box::new(KernelFilter::new(
+            child, kernel::inv_gaussian(sigma, kernel_size_sigmas))))
     }
 }
 
@@ -98,10 +135,17 @@ struct FiltersPlugin;
 
 impl Plugin for FiltersPlugin {
 
-    fn load_plugin<'registry>(&mut self, _config: &PluginConfig,
+    fn load_plugin<'registry>(&self, config: PluginConfig,
             registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
-        registry.register_effect_resolver(GaussianEffectResolver);
-        registry.register_effect_resolver(InvGaussianEffectResolver);
+        let config = Config::load(config.config_path())?;
+
+        registry.register_effect_resolver(GaussianEffectResolver {
+            config: config.clone()
+        });
+
+        registry.register_effect_resolver(InvGaussianEffectResolver {
+            config
+        });
 
         Ok(())
     }

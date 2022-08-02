@@ -207,17 +207,17 @@ where
         .map(|r| r.documentation())
 }
 
-unsafe fn load_plugin(path: PathBuf, config: &PluginConfig,
+unsafe fn load_plugin(path: PathBuf, config: PluginConfig,
         registry: &mut ResolverRegistry, loaded_libraries: &mut Vec<Library>)
         -> Result<(), LoadPluginsError> {
-    type CreatePlugin = unsafe fn() -> *mut dyn Plugin;
+    type CreatePlugin = unsafe fn() -> *mut Box<dyn Plugin>;
 
     let lib = Library::new(path)?;
     loaded_libraries.push(lib);
     let lib = loaded_libraries.last().unwrap();
     let create_plugin: Symbol<CreatePlugin> = lib.get(b"_create_plugin")?;
     let raw = create_plugin();
-    let mut plugin: Box<dyn Plugin> = Box::from_raw(raw);
+    let plugin = Box::from_raw(raw);
 
     if let Err(msg) = plugin.load_plugin(config, registry) {
         return Err(LoadPluginsError::InitError(msg));
@@ -283,18 +283,22 @@ impl PluginManager {
         );
 
         fs::create_dir_all(config.plugin_directory())?;
+        fs::create_dir_all(config.plugin_config_directory())?;
 
         for dir_entry in fs::read_dir(config.plugin_directory())? {
             let dir_entry = dir_entry?;
             let file_type = dir_entry.file_type()?;
 
             if file_type.is_file() {
+                let plugin_config = config.generate_plugin_config(
+                    dir_entry.file_name().to_str().unwrap());
+
                 // TODO this is probably truly unsafe -- how to contain?
 
                 unsafe {
                     load_plugin(
                         dir_entry.path(),
-                        config.plugin_config(),
+                        plugin_config,
                         &mut resolver_registry,
                         &mut plugin_manager.loaded_libraries)?;
                 }

@@ -164,7 +164,7 @@ struct Mp3Plugin;
 
 impl Plugin for Mp3Plugin {
 
-    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+    fn load_plugin<'registry>(&self, config: PluginConfig,
             registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
         registry.register_audio_source_resolver(Mp3AudioSourceResolver {
             file_manager: FileManager::new(config)
