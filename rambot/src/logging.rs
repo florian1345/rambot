@@ -103,7 +103,13 @@ fn get_file() -> Result<File, LogInitError> {
 
 /// Initializes a logger that writes to the terminal as well as to a log file
 /// named after the current time in the `logs` directory.
-pub fn init() -> Result<(), LogInitError> {
+///
+/// # Arguments
+///
+/// * `level_filter`: A verbosity level filter that represents the weakest log
+/// level that is still logged, or [LevelFilter::Off] to disable logging
+/// completely.
+pub fn init(level_filter: LevelFilter) -> Result<(), LogInitError> {
     let config = ConfigBuilder::new()
         .add_filter_ignore_str("tracing::span")
         .add_filter_ignore_str("serenity")
@@ -112,13 +118,13 @@ pub fn init() -> Result<(), LogInitError> {
 
     CombinedLogger::init(vec![
         TermLogger::new(
-            LevelFilter::Info,
+            level_filter,
             config.clone(),
             TerminalMode::Mixed,
             ColorChoice::Auto
         ),
         WriteLogger::new(
-            LevelFilter::Info,
+            level_filter,
             config,
             get_file()?
         )

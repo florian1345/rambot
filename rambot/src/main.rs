@@ -20,6 +20,8 @@ use serenity::framework::standard::macros::{help, hook};
 use serenity::model::prelude::{Message, UserId};
 use serenity::prelude::{TypeMapKey, GatewayIntents};
 
+use simplelog::LevelFilter;
+
 use songbird::SerenityInit;
 
 use std::collections::HashSet;
@@ -65,18 +67,25 @@ async fn after_hook(ctx: &Context, msg: &Message, _: &str,
 
 #[tokio::main]
 async fn main() {
-    if let Err(e) = logging::init() {
-        eprintln!("{}", e);
-        return;
-    }
-
     let config = match Config::load() {
         Ok(c) => c,
         Err(e) => {
-            log::error!("Error loading config file: {}", e);
+            if let Err(e_log) = logging::init(LevelFilter::Error) {
+                eprintln!("Error setting up logger: {}", e_log);
+                eprintln!("Error loading config file: {}", e);
+            }
+            else {
+                log::error!("Error loading config file: {}", e);
+            }
+
             return;
         }
     };
+
+    if let Err(e) = logging::init(config.log_level_filter()) {
+        eprintln!("Error setting up logger: {}", e);
+        return;
+    }
 
     log::info!("Successfully loaded config file.");
 
