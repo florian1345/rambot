@@ -44,7 +44,7 @@ where
         Ok(s) => s,
         Err(msg) => return Err(ResolveEffectError::new(msg, child))
     };
-    let kernel_size_sigmas_res = get_kernel_size_sigmas(key_values, &config);
+    let kernel_size_sigmas_res = get_kernel_size_sigmas(key_values, config);
     let kernel_size_sigmas = match kernel_size_sigmas_res {
         Ok(ks) => ks,
         Err(msg) => return Err(ResolveEffectError::new(msg, child))
