@@ -4,10 +4,12 @@ use std::fs::{self, File};
 use std::path::Path;
 
 const DEFAULT_DEFAULT_GAUSSIAN_KERNEL_SIZE_SIGMAS: f32 = 5.0;
+const DEFAULT_MAX_KERNEL_SIZE_SAMPLES: usize = 0;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Config {
-    default_gaussian_kernel_size_sigmas: f32
+    default_gaussian_kernel_size_sigmas: f32,
+    max_kernel_size_samples: usize
 }
 
 impl Config {
@@ -28,7 +30,8 @@ impl Config {
         else {
             let config = Config {
                 default_gaussian_kernel_size_sigmas:
-                    DEFAULT_DEFAULT_GAUSSIAN_KERNEL_SIZE_SIGMAS
+                    DEFAULT_DEFAULT_GAUSSIAN_KERNEL_SIZE_SIGMAS,
+                max_kernel_size_samples: DEFAULT_MAX_KERNEL_SIZE_SAMPLES
             };
             let file = File::create(path)
                 .map_err(|e| format!("Error creating config file: {}", e))?;
@@ -41,5 +44,9 @@ impl Config {
 
     pub(crate) fn default_gaussian_kernel_size_sigmas(&self) -> f32 {
         self.default_gaussian_kernel_size_sigmas
+    }
+
+    pub(crate) fn max_kernel_size_samples(&self) -> usize {
+        self.max_kernel_size_samples
     }
 }

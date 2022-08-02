@@ -34,6 +34,35 @@ fn get_kernel_size_sigmas(key_values: &HashMap<String, String>, config: &Config)
             format!("Error parsing value for \"kernel_size\": {}.", e))
 }
 
+fn resolve_gaussian_like_kernel_filter<F>(key_values: &HashMap<String, String>,
+    child: Box<dyn AudioSource + Send>, config: &Config, gen_kernel: F)
+    -> Result<Box<dyn AudioSource + Send>, ResolveEffectError>
+where
+    F: Fn(f32, f32) -> Vec<f32>
+{
+    let sigma = match get_sigma(key_values) {
+        Ok(s) => s,
+        Err(msg) => return Err(ResolveEffectError::new(msg, child))
+    };
+    let kernel_size_sigmas_res = get_kernel_size_sigmas(key_values, &config);
+    let kernel_size_sigmas = match kernel_size_sigmas_res {
+        Ok(ks) => ks,
+        Err(msg) => return Err(ResolveEffectError::new(msg, child))
+    };
+    let kernel = gen_kernel(sigma, kernel_size_sigmas);
+    let max_size = config.max_kernel_size_samples();
+
+    if max_size == 0 || kernel.len() <= max_size {
+        Ok(Box::new(KernelFilter::new(child, kernel)))
+    }
+    else {
+        let msg = format!("Kernel has total size {}, but the maximum is {}. \
+            Reduce `sigma` or `kernel_size`.", kernel.len(), max_size);
+
+        Err(ResolveEffectError::new(msg, child))
+    }
+}
+
 fn get_kernel_size_doc(config: &Config) -> String {
     format!("Optional. The size of the discrete kernel used for the \
         computation, measured in `sigma`s. Higher values result in higher \
@@ -70,19 +99,8 @@ impl EffectResolver for GaussianEffectResolver {
     fn resolve(&self, key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
-        let sigma = match get_sigma(key_values) {
-            Ok(s) => s,
-            Err(msg) => return Err(ResolveEffectError::new(msg, child))
-        };
-        let kernel_size_sigmas_res =
-            get_kernel_size_sigmas(key_values, &self.config);
-        let kernel_size_sigmas = match kernel_size_sigmas_res {
-            Ok(ks) => ks,
-            Err(msg) => return Err(ResolveEffectError::new(msg, child))
-        };
-
-        Ok(Box::new(KernelFilter::new(
-            child, kernel::gaussian(sigma, kernel_size_sigmas))))
+        resolve_gaussian_like_kernel_filter(
+            key_values, child, &self.config, kernel::gaussian)
     }
 }
 
@@ -115,19 +133,8 @@ impl EffectResolver for InvGaussianEffectResolver {
     fn resolve(&self, key_values: &HashMap<String, String>,
             child: Box<dyn AudioSource + Send>)
             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
-        let sigma = match get_sigma(key_values) {
-            Ok(s) => s,
-            Err(msg) => return Err(ResolveEffectError::new(msg, child))
-        };
-        let kernel_size_sigmas_res =
-            get_kernel_size_sigmas(key_values, &self.config);
-        let kernel_size_sigmas = match kernel_size_sigmas_res {
-            Ok(ks) => ks,
-            Err(msg) => return Err(ResolveEffectError::new(msg, child))
-        };
-
-        Ok(Box::new(KernelFilter::new(
-            child, kernel::inv_gaussian(sigma, kernel_size_sigmas))))
+        resolve_gaussian_like_kernel_filter(
+            key_values, child, &self.config, kernel::inv_gaussian)
     }
 }
 
