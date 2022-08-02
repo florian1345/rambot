@@ -97,6 +97,11 @@ pub trait Plugin : Send + Sync {
     /// [String].
     fn load_plugin<'registry>(&self, config: PluginConfig,
         registry: &mut ResolverRegistry<'registry>) -> Result<(), String>;
+
+    /// This function is called when the plugin is unloaded, i.e. the bot's
+    /// plugin manager is dropped. Any cleanup of the plugin's operation should
+    /// be done here. By default, it does nothing.
+    fn unload_plugin(&self) { }
 }
 
 /// Exports this plugin by creating a common entry point for dynamically loaded
