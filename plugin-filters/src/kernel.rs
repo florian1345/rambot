@@ -130,12 +130,10 @@ impl AudioSource for KernelFilter {
     }
 }
 
-const KERNEL_SIZE_STD_DEVIATIONS: f32 = 5.0;
 const SQRT_TAU: f32 = (2.0 / consts::FRAC_2_SQRT_PI) * consts::SQRT_2;
 
-pub(crate) fn gaussian(sigma: f32) -> Vec<f32> {
-    let kernel_size =
-        (KERNEL_SIZE_STD_DEVIATIONS * sigma).ceil() as usize * 2 + 1;
+pub(crate) fn gaussian(sigma: f32, kernel_size_sigmas: f32) -> Vec<f32> {
+    let kernel_size = (kernel_size_sigmas * sigma).ceil() as usize * 2 + 1;
     let mut kernel = Vec::with_capacity(kernel_size);
     let mid_point = (kernel_size / 2) as isize;
 
@@ -148,8 +146,8 @@ pub(crate) fn gaussian(sigma: f32) -> Vec<f32> {
     kernel
 }
 
-pub(crate) fn inv_gaussian(sigma: f32) -> Vec<f32> {
-    let mut kernel = gaussian(sigma);
+pub(crate) fn inv_gaussian(sigma: f32, kernel_size_sigmas: f32) -> Vec<f32> {
+    let mut kernel = gaussian(sigma, kernel_size_sigmas);
 
     for f in kernel.iter_mut() {
         *f = -*f;

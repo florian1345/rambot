@@ -1,8 +1,3 @@
-use serde::{Deserialize, Serialize};
-
-use std::env;
-use std::io;
-
 mod audio;
 mod documentation;
 mod resolver;
@@ -23,33 +18,40 @@ pub use resolver::{
     ResolverRegistry
 };
 
-const DEFAULT_ALLOW_WEB_ACCESS: bool = true;
-
-/// Configuration information that is potentially relevant to plugins, but not
-/// the bot itself. It is passed to the plugins during initialization. It is
-/// their responsibility to act according to this config.
-#[derive(Clone, Deserialize, Serialize)]
+/// Configuration information that is potentially relevant to a specific
+/// plugin, but not the bot itself. It is passed to the plugin during
+/// initialization. It is the plugin's responsibility to act according to this
+/// config.
+#[derive(Clone)]
 pub struct PluginConfig {
     root_directory: String,
-    allow_web_access: bool
+    allow_web_access: bool,
+    config_path: String
 }
 
 impl PluginConfig {
 
-    /// Creates a new, default plugin config. The root directory is initialized
-    /// to the current working directory. Getting this may fail, hence this
-    /// method may return an IO-[Error](io::Error).
-    pub fn default() -> Result<PluginConfig, io::Error> {
-        let root_directory = env::current_dir()?
-            .as_os_str()
-            .to_str()
-            .unwrap()
-            .to_owned();
-
-        Ok(PluginConfig {
-            root_directory,
-            allow_web_access: DEFAULT_ALLOW_WEB_ACCESS 
-        })
+    /// Creates a new plugin config from the given information.
+    ///
+    /// # Arguments
+    ///
+    /// * `root_directory`: The path to take as the root for file system
+    /// accesses, such as searching for audio files to play.
+    /// * `allow_web_access`: Indicates whether plugins are allowed to access
+    /// the internet.
+    /// * `config_path`: The path of the config file that the plugin receiving
+    /// this config should use, if it needs one.
+    pub fn new<S1, S2>(root_directory: S1, allow_web_access: bool,
+        config_path: S2) -> PluginConfig
+    where
+        S1: Into<String>,
+        S2: Into<String>
+    {
+        PluginConfig {
+            root_directory: root_directory.into(),
+            allow_web_access,
+            config_path: config_path.into() 
+        }
     }
 
     /// The path of the directory to use as a root for file system operations,
@@ -65,6 +67,14 @@ impl PluginConfig {
     pub fn allow_web_access(&self) -> bool {
         self.allow_web_access
     }
+
+    /// The path of the config file that the plugin receiving this config
+    /// should use, if it needs one. The file is not guaranteed to exist,
+    /// however its parent directory has been created by the bot if it did not
+    /// exist.
+    pub fn config_path(&self) -> &str {
+        &self.config_path
+    }
 }
 
 /// The main trait for Rambot plugins. This handles all initialization and
@@ -76,7 +86,7 @@ pub trait Plugin : Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `config`: The [PluginConfig] for all plugins. Currently, plugins
+    /// * `config`: The [PluginConfig] for this plugins. Currently, plugins
     /// themselves are responsible for respecting this config.
     /// * `registry`: The [ResolverRegistry] to use for registering resolvers
     /// provided by this plugin.
@@ -85,7 +95,7 @@ pub trait Plugin : Send + Sync {
     ///
     /// In case initialization fails, an error message may be provided as a
     /// [String].
-    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+    fn load_plugin<'registry>(&self, config: PluginConfig,
         registry: &mut ResolverRegistry<'registry>) -> Result<(), String>;
 }
 
@@ -114,9 +124,10 @@ pub trait Plugin : Send + Sync {
 macro_rules! export_plugin {
     ($constructor:path) => {
         #[no_mangle]
-        pub extern "Rust" fn _create_plugin() -> *mut dyn $crate::Plugin {
+        pub extern "Rust" fn _create_plugin() -> *mut Box<dyn $crate::Plugin> {
             let plugin = $constructor();
-            let boxed: Box<dyn $crate::Plugin> = Box::new(plugin);
+            let boxed: Box<Box<dyn $crate::Plugin>> =
+                Box::new(Box::new(plugin));
 
             Box::into_raw(boxed)
         }

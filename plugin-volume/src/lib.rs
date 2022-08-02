@@ -85,7 +85,7 @@ impl EffectResolver for VolumeEffectResolver {
 struct VolumePlugin;
 
 impl Plugin for VolumePlugin {
-    fn load_plugin<'registry>(&mut self, _config: &PluginConfig,
+    fn load_plugin<'registry>(&self, _config: PluginConfig,
             registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
         registry.register_effect_resolver(VolumeEffectResolver);
         Ok(())

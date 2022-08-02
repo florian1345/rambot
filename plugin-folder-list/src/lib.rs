@@ -74,7 +74,7 @@ struct FolderListPlugin;
 
 impl Plugin for FolderListPlugin {
 
-    fn load_plugin<'registry>(&mut self, config: &PluginConfig,
+    fn load_plugin<'registry>(&self, config: PluginConfig,
             registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
         registry.register_audio_source_list_resolver(FolderListResolver {
             root: config.root_directory().to_owned()

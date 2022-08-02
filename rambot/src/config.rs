@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use serenity::prelude::TypeMapKey;
 
+use std::env;
 use std::fmt::{self, Display, Formatter};
 use std::fs::{self, File};
 use std::io::{self, BufRead};
@@ -12,7 +13,9 @@ use std::path::Path;
 const CONFIG_FILE_NAME: &str = "config.json";
 const DEFAULT_PREFIX: &str = "!";
 const DEFAULT_PLUGIN_DIRECTORY: &str = "plugins";
+const DEFAULT_PLUGIN_CONFIG_DIRECTORY: &str = "plugins/config";
 const DEFAULT_STATE_DIRECTORY: &str = "state";
+const DEFAULT_ALLOW_WEB_ACCESS: bool = true;
 
 /// An enumeration of the different errors that can occur when loading the
 /// configuration.
@@ -63,10 +66,10 @@ pub struct Config {
     prefix: String,
     token: String,
     plugin_directory: String,
+    plugin_config_directory: String,
     state_directory: String,
-
-    #[serde(flatten)]
-    plugin_config: PluginConfig
+    root_directory: String,
+    allow_web_access: bool
 }
 
 impl Config {
@@ -89,12 +92,20 @@ impl Config {
 
             let stdin = io::stdin();
             let token = stdin.lock().lines().next().unwrap()?;
+            let root_directory = env::current_dir()?
+                .as_os_str()
+                .to_str()
+                .unwrap()
+                .to_owned();
             let config = Config {
                 prefix: DEFAULT_PREFIX.to_owned(),
                 token,
                 plugin_directory: DEFAULT_PLUGIN_DIRECTORY.to_owned(),
+                plugin_config_directory:
+                    DEFAULT_PLUGIN_CONFIG_DIRECTORY.to_owned(),
                 state_directory: DEFAULT_STATE_DIRECTORY.to_owned(),
-                plugin_config: PluginConfig::default()?
+                root_directory,
+                allow_web_access: DEFAULT_ALLOW_WEB_ACCESS
             };
             let file = File::create(path)?;
             serde_json::to_writer(file, &config)?;
@@ -118,14 +129,31 @@ impl Config {
         &self.plugin_directory
     }
 
+    /// The path of the directory in which plugins shall put their specific
+    /// config files.
+    pub fn plugin_config_directory(&self) -> &str {
+        &self.plugin_config_directory
+    }
+
     /// Gets the directory in which persistent state files are placed.
     pub fn state_directory(&self) -> &str {
         &self.state_directory
     }
 
-    /// Gets the [PluginConfig] to pass to the plugins.
-    pub fn plugin_config(&self) -> &PluginConfig {
-        &self.plugin_config
+    /// Gets the [PluginConfig] to pass to a plugin loaded from a file with the
+    /// given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `library`: The file name (without preceding directories, but with
+    /// extension) of the library that contains the plugin for which to
+    /// generate a config.
+    pub fn generate_plugin_config(&self, library: &str) -> PluginConfig {
+        let config_path =
+            format!("{}/{}.config", &self.plugin_config_directory, library);
+
+        PluginConfig::new(
+            &self.root_directory, self.allow_web_access, config_path)
     }
 }
 

@@ -57,9 +57,9 @@ pub struct FileManager {
 impl FileManager {
 
     /// Creates a new file manager from the plugin `config`.
-    pub fn new(config: &PluginConfig) -> FileManager {
+    pub fn new(config: PluginConfig) -> FileManager {
         FileManager {
-            config: config.clone()
+            config
         }
     }
 
