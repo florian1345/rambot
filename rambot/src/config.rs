@@ -1,8 +1,10 @@
 use rambot_api::PluginConfig;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use serenity::prelude::TypeMapKey;
+
+use simplelog::LevelFilter;
 
 use std::env;
 use std::fmt::{self, Display, Formatter};
@@ -16,6 +18,7 @@ const DEFAULT_PLUGIN_DIRECTORY: &str = "plugins";
 const DEFAULT_PLUGIN_CONFIG_DIRECTORY: &str = "plugins/config";
 const DEFAULT_STATE_DIRECTORY: &str = "state";
 const DEFAULT_ALLOW_WEB_ACCESS: bool = true;
+const DEFAULT_LOG_LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 
 /// An enumeration of the different errors that can occur when loading the
 /// configuration.
@@ -60,6 +63,59 @@ impl Display for ConfigError {
     }
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ConfigLevelFilter {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace
+}
+
+impl From<ConfigLevelFilter> for LevelFilter {
+    fn from(f: ConfigLevelFilter) -> LevelFilter {
+        match f {
+            ConfigLevelFilter::Off => LevelFilter::Off,
+            ConfigLevelFilter::Error => LevelFilter::Error,
+            ConfigLevelFilter::Warn => LevelFilter::Warn,
+            ConfigLevelFilter::Info => LevelFilter::Info,
+            ConfigLevelFilter::Debug => LevelFilter::Debug,
+            ConfigLevelFilter::Trace => LevelFilter::Trace
+        }
+    }
+}
+
+impl From<LevelFilter> for ConfigLevelFilter {
+    fn from(f: LevelFilter) -> ConfigLevelFilter {
+        match f {
+            LevelFilter::Off => ConfigLevelFilter::Off,
+            LevelFilter::Error => ConfigLevelFilter::Error,
+            LevelFilter::Warn => ConfigLevelFilter::Warn,
+            LevelFilter::Info => ConfigLevelFilter::Info,
+            LevelFilter::Debug => ConfigLevelFilter::Debug,
+            LevelFilter::Trace => ConfigLevelFilter::Trace
+        }
+    }
+}
+
+fn serialize_level_filter<S>(level_filter: &LevelFilter, serializer: S)
+    -> Result<S::Ok, S::Error>
+where
+    S: Serializer
+{
+    ConfigLevelFilter::from(*level_filter).serialize(serializer)
+}
+
+fn deserialize_level_filter<'de, D>(deserializer: D)
+    -> Result<LevelFilter, D::Error>
+where
+    D: Deserializer<'de>
+{
+    Ok(ConfigLevelFilter::deserialize(deserializer)?.into())
+}
+
 /// The configuration data of the bot.
 #[derive(Deserialize, Serialize)]
 pub struct Config {
@@ -69,7 +125,11 @@ pub struct Config {
     plugin_config_directory: String,
     state_directory: String,
     root_directory: String,
-    allow_web_access: bool
+    allow_web_access: bool,
+
+    #[serde(serialize_with = "serialize_level_filter")]
+    #[serde(deserialize_with = "deserialize_level_filter")]
+    log_level_filter: LevelFilter
 }
 
 impl Config {
@@ -105,7 +165,8 @@ impl Config {
                     DEFAULT_PLUGIN_CONFIG_DIRECTORY.to_owned(),
                 state_directory: DEFAULT_STATE_DIRECTORY.to_owned(),
                 root_directory,
-                allow_web_access: DEFAULT_ALLOW_WEB_ACCESS
+                allow_web_access: DEFAULT_ALLOW_WEB_ACCESS,
+                log_level_filter: DEFAULT_LOG_LEVEL_FILTER
             };
             let file = File::create(path)?;
             serde_json::to_writer(file, &config)?;
@@ -154,6 +215,11 @@ impl Config {
 
         PluginConfig::new(
             &self.root_directory, self.allow_web_access, config_path)
+    }
+
+    /// Gets the [LevelFilter] to be applied to the logger.
+    pub fn log_level_filter(&self) -> LevelFilter {
+        self.log_level_filter
     }
 }
 
