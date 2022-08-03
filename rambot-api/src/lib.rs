@@ -133,7 +133,7 @@ impl PluginConfig {
 }
 
 /// Guild-specific configuration provided to a plugin's resolvers.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PluginGuildConfig {
     root_directory: Option<String>
 }
@@ -160,14 +160,6 @@ impl PluginGuildConfig {
     /// used if this method returns `None`.
     pub fn root_directory(&self) -> Option<&String> {
         self.root_directory.as_ref()
-    }
-}
-
-impl Default for PluginGuildConfig {
-    fn default() -> PluginGuildConfig {
-        PluginGuildConfig {
-            root_directory: None
-        }
     }
 }
 
