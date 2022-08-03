@@ -21,6 +21,7 @@ use std::fmt::{self, Display, Formatter};
 ///     AudioDocumentationBuilder,
 ///     AudioSource,
 ///     AudioSourceResolver,
+///     PluginGuildConfig,
 ///     Sample
 /// };
 /// 
@@ -87,14 +88,14 @@ use std::fmt::{self, Display, Formatter};
 ///             .build().unwrap()
 ///     }
 /// 
-///     fn can_resolve(&self, descriptor: &str) -> bool {
+///     fn can_resolve(&self, descriptor: &str, _: PluginGuildConfig) -> bool {
 ///         // In this function, we get a user-provided audio descriptor and
 ///         // have to determine whether this resolver can build an audio
 ///         // source from it.
 ///         sine_regex().is_match(descriptor)
 ///     }
 /// 
-///     fn resolve(&self, descriptor: &str)
+///     fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSource + Send>, String> {
 ///         // Here we actually have to construct the audio source from the
 ///         // descriptor. We can rely on "can_resolve" to be true for the
@@ -224,6 +225,7 @@ impl Display for ResolveEffectError {
 ///     EffectResolver,
 ///     ModifierDocumentation,
 ///     ModifierDocumentationBuilder,
+///     PluginGuildConfig,
 ///     ResolveEffectError,
 ///     Sample
 /// };
@@ -309,7 +311,7 @@ impl Display for ResolveEffectError {
 ///     }
 ///     
 ///     fn resolve(&self, key_values: &HashMap<String, String>,
-///             child: Box<dyn AudioSource + Send>)
+///             child: Box<dyn AudioSource + Send>, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
 ///         // Here we actually have to construct the effect from the
 ///         // key-value-pairs parsed by the bot. We get the child to which we
@@ -385,7 +387,8 @@ pub trait EffectResolver : Send + Sync {
 ///     AudioDocumentation,
 ///     AudioDocumentationBuilder,
 ///     AudioSourceList,
-///     AudioSourceListResolver
+///     AudioSourceListResolver,
+///     PluginGuildConfig
 /// };
 /// 
 /// use std::io;
@@ -438,14 +441,14 @@ pub trait EffectResolver : Send + Sync {
 ///             .build().unwrap()
 ///     }
 ///     
-///     fn can_resolve(&self, descriptor: &str) -> bool {
+///     fn can_resolve(&self, descriptor: &str, _: PluginGuildConfig) -> bool {
 ///         // As with AudioSourceResolvers, we get a user-provided audio
 ///         // descriptor and have to determine whether this resolver can build
 ///         // an audio source list from it.
 ///         resolve_list(descriptor).is_some()
 ///     }
 ///     
-///     fn resolve(&self, descriptor: &str)
+///     fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSourceList + Send>, String> {
 ///         // As with AudioSourceResolvers, here we actually have to construct
 ///         // the audio source list from the descriptor. We can rely on
@@ -525,7 +528,8 @@ pub trait AudioSourceListResolver : Send + Sync {
 ///     AdapterResolver,
 ///     AudioSourceList,
 ///     ModifierDocumentation,
-///     ModifierDocumentationBuilder
+///     ModifierDocumentationBuilder,
+///     PluginGuildConfig
 /// };
 /// 
 /// use std::collections::HashMap;
@@ -589,7 +593,7 @@ pub trait AudioSourceListResolver : Send + Sync {
 ///     }
 ///     
 ///     fn resolve(&self, _key_values: &HashMap<String, String>,
-///             child: Box<dyn AudioSourceList + Send>)
+///             child: Box<dyn AudioSourceList + Send>, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSourceList + Send>, String> {
 ///         // Here we actually have to construct the effect from the
 ///         // key-value-pairs parsed by the bot. We get the child to which we
