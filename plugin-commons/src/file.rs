@@ -76,7 +76,7 @@ impl FileManager {
             guild_config: &PluginGuildConfig) -> Option<ResolvedFile> {
         let root_directory = guild_config.root_directory()
             .map(|s| s.as_str())
-            .unwrap_or(self.config.root_directory());
+            .unwrap_or_else(|| self.config.root_directory());
         let path = Path::new(root_directory).join(file);
 
         if path.as_path().exists() {
