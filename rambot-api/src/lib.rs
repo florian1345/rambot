@@ -1,3 +1,58 @@
+//! This crate defines the API against which plugins for the Rambot are
+//! programmed. Any plugin must implement the [Plugin] trait. The most
+//! important method there is [Plugin::load_plugin], where a plugin can
+//! register all functionality it provides with the bot.
+//!
+//! ```ignore
+//! use rambot_api::{Plugin, PluginConfig, ResolverRegistry};
+//!
+//! struct MyPlugin;
+//!
+//! impl Plugin for MyPlugin {
+//!     fn load_plugin<'registry>(&self, config: PluginConfig,
+//!             registry: &mut ResolverRegistry<'registry>)
+//!             -> Result<(), String> {
+//!         // Here we do all registration by calling the appropriate methods
+//!         // on "registry". We can register an arbitrary amount of
+//!         // functionality. The parameter `config` provides some extra
+//!         // configuration data assigned to this plugin by the bot.
+//! 
+//!         registry.register_audio_source_resolver(...);
+//!         registry.register_audio_source_list_resolver(...);
+//!         registry.register_effect_resolver(...);
+//!         registry.register_adapter_resolver(...);
+//! 
+//!         // If registration was successful, return Ok(()), otherwise return
+//!         // Err(...) with an error message, which will be logged by the bot
+//!         // and cause startup to fail.
+//! 
+//!         Ok(())
+//!     }
+//! 
+//!     fn unload_plugin(&self) {
+//!         // This function is run when the bot's plugin manager is dropped.
+//!         // Here you can do any cleanup required by the plugin, such as
+//!         // closing any IO resources.
+//!     }
+//! }
+//! ```
+//! 
+//! There are currently four different kinds of functionality a plugin can
+//! provide for the bot. Check out their respective documentation for more
+//! information and examples.
+//!
+//! * [AudioSourceResolver]s are the most essential feature, where a plugin
+//! provides a way to play some new kind of audio. An example would be playback
+//! of a certain type of audio file, such as MP3.
+//! * [AudioSourceListResolver]s offer a way to resolve playlists. An example
+//! would be playback of all audio files in a directory.
+//! * [EffectResolver]s transform one audio stream into another which depends
+//! on the former, applying some kind of audio effect. An example would be
+//! changing the volume of audio.
+//! * [AdapterResolver]s transform one playlist into another which depends on
+//! the former, changing the order and/or content. An example would be
+//! shuffling a playlist.
+
 mod audio;
 mod documentation;
 mod resolver;
