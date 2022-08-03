@@ -156,6 +156,13 @@ impl Div<f32> for &Sample {
 
 /// A trait for types which can read audio data in the form of [Sample]s. The
 /// interface is similar to that of the IO [Read](std::io::Read) trait.
+/// 
+/// Audio provided to the bot must be at 48 kHz, that is, 48000 samples
+/// represent one second of audio. This trait itself provides no way of
+/// checking that, so it is the plugin's responsibility to output audio of the
+/// correct sampling rate. You can use the `plugin-commons` crate's
+/// `adapt_sampling_rate` function to resample an audio source of any sampling
+/// rate to the required 48 kHz.
 pub trait AudioSource {
 
     /// Reads samples from this source into the given buffer. If the audio
