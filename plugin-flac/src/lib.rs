@@ -14,6 +14,7 @@ use rambot_api::{
     AudioSourceResolver,
     Plugin,
     PluginConfig,
+    PluginGuildConfig,
     ResolverRegistry,
     Sample
 };
@@ -152,13 +153,15 @@ impl AudioSourceResolver for FlacAudioSourceResolver {
             .build().unwrap()
     }
 
-    fn can_resolve(&self, descriptor: &str) -> bool {
-        self.file_manager.is_file_with_extension(descriptor, ".flac")
+    fn can_resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
+            -> bool {
+        self.file_manager.is_file_with_extension(
+            descriptor, &guild_config, ".flac")
     }
 
-    fn resolve(&self, descriptor: &str)
+    fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send>, String> {
-        let file = self.file_manager.open_file_buf(descriptor)?;
+        let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {
             OpenedFile::Local(reader) => self.resolve_reader(reader),

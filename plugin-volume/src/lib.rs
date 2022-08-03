@@ -5,6 +5,7 @@ use rambot_api::{
     ModifierDocumentationBuilder,
     Plugin,
     PluginConfig,
+    PluginGuildConfig,
     ResolveEffectError,
     ResolverRegistry,
     Sample
@@ -68,7 +69,8 @@ impl EffectResolver for VolumeEffectResolver {
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>)
+            child: Box<dyn AudioSource + Send>,
+            _guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
         let volume = match get_volume(key_values) {
             Ok(v) => v,

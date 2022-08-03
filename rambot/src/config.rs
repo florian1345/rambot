@@ -2,6 +2,7 @@ use rambot_api::PluginConfig;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use serenity::model::prelude::UserId;
 use serenity::prelude::TypeMapKey;
 
 use simplelog::LevelFilter;
@@ -121,6 +122,7 @@ where
 pub struct Config {
     prefix: String,
     token: String,
+    owners: Vec<UserId>,
     plugin_directory: String,
     plugin_config_directory: String,
     state_directory: String,
@@ -160,6 +162,7 @@ impl Config {
             let config = Config {
                 prefix: DEFAULT_PREFIX.to_owned(),
                 token,
+                owners: Vec::new(),
                 plugin_directory: DEFAULT_PLUGIN_DIRECTORY.to_owned(),
                 plugin_config_directory:
                     DEFAULT_PLUGIN_CONFIG_DIRECTORY.to_owned(),
@@ -170,6 +173,10 @@ impl Config {
             };
             let file = File::create(path)?;
             serde_json::to_writer(file, &config)?;
+
+            log::info!("New config file successfully created.");
+            log::info!("If you want to use owner-only commands, specify the \
+                owners' user IDs in the config file.");
 
             Ok(config)
         }
@@ -183,6 +190,12 @@ impl Config {
     /// The Discord API token that the bot uses to connect to Discord.
     pub fn token(&self) -> &str {
         &self.token
+    }
+
+    /// A slice of the [UserId]s of all Discord users that can act as owners of
+    /// this bot, i.e. execute commands marked as `owner_only`.
+    pub fn owners(&self) -> &[UserId] {
+        &self.owners
     }
 
     /// The path of the directory from which the bot shall load its plugins.

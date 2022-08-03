@@ -1,4 +1,4 @@
-use rambot_api::{AudioSource, Sample, AudioSourceList};
+use rambot_api::{AudioSource, Sample, AudioSourceList, PluginGuildConfig};
 
 use songbird::input::reader::MediaSource;
 
@@ -99,7 +99,8 @@ pub struct Layer {
     list: Option<Box<dyn AudioSourceList + Send>>,
     buffer: AudioBuffer,
     effects: Vec<KeyValueDescriptor>,
-    adapters: Vec<KeyValueDescriptor>
+    adapters: Vec<KeyValueDescriptor>,
+    plugin_guild_config: PluginGuildConfig
 }
 
 impl Layer {
@@ -111,7 +112,8 @@ impl Layer {
             list: None,
             buffer: AudioBuffer::new(),
             effects: Vec::new(),
-            adapters: Vec::new()
+            adapters: Vec::new(),
+            plugin_guild_config: PluginGuildConfig::default()
         }
     }
 
@@ -224,7 +226,8 @@ where
 {
     for effect in &layer.effects {
         source = to_io_err(plugin_manager.as_ref()
-            .resolve_effect(&effect.name, &effect.key_values, source)
+            .resolve_effect(&effect.name, &effect.key_values, source,
+                &layer.plugin_guild_config)
             .map_err(|(e, _)| e))?;
     }
 
@@ -237,8 +240,9 @@ fn play_on_layer<P>(layer: &mut Layer, descriptor: &str, plugin_manager: &P)
 where
     P: AsRef<PluginManager>
 {
-    let source =
-        to_io_err(plugin_manager.as_ref().resolve_audio_source(descriptor))?;
+    let source = to_io_err(
+        plugin_manager.as_ref().resolve_audio_source(
+            descriptor, &layer.plugin_guild_config))?;
 
     play_source_on_layer(layer, source, plugin_manager)
 }
@@ -251,7 +255,8 @@ where
 {
     for adapter in &layer.adapters {
         list = to_io_err(plugin_manager.as_ref().resolve_adapter(
-            &adapter.name, &adapter.key_values, list))?;
+            &adapter.name, &adapter.key_values, list,
+            &layer.plugin_guild_config))?;
     }
 
     if let Some(descriptor) = list.next()? {
@@ -279,7 +284,8 @@ where
 
         for old_effect in &layer.effects[first_removed_idx..] {
             let effect_res = plugin_manager.as_ref().resolve_effect(
-                &old_effect.name, &old_effect.key_values, source);
+                &old_effect.name, &old_effect.key_values, source,
+                &layer.plugin_guild_config);
 
             match effect_res {
                 Ok(effect) => source = effect,
@@ -379,7 +385,8 @@ impl Mixer {
 
         if let Some(source) = layer.source.take() {
             let effect_res = self.plugin_manager.resolve_effect(
-                &descriptor.name, &descriptor.key_values, source);
+                &descriptor.name, &descriptor.key_values, source,
+                &layer.plugin_guild_config);
 
             match effect_res {
                 Ok(effect) => layer.source = Some(effect),
@@ -536,12 +543,15 @@ impl Mixer {
 
     /// Plays audio given some `descriptor` on the `layer` with the given name.
     /// Panics if the layer does not exist.
-    pub fn play_on_layer(&mut self, layer: &str, descriptor: &str)
-            -> Result<(), io::Error> {
+    pub fn play_on_layer(&mut self, layer: &str, descriptor: &str,
+            plugin_guild_config: PluginGuildConfig) -> Result<(), io::Error> {
         let layer = self.layers.get_mut(layer);
-        let audio = to_io_err(self.plugin_manager.resolve_audio_descriptor_list(descriptor))?;
+        let audio = to_io_err(
+            self.plugin_manager.resolve_audio_descriptor_list(descriptor,
+                &layer.plugin_guild_config))?;
 
         layer.stop();
+        layer.plugin_guild_config = plugin_guild_config;
 
         match audio {
             AudioDescriptorList::Single(source) => {

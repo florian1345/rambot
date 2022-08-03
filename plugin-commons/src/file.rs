@@ -1,4 +1,4 @@
-use rambot_api::PluginConfig;
+use rambot_api::{PluginConfig, PluginGuildConfig};
 
 use std::fs::File;
 use std::io::{self, BufReader, Read};
@@ -72,8 +72,12 @@ impl FileManager {
     /// Gets a [ResolvedFile] pointing to the file with the given path either
     /// locally relative to the root directory or, if the [PluginConfig]
     /// provided in the constructor permits it, on the internet.
-    pub fn resolve_file(&self, file: &str) -> Option<ResolvedFile> {
-        let path = Path::new(self.config.root_directory()).join(file);
+    pub fn resolve_file(&self, file: &str,
+            guild_config: &PluginGuildConfig) -> Option<ResolvedFile> {
+        let root_directory = guild_config.root_directory()
+            .map(|s| s.as_str())
+            .unwrap_or(self.config.root_directory());
+        let path = Path::new(root_directory).join(file);
 
         if path.as_path().exists() {
             return Some(ResolvedFile::Local(path));
@@ -100,13 +104,15 @@ impl FileManager {
     /// * `descriptor`: The descriptor to check.
     /// * `extension`: The required extension (including the period) in lower
     /// case.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
     /// True if and only if the descriptor represents a file with the given
     /// extension.
-    pub fn is_file_with_extension(&self, descriptor: &str, extension: &str)
-            -> bool {
+    pub fn is_file_with_extension(&self, descriptor: &str,
+            guild_config: &PluginGuildConfig, extension: &str) -> bool {
         if descriptor.len() < extension.len() {
             return false;
         }
@@ -118,14 +124,15 @@ impl FileManager {
             return false;
         }
 
-        self.resolve_file(descriptor).is_some()
+        self.resolve_file(descriptor, guild_config).is_some()
     }
 
     /// Utility function for opening a file and wrapping it in a [BufReader]. Any
     /// error is converted into a string to allow this function to be used inside
     /// various `resolve` methods.
-    pub fn open_file_buf(&self, file: &str) -> Result<OpenedFile, String> {
-        match self.resolve_file(file) {
+    pub fn open_file_buf(&self, file: &str, guild_config: &PluginGuildConfig)
+            -> Result<OpenedFile, String> {
+        match self.resolve_file(file, guild_config) {
             Some(ResolvedFile::Local(path)) => {
                 let file = File::open(path).map_err(|e| format!("{}", e))?;
                 Ok(OpenedFile::Local(BufReader::new(file)))

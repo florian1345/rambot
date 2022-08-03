@@ -5,6 +5,7 @@ use rambot_api::{
     ModifierDocumentationBuilder,
     Plugin,
     PluginConfig,
+    PluginGuildConfig,
     ResolverRegistry
 };
 
@@ -76,7 +77,8 @@ impl AdapterResolver for ShuffleAdapterResolver {
     }
 
     fn resolve(&self, _key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSourceList + Send>)
+            child: Box<dyn AudioSourceList + Send>,
+            _guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSourceList + Send>, String> {
         Ok(Box::new(ShuffleAudioSourceList {
             child,

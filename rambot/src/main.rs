@@ -116,7 +116,9 @@ async fn main() {
 
     let framework: FrameworkArc =
         Arc::new(Box::new(StandardFramework::new()
-            .configure(|c| c.prefix(config.prefix()))
+            .configure(|c| c
+                .prefix(config.prefix())
+                .owners(config.owners().iter().cloned().collect()))
             .group(command::get_root_commands())
             .group(command::get_adapter_commands())
             .group(command::get_board_commands())

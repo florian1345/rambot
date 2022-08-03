@@ -5,6 +5,7 @@ use rambot_api::{
     AudioSourceListResolver,
     Plugin,
     PluginConfig,
+    PluginGuildConfig,
     ResolverRegistry
 };
 
@@ -40,6 +41,17 @@ struct FolderListResolver {
     root: String
 }
 
+impl FolderListResolver {
+
+    fn path(&self, descriptor: &str, guild_config: &PluginGuildConfig)
+            -> PathBuf {
+        let root = guild_config.root_directory()
+            .unwrap_or(&self.root);
+
+        Path::new(root).join(descriptor)
+    }
+}
+
 impl AudioSourceListResolver for FolderListResolver {
 
     fn documentation(&self) -> AudioDocumentation {
@@ -52,17 +64,21 @@ impl AudioSourceListResolver for FolderListResolver {
             .build().unwrap()
     }
 
-    fn can_resolve(&self, descriptor: &str) -> bool {
-        match fs::metadata(descriptor) {
+    fn can_resolve(&self, descriptor: &str,
+            guild_config: PluginGuildConfig) -> bool {
+        let path = self.path(descriptor, &guild_config);
+
+        match fs::metadata(path) {
             Ok(meta) => meta.is_dir(),
             Err(_) => false
         }
     }
 
-    fn resolve(&self, descriptor: &str)
+    fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSourceList + Send>, String> {
-        let path = Path::new(&self.root).join(descriptor);
+        let path = self.path(descriptor, &guild_config);
         let read_dir = fs::read_dir(&path).map_err(|e| format!("{}", e))?;
+
         Ok(Box::new(FolderList {
             path,
             read_dir

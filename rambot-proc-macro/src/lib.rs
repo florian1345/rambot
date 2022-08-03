@@ -32,6 +32,7 @@ struct CommandData {
     name: String,
     description: Option<String>,
     usage: Option<String>,
+    owner_only: bool,
     rest: bool,
     confirm: bool
 }
@@ -57,6 +58,7 @@ fn apply_arg(cmd_data: &mut CommandData, arg: &NestedMeta) -> bool {
                 match name.as_str() {
                     "rest" => cmd_data.rest = true,
                     "confirm" => cmd_data.confirm = true,
+                    "owners_only" => cmd_data.owner_only = true,
                     _ => return false
                 }
     
@@ -104,13 +106,20 @@ fn load_data(cmd_data: &mut CommandData, attr: AttributeArgs)
     Ok(())
 }
 
-fn add_attribute(item: &mut ItemFn, name: &str, value: &str) {
-    let tokens = quote::quote! { (#value) };
+fn add_attribute(item: &mut ItemFn, name: &str, value: Option<&str>) {
     let mut segments = Punctuated::new();
+
     segments.push(PathSegment {
         ident: Ident::new(name, Span::call_site()),
         arguments: PathArguments::None
     });
+
+    let tokens = if let Some(value) = value {
+        quote::quote! { (#value) }
+    }
+    else {
+        quote::quote! { }
+    };
 
     item.attrs.push(Attribute {
         pound_token: Pound::default(),
@@ -195,6 +204,7 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
         name: item.sig.ident.to_string(),
         description: None,
         usage: None,
+        owner_only: false,
         rest: false,
         confirm: false
     };
@@ -203,14 +213,18 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 
     // Serenity attributes
 
-    add_attribute(&mut item, "command", &cmd_data.name);
+    add_attribute(&mut item, "command", Some(&cmd_data.name));
 
     if let Some(description) = &cmd_data.description {
-        add_attribute(&mut item, "description", description.as_str());
+        add_attribute(&mut item, "description", Some(description.as_str()));
     }
 
     if let Some(usage) = &cmd_data.usage {
-        add_attribute(&mut item, "usage", usage.as_str());
+        add_attribute(&mut item, "usage", Some(usage.as_str()));
+    }
+
+    if cmd_data.owner_only {
+        add_attribute(&mut item, "owners_only", None);
     }
 
     item.attrs.push(syn::parse_quote! {
@@ -405,6 +419,9 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 /// used in conjunction with option or vector arguments
 /// * `confirm`: A flag which indicates whether successful execution of the
 /// command should be indicated by an `:ok_hand:` reaction on the message.
+/// * `owners_only`: If this flag is present, the attribute of the same name
+/// will be added to the command. This restricts the usage of the annotated
+/// command to users who are owners of the bot.
 ///
 /// # Argument parsing
 ///

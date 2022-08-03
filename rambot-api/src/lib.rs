@@ -77,7 +77,7 @@ pub use resolver::{
 /// plugin, but not the bot itself. It is passed to the plugin during
 /// initialization. It is the plugin's responsibility to act according to this
 /// config.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PluginConfig {
     root_directory: String,
     allow_web_access: bool,
@@ -129,6 +129,45 @@ impl PluginConfig {
     /// exist.
     pub fn config_path(&self) -> &str {
         &self.config_path
+    }
+}
+
+/// Guild-specific configuration provided to a plugin's resolvers.
+#[derive(Clone, Debug)]
+pub struct PluginGuildConfig {
+    root_directory: Option<String>
+}
+
+impl PluginGuildConfig {
+
+    /// Creates a new plugin guild config from the given data.
+    ///
+    /// # Arguments
+    ///
+    /// * `root_directory`: The guild-specific root directory or `None` if the
+    /// global root directory should be used.
+    pub fn new<S>(root_directory: Option<S>) -> PluginGuildConfig
+    where
+        S: Into<String>
+    {
+        PluginGuildConfig {
+            root_directory: root_directory.map(|s| s.into())
+        }
+    }
+
+    /// Gets the guild-specific root directory to use for file system accesses.
+    /// If present, this overrides the global root directory, which should be
+    /// used if this method returns `None`.
+    pub fn root_directory(&self) -> Option<&String> {
+        self.root_directory.as_ref()
+    }
+}
+
+impl Default for PluginGuildConfig {
+    fn default() -> PluginGuildConfig {
+        PluginGuildConfig {
+            root_directory: None
+        }
     }
 }
 
