@@ -165,6 +165,14 @@ fn arg_type(arg: &PatType) -> ArgType {
     }
 }
 
+fn get_name(arg: &PatType) -> Result<Ident, String> {
+    match arg.pat.as_ref() {
+        Pat::Ident(ident) => Ok(ident.ident.clone()),
+        Pat::Wild(_) => Ok(Ident::new("_", Span::call_site())),
+        _ => Err("unsupported argument pattern".to_owned()),
+    }
+}
+
 fn process_return_type(t: &mut Type) -> bool {
     // TODO check that the type is actually correct
 
@@ -312,8 +320,20 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
         }
         else {
             match arg_type(&arg) {
-                ArgType::Plain => syn::parse_quote! {
-                    let #arg = #args_ident.single_quoted()?;
+                ArgType::Plain => {
+                    let name = get_name(&arg)?.to_string();
+                    let reply =
+                        format!("Missing mandatory argument `{}`.", name);
+
+                    syn::parse_quote! {
+                        let #arg = if #args_ident.is_empty() {
+                            #msg_ident.reply(#ctx_ident, #reply).await?;
+                            return Ok(())
+                        }
+                        else {
+                            #args_ident.single_quoted()?
+                        };
+                    }
                 },
                 ArgType::Option => syn::parse_quote! {
                     let #arg = if #args_ident.is_empty() {
