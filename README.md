@@ -16,7 +16,7 @@ The bot itself implements the following features.
 
 In addition, the default plugins offer the following functionality.
 
-* Playback of local `*.wav`, `*.ogg`, and `*.mp3` files by `plugin-wave`, `plugin-ogg`, and `plugin-mp3` respectively
+* Playback of local `*.wav`, `*.ogg`, `*.mp3`, `*.flac`, `*.mp4`, `*.m4a`, and `*.m4b` files by `plugin-wave`, `plugin-ogg`, `plugin-mp3`, `plugin-flac`, and `plugin-mp4` respectively
 * Playing all music inside a directory as a playlist by `plugin-folder-list`
 * JSON-playlists by `plugin-json-list`
 * Looping of individual songs and playlists by `plugin-loop`
@@ -44,8 +44,14 @@ The repository constitutes a Cargo namespace with various crates.
 * `rambot` is the core bot executable.
 * `rambot-api` is a library crate which defines the interface against which plugins are programmed.
 * `rambot-proc-macro` defines procedural macros specifically for the `rambot` crate.
+* `rambot-test-util` is only relevant for test cases, where it provides various utility functions.
 * `plugin-commons` implements and offers some functionality common to multiple default plugins.
 * `plugin-*` are default plugins that implement some basic functionality.
+
+## Usage
+
+Check out the [Rambot Wiki](https://github.com/florian1345/rambot/wiki) for more information on how to use the Rambot.
+If you want to develop your own plugins, read the API documentation of the `rambot-api` crate.
 
 ## Contributions
 
