@@ -165,26 +165,6 @@ mod tests {
 
     use rambot_test_util::MockAudioSource;
 
-    fn assert_within_eps(a: f32, b: f32) {
-        // 1 / 100000 => less than one unit in 16-bit integer PCM
-        const EPS: f32 = 0.00001;
-
-        if (a - b).abs() > EPS {
-            panic!("floats not within epsilon: {} and {}", a, b);
-        }
-    }
-
-    fn assert_approximately_equal(expected: &[Sample], actual: &[Sample]) {
-        assert_eq!(expected.len(), actual.len());
-
-        let zipped = expected.iter().cloned().zip(actual.iter().cloned());
-
-        for (expected, actual) in zipped {
-            assert_within_eps(expected.left, actual.left);
-            assert_within_eps(expected.right, actual.right);
-        }
-    }
-
     fn test_data(len: usize, step: f64) -> Vec<Sample> {
         let mut result = Vec::with_capacity(len);
 
@@ -202,22 +182,6 @@ mod tests {
         result
     }
 
-    fn segmented_query(resampled: &mut Box<dyn AudioSource + Send>,
-            buf: &mut [Sample], segment_size: usize) -> usize {
-        let mut total = 0;
-
-        loop {
-            let end = (total + segment_size).min(buf.len());
-            let count = resampled.read(&mut buf[total..end]).unwrap();
-
-            total += count;
-
-            if count == 0 || total == buf.len() {
-                return total;
-            }
-        }
-    }
-
     const AUDIO_SOURCE_SEGMENT_SIZE_MEAN: f64 = 50.0;
     const AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV: f64 = 10.0;
     const QUERY_SEGMENT_SIZE: usize = 77;
@@ -231,7 +195,7 @@ mod tests {
         let mut buf = vec![Sample::ZERO; 120];
 
         assert_eq!(100, resampled.read(&mut buf).unwrap());
-        assert_approximately_equal(&data, &buf[..100]);
+        rambot_test_util::assert_approximately_equal(&data, &buf[..100]);
     }
 
     #[test]
@@ -243,11 +207,11 @@ mod tests {
                 AUDIO_SOURCE_SEGMENT_SIZE_MEAN,
                 AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV).unwrap(),
             TARGET_SAMPLING_RATE * 3 / 2);
-        let mut buf = vec![Sample::ZERO; 200000];
+        let result = rambot_test_util::read_to_end_segmented(
+            &mut resampled, QUERY_SEGMENT_SIZE).unwrap();
 
-        assert_eq!(80000,
-            segmented_query(&mut resampled, &mut buf, QUERY_SEGMENT_SIZE));
-        assert_approximately_equal(&test_data(80000, 0.003), &buf[..80000]);
+        rambot_test_util::assert_approximately_equal(
+            test_data(80000, 0.003), result);
     }
 
     #[test]
@@ -259,12 +223,11 @@ mod tests {
                 AUDIO_SOURCE_SEGMENT_SIZE_MEAN,
                 AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV).unwrap(),
             TARGET_SAMPLING_RATE * 2 / 3);
-        let mut buf = vec![Sample::ZERO; 200000];
+        let result = rambot_test_util::read_to_end_segmented(
+            &mut resampled, QUERY_SEGMENT_SIZE).unwrap();
 
-        assert_eq!(179999,
-            segmented_query(&mut resampled, &mut buf, QUERY_SEGMENT_SIZE));
-        assert_approximately_equal(&test_data(179999, 0.002),
-            &buf[..179999]);
+        rambot_test_util::assert_approximately_equal(
+            test_data(179999, 0.002), result);
     }
 
     #[test]
@@ -280,11 +243,10 @@ mod tests {
                 AUDIO_SOURCE_SEGMENT_SIZE_MEAN,
                 AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV).unwrap(),
             44100);
-        let mut buf = vec![Sample::ZERO; 200000];
+        let result = rambot_test_util::read_to_end_segmented(
+            &mut resampled, QUERY_SEGMENT_SIZE).unwrap();
 
-        assert_eq!(130612,
-            segmented_query(&mut resampled, &mut buf, QUERY_SEGMENT_SIZE));
-        assert_approximately_equal(&test_data(130612, 0.00275625),
-            &buf[..130612]);
+        rambot_test_util::assert_approximately_equal(
+            test_data(130612, 0.00275625), result);
     }
 }

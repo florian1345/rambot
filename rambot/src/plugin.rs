@@ -262,6 +262,30 @@ impl PluginManager {
         }
     }
 
+    fn registration_parts(&mut self)
+            -> (ResolverRegistry<'_>, &mut Vec<Box<dyn Plugin>>,
+                &mut Vec<Library>) {
+        let registry = ResolverRegistry::new(
+            |r| self.audio_source_resolvers.push(r),
+            |r| self.audio_source_list_resolvers.push(r),
+            |r| {
+                let name = r.name().to_owned();
+                self.effect_resolvers.insert(name, r);
+            },
+            |r| {
+                let name = r.name().to_owned();
+                self.adapter_resolvers.insert(name, r);
+            }
+        );
+
+        (registry, &mut self.plugins, &mut self.loaded_libraries)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mock_registry(&mut self) -> ResolverRegistry<'_> {
+        self.registration_parts().0
+    }
+
     /// Loads plugins from the plugin directory specified in the given config
     /// and returns a manager for them.
     ///
@@ -283,18 +307,8 @@ impl PluginManager {
             plugins: Vec::new(),
             loaded_libraries: Vec::new()
         };
-        let mut resolver_registry = ResolverRegistry::new(
-            |r| plugin_manager.audio_source_resolvers.push(r),
-            |r| plugin_manager.audio_source_list_resolvers.push(r),
-            |r| {
-                let name = r.name().to_owned();
-                plugin_manager.effect_resolvers.insert(name, r);
-            },
-            |r| {
-                let name = r.name().to_owned();
-                plugin_manager.adapter_resolvers.insert(name, r);
-            }
-        );
+        let (mut resolver_registry, plugins, loaded_libraries) =
+            plugin_manager.registration_parts();
 
         fs::create_dir_all(config.plugin_directory())?;
         fs::create_dir_all(config.plugin_config_directory())?;
@@ -310,12 +324,8 @@ impl PluginManager {
                 // TODO this is probably truly unsafe -- how to contain?
 
                 unsafe {
-                    load_plugin(
-                        dir_entry.path(),
-                        plugin_config,
-                        &mut resolver_registry,
-                        &mut plugin_manager.plugins,
-                        &mut plugin_manager.loaded_libraries)?;
+                    load_plugin(dir_entry.path(), plugin_config,
+                        &mut resolver_registry, plugins, loaded_libraries)?;
                 }
             }
         }

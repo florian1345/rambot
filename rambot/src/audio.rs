@@ -818,7 +818,16 @@ mod tests {
 
     use super::*;
 
+    use rambot_api::{
+        AudioDocumentation,
+        AudioSourceListResolver,
+        AudioSourceResolver,
+        PluginGuildConfig
+    };
+
     use rambot_test_util::MockAudioSource;
+
+    use std::vec::IntoIter;
 
     fn pcm_read_to_end<S>(mut buf: &mut [u8], read: &mut PCMRead<S>) -> usize
     where
@@ -869,29 +878,13 @@ mod tests {
             .all(|(i, b)| (i < 544 && b == 0) || (i >= 544 && b == 1)));
     }
 
-    fn mixer_read_to_end(mut buf: &mut [Sample], mixer: &mut Mixer) -> usize {
-        let mut total = 0;
-
-        loop {
-            let count = mixer.read(buf).unwrap();
-
-            if count == 0 {
-                return total;
-            }
-
-            buf = &mut buf[count..];
-            total += count;
-
-            if buf.len() == 0 {
-                return total;
-            }
-        }
-    }
+    const TEST_1_LEN: usize = 64;
+    const TEST_2_LEN: usize = 64;
 
     fn test_audio_1() -> Vec<Sample> {
-        let mut result = Vec::with_capacity(64);
+        let mut result = Vec::with_capacity(TEST_1_LEN);
 
-        for i in 0..64 {
+        for i in 0..TEST_1_LEN {
             let x = i as f32;
             let left = x + 1.0;
             let right = 2.0 * x;
@@ -906,9 +899,9 @@ mod tests {
     }
 
     fn test_audio_2() -> Vec<Sample> {
-        let mut result = Vec::with_capacity(96);
+        let mut result = Vec::with_capacity(TEST_2_LEN);
 
-        for i in 0..96 {
+        for i in 0..TEST_2_LEN {
             let x = i as f32;
             let left = 3.0 * x;
             let right = x + 2.0;
@@ -925,30 +918,17 @@ mod tests {
     fn test_audio_sum() -> Vec<Sample> {
         let audio_1 = test_audio_1();
         let audio_2 = test_audio_2();
-        let mut sum = Vec::with_capacity(96);
+        let mut sum = Vec::with_capacity(TEST_2_LEN);
 
-        for i in 0..64 {
+        for i in 0..TEST_1_LEN {
             sum.push(audio_1[i] + audio_2[i]);
         }
 
-        for i in 64..96 {
+        for i in TEST_1_LEN..TEST_2_LEN {
             sum.push(audio_2[i]);
         }
 
         sum
-    }
-
-    fn assert_approximately_equal(expected: &[Sample], actual: &[Sample]) {
-        const EPS: f32 = 0.001;
-
-        assert_eq!(expected.len(), actual.len());
-
-        let zipped = expected.iter().cloned().zip(actual.iter().cloned());
-
-        for (expected, actual) in zipped {
-            assert!((expected.left - actual.left).abs() < EPS);
-            assert!((expected.right - actual.right).abs() < EPS);
-        }
     }
 
     fn add_layer(mixer: &mut Mixer, name: &str, samples: Vec<Sample>,
@@ -969,10 +949,9 @@ mod tests {
     fn mixer_single_audio_source() {
         let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
         add_layer(&mut mixer, "test", test_audio_1(), None);
-        let mut buf = vec![Sample::ZERO; 100];
+        let result = rambot_test_util::read_to_end(&mut mixer).unwrap();
 
-        assert_eq!(64, mixer_read_to_end(&mut buf, &mut mixer));
-        assert_approximately_equal(&test_audio_1(), &buf[..64]);
+        rambot_test_util::assert_approximately_equal(test_audio_1(), result);
     }
 
     #[test]
@@ -980,10 +959,9 @@ mod tests {
         let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
         add_layer(&mut mixer, "test1", test_audio_1(), None);
         add_layer(&mut mixer, "test2", test_audio_2(), None);
-        let mut buf = vec![Sample::ZERO; 100];
+        let result = rambot_test_util::read_to_end(&mut mixer).unwrap();
 
-        assert_eq!(96, mixer_read_to_end(&mut buf, &mut mixer));
-        assert_approximately_equal(&test_audio_sum(), &buf[..96]);
+        rambot_test_util::assert_approximately_equal(test_audio_sum(), result);
     }
 
     #[test]
@@ -991,9 +969,216 @@ mod tests {
         let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
         add_layer(&mut mixer, "test1", test_audio_1(), Some(5));
         add_layer(&mut mixer, "test2", test_audio_2(), Some(7));
-        let mut buf = vec![Sample::ZERO; 100];
+        let result =
+            rambot_test_util::read_to_end_segmented(&mut mixer, 11).unwrap();
 
-        assert_eq!(96, mixer_read_to_end(&mut buf, &mut mixer));
-        assert_approximately_equal(&test_audio_sum(), &buf[..96]);
+        rambot_test_util::assert_approximately_equal(test_audio_sum(), result);
+    }
+
+    struct MockAudioSourceResolver;
+
+    impl AudioSourceResolver for MockAudioSourceResolver {
+        fn documentation(&self) -> AudioDocumentation {
+            panic!("mock audio source resolver asked for documentation")
+        }
+
+        fn can_resolve(&self, descriptor: &str, _: PluginGuildConfig) -> bool {
+            descriptor == "1" || descriptor == "2"
+        }
+
+        fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
+                -> Result<Box<dyn AudioSource + Send>, String> {
+            let samples = match descriptor {
+                "1" => test_audio_1(),
+                "2" => test_audio_2(),
+                _ => panic!("invalid descriptor for mock audio source")
+            };
+
+            Ok(Box::new(
+                MockAudioSource::with_normally_distributed_segment_size(
+                    samples, 32.0, 8.0).unwrap()
+            ))
+        }
+    }
+
+    struct MockAudioSourceList {
+        entries: IntoIter<String>
+    }
+
+    impl AudioSourceList for MockAudioSourceList {
+        fn next(&mut self) -> Result<Option<String>, io::Error> {
+            Ok(self.entries.next())
+        }
+    }
+
+    struct MockAudioSourceListResolver;
+
+    impl AudioSourceListResolver for MockAudioSourceListResolver {
+        fn documentation(&self) -> AudioDocumentation {
+            panic!("mock audio source list resolver asked for documentation")
+        }
+
+        fn can_resolve(&self, descriptor: &str, _: PluginGuildConfig) -> bool {
+            descriptor.split(',').count() > 1
+        }
+
+        fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
+                -> Result<Box<dyn AudioSourceList + Send>, String> {
+            Ok(Box::new(MockAudioSourceList {
+                entries: descriptor.split(',')
+                    .map(|s| s.to_owned())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+            }))
+        }
+    }
+
+    fn registered_mixer() -> Mixer {
+        let mut plugin_manager = PluginManager::mock();
+        let mut registry = plugin_manager.mock_registry();
+
+        registry.register_audio_source_resolver(MockAudioSourceResolver);
+        registry.register_audio_source_list_resolver(
+            MockAudioSourceListResolver);
+        drop(registry);
+
+        Mixer::new(Arc::new(plugin_manager))
+    }
+
+    #[test]
+    #[should_panic]
+    fn play_on_nonexistent_layer() {
+        let mut mixer = registered_mixer();
+        let _ = mixer.play_on_layer("l", "1", Default::default());
+    }
+
+    #[test]
+    fn play_unresolveable_audio_source() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        let res = mixer.play_on_layer("l", "#", Default::default());
+
+        assert!(res.is_err());
+        assert!(!mixer.active());
+    }
+
+    #[test]
+    fn play_single_audio_source() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1", Default::default()).unwrap();
+
+        assert!(mixer.active());
+
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+
+        rambot_test_util::assert_approximately_equal(test_audio_1(), audio);
+        assert!(!mixer.active());
+    }
+
+    #[test]
+    fn play_playlist() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+
+        assert!(mixer.active());
+
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+        let mut expected = test_audio_1();
+        expected.append(&mut test_audio_2());
+        expected.append(&mut test_audio_1());
+
+        rambot_test_util::assert_approximately_equal(expected, audio);
+        assert!(!mixer.active());
+    }
+
+    #[test]
+    fn skip_during_single_audio_source() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1", Default::default()).unwrap();
+
+        assert!(mixer.read(&mut [Sample::ZERO; 10]).unwrap() > 0);
+
+        mixer.skip_on_layer("l").unwrap();
+
+        assert!(!mixer.active());
+        assert_eq!(0, mixer.read(&mut [Sample::ZERO; 10]).unwrap());
+    }
+
+    #[test]
+    fn skip_during_playlist() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+
+        assert!(mixer.read(&mut [Sample::ZERO; 10]).unwrap() > 0);
+
+        mixer.skip_on_layer("l").unwrap();
+
+        assert!(mixer.active());
+
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+        let mut expected = test_audio_2();
+        expected.append(&mut test_audio_1());
+
+        rambot_test_util::assert_approximately_equal(expected, audio);
+        assert!(!mixer.active());
+    }
+
+    #[test]
+    fn skip_end_of_playlist() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+
+        let mut total = 0;
+
+        while total <= TEST_1_LEN + TEST_2_LEN {
+            let count = mixer.read(&mut [Sample::ZERO; 10]).unwrap();
+            total += count;
+
+            assert!(count > 0);
+        }
+
+        mixer.skip_on_layer("l").unwrap();
+
+        assert!(!mixer.active());
+        assert_eq!(0, mixer.read(&mut [Sample::ZERO; 10]).unwrap());
+    }
+
+    #[test]
+    fn stop_layer() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        mixer.stop_layer("l");
+
+        assert!(!mixer.active());
+    }
+
+    #[test]
+    fn stop_all() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        mixer.stop_all();
+
+        assert!(!mixer.active());
+    }
+
+    #[test]
+    fn mid_playlist_resolution_fail() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("l");
+        mixer.play_on_layer("l", "1,#,1", Default::default()).unwrap();
+
+        assert!(mixer.active());
+
+        let audio_res = rambot_test_util::read_to_end(&mut mixer);
+
+        assert!(audio_res.is_err());
+        assert!(!mixer.active());
     }
 }
