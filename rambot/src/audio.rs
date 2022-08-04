@@ -639,8 +639,15 @@ impl AudioSource for Mixer {
                             if let Some(next) = list.next()? {
                                 // Audio source ran out but list continues
     
-                                play_on_layer(
-                                    layer, &next, &self.plugin_manager)?;
+                                let res = play_on_layer(
+                                    layer, &next, &self.plugin_manager);
+
+                                if res.is_err() {
+                                    layer.list = None;
+                                    layer.source = None;
+                                }
+
+                                res?;
                             }
                             else {
                                 // Audio source ran out list is finished
