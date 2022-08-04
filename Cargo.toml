@@ -8,6 +8,7 @@ members = [
     "plugin-json-list",
     "plugin-loop",
     "plugin-mp3",
+    "plugin-mp4",
     "plugin-ogg",
     "plugin-shuffle",
     "plugin-volume",
