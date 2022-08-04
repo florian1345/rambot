@@ -182,3 +182,85 @@ impl<D: Distribution<usize>, R: Rng> AudioSource for MockAudioSource<D, R> {
         panic!("mock audio source asked for child")
     }
 }
+
+/// Reads audio from the given audio source until there is no more. The
+/// returned vector of [Sample]s represents the complete remaining audio output
+/// by the given source.
+///
+/// In addition to that, the sizes of buffers passed to the audio source for
+/// filling are limited to `max_segment_size`. However, this function makes no
+/// guarantee that they are not smaller.
+///
+/// # Errors
+///
+/// If the given audio source raises an error during reading.
+pub fn read_to_end_segmented<S>(source: &mut S, max_segment_size: usize)
+    -> Result<Vec<Sample>, io::Error>
+where
+    S: AudioSource
+{
+    let mut buf = vec![Sample::ZERO; 128];
+    let mut len = 0;
+
+    loop {
+        if len >= buf.len() {
+            buf.append(&mut vec![Sample::ZERO; len]);
+        }
+
+        let segment_size = max_segment_size.min(buf.len() - len);
+        let end = len + segment_size;
+        let count = source.read(&mut buf[len..end])?;
+
+        if count == 0 {
+            buf.truncate(len);
+            return Ok(buf);
+        }
+
+        len += count;
+    }
+}
+
+/// Reads audio from the given audio source until there is no more. The
+/// returned vector of [Sample]s represents the complete remaining audio output
+/// by the given source.
+///
+/// # Errors
+///
+/// If the given audio source raises an error during reading.
+pub fn read_to_end<S>(source: &mut S) -> Result<Vec<Sample>, io::Error>
+where
+    S: AudioSource
+{
+    read_to_end_segmented(source, usize::MAX)
+}
+
+/// Asserts that both the given buffers have equal size. Further, asserts that
+/// for every pair of samples with same indices, both the left and right
+/// channels are within a small epsilon. If any of these conditions are
+/// violated, the test fails.
+pub fn assert_approximately_equal<S1, S2>(expected: S1, actual: S2)
+where
+    S1: AsRef<[Sample]>,
+    S2: AsRef<[Sample]>
+{
+    fn assert_within_eps(a: f32, b: f32) {
+        // 1 / 100000 => less than one unit in 16-bit integer PCM
+        const EPS: f32 = 0.00001;
+
+        if (a - b).abs() > EPS {
+            panic!("floats not within epsilon: {} and {}", a, b);
+        }
+    }
+
+    let expected = expected.as_ref();
+    let actual = actual.as_ref();
+
+    assert_eq!(expected.len(), actual.len());
+
+    let zipped = expected.iter().cloned().zip(actual.iter().cloned());
+
+    for (expected, actual) in zipped {
+        assert_within_eps(expected.left, actual.left);
+        assert_within_eps(expected.right, actual.right);
+    }
+}
