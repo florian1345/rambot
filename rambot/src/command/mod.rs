@@ -36,7 +36,7 @@ pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
 
 #[group]
-#[commands(audio, connect, disconnect, cmd_do, play, skip, stop)]
+#[commands(audio, connect, directory, disconnect, cmd_do, play, skip, stop)]
 struct Root;
 
 /// Gets a [CommandGroup] for the root commands (which are not part of any
@@ -171,6 +171,10 @@ where
 
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         call: Arc<TokioMutex<Call>>) -> Option<String> {
+    let plugin_guild_config = with_guild_state(ctx, msg.guild_id.unwrap(),
+        |gs| {
+            gs.build_plugin_guild_config()
+        }).await;
     let mixer = get_mixer(ctx, msg).await;
     let mut call_guard = call.lock().await;
 
@@ -186,8 +190,10 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         }
 
         let result = mixer_guard.active();
+        let play_res = mixer_guard.play_on_layer(
+            layer, command, plugin_guild_config);
 
-        if let Err(e) = mixer_guard.play_on_layer(layer, command) {
+        if let Err(e) = play_res {
             return Some(format!("{}", e));
         }
         
@@ -339,6 +345,30 @@ async fn audio(ctx: &Context, msg: &Message, audio: String)
             Ok(Some(format!("I found no audio of name {}.", audio)))
         }
     }
+}
+
+#[rambot_command(
+    description = "Specify a guild-specific root directory for file system \
+        based plugins. Omit directory argument to reset to the default root \
+        directory specified in the config. Any pieces in playlists that are \
+        currently active will continue to be resolved according to the old \
+        root directrory.",
+    usage = "[directory]",
+    rest,
+    confirm,
+    owners_only
+)]
+async fn directory(ctx: &Context, msg: &Message, directory: String)
+        -> CommandResult<Option<String>> {
+    with_guild_state(ctx, msg.guild_id.unwrap(), |mut guild_state|
+        if directory.is_empty() {
+            guild_state.unset_root_directory()
+        }
+        else {
+            guild_state.set_root_directory(directory)
+        }).await;
+
+    Ok(None)
 }
 
 async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,

@@ -3,6 +3,8 @@ use crate::command::board::{BoardManager, Board};
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 
+use rambot_api::PluginGuildConfig;
+
 use serde::{Deserialize, Serialize, Serializer};
 
 use serenity::model::id::GuildId;
@@ -20,7 +22,8 @@ use std::sync::{Arc, Mutex};
 /// The bot's state for one specific guild.
 pub struct GuildState {
     mixer: Arc<Mutex<Mixer>>,
-    board_manager: BoardManager
+    board_manager: BoardManager,
+    root_directory: Option<String>
 }
 
 impl GuildState {
@@ -29,7 +32,8 @@ impl GuildState {
 
         GuildState {
             mixer: Arc::new(Mutex::new(Mixer::new(plugin_manager))),
-            board_manager: BoardManager::new()
+            board_manager: BoardManager::new(),
+            root_directory: None
         }
     }
 
@@ -57,7 +61,8 @@ impl GuildState {
         
         GuildState {
             mixer: Arc::new(Mutex::new(mixer)),
-            board_manager
+            board_manager,
+            root_directory: serde.directory
         }
     }
 
@@ -79,6 +84,23 @@ impl GuildState {
         &mut self.board_manager
     }
 
+    /// Constructs a [PluginGuildConfig] from the information stored in this
+    /// guild state.
+    pub fn build_plugin_guild_config(&self) -> PluginGuildConfig {
+        PluginGuildConfig::new(self.root_directory.as_ref())
+    }
+
+    /// Sets a guild-specific root directory.
+    pub fn set_root_directory(&mut self, directory: impl Into<String>) {
+        self.root_directory = Some(directory.into());
+    }
+
+    /// Unsets the guild-specific root directory, if set, indicating that the
+    /// global root directory shall be used from now on.
+    pub fn unset_root_directory(&mut self) {
+        self.root_directory = None;
+    }
+
     fn serde(&self) -> SerdeGuildState {
         let mut layers = Vec::new();
 
@@ -94,7 +116,8 @@ impl GuildState {
             mixer: SerdeMixer {
                 layers
             },
-            boards: self.board_manager.boards().cloned().collect()
+            boards: self.board_manager.boards().cloned().collect(),
+            directory: self.root_directory.clone()
         }
     }
 }
@@ -123,7 +146,10 @@ struct SerdeMixer {
 #[derive(Deserialize, Serialize)]
 struct SerdeGuildState {
     mixer: SerdeMixer,
-    boards: Vec<Board>
+    boards: Vec<Board>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    directory: Option<String>
 }
 
 /// An enumeration of the errors that may occur while loading or saving the

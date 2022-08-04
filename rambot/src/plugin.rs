@@ -2,14 +2,17 @@ use libloading::{Library, Symbol};
 
 use rambot_api::{
     AdapterResolver,
+    AudioDocumentation,
     AudioSource,
     AudioSourceList,
     AudioSourceListResolver,
     AudioSourceResolver,
     EffectResolver,
+    ModifierDocumentation,
     Plugin,
     PluginConfig,
-    ResolverRegistry, ModifierDocumentation, AudioDocumentation
+    PluginGuildConfig,
+    ResolverRegistry
 };
 
 use serenity::prelude::TypeMapKey;
@@ -106,32 +109,38 @@ pub enum AudioDescriptorList {
 trait AudioResolver {
     type Value;
 
-    fn can_resolve(&self, descriptor: &str) -> bool;
+    fn can_resolve(&self, descriptor: &str,
+        plugin_guild_config: PluginGuildConfig) -> bool;
 
-    fn resolve(&self, descriptor: &str) -> Result<Self::Value, String>;
+    fn resolve(&self, descriptor: &str, plugin_guild_config: PluginGuildConfig)
+        -> Result<Self::Value, String>;
 }
 
 impl AudioResolver for Box<dyn AudioSourceResolver> {
     type Value = Box<dyn AudioSource + Send>;
 
-    fn can_resolve(&self, descriptor: &str) -> bool {
-        self.as_ref().can_resolve(descriptor)
+    fn can_resolve(&self, descriptor: &str,
+            plugin_guild_config: PluginGuildConfig) -> bool {
+        self.as_ref().can_resolve(descriptor, plugin_guild_config)
     }
 
-    fn resolve(&self, descriptor: &str) -> Result<Self::Value, String> {
-        self.as_ref().resolve(descriptor)
+    fn resolve(&self, descriptor: &str, plugin_guild_config: PluginGuildConfig)
+            -> Result<Self::Value, String> {
+        self.as_ref().resolve(descriptor, plugin_guild_config)
     }
 }
 
 impl AudioResolver for Box<dyn AudioSourceListResolver> {
     type Value = Box<dyn AudioSourceList + Send>;
 
-    fn can_resolve(&self, descriptor: &str) -> bool {
-        self.as_ref().can_resolve(descriptor)
+    fn can_resolve(&self, descriptor: &str,
+            plugin_guild_config: PluginGuildConfig) -> bool {
+        self.as_ref().can_resolve(descriptor, plugin_guild_config)
     }
 
-    fn resolve(&self, descriptor: &str) -> Result<Self::Value, String> {
-        self.as_ref().resolve(descriptor)
+    fn resolve(&self, descriptor: &str, plugin_guild_config: PluginGuildConfig)
+            -> Result<Self::Value, String> {
+        self.as_ref().resolve(descriptor, plugin_guild_config)
     }
 }
 
@@ -174,14 +183,15 @@ impl ModifierResolver for Box<dyn AdapterResolver> {
     }
 }
 
-fn resolve_audio<V, R>(descriptor: &str, resolvers: &[R])
+fn resolve_audio<V, R>(descriptor: &str,
+    plugin_guild_config: &PluginGuildConfig, resolvers: &[R])
     -> Result<V, ResolveError>
 where
     R: AudioResolver<Value = V>
 {
     for resolver in resolvers.iter() {
-        if resolver.can_resolve(descriptor) {
-            return resolver.resolve(descriptor)
+        if resolver.can_resolve(descriptor, plugin_guild_config.clone()) {
+            return resolver.resolve(descriptor, plugin_guild_config.clone())
                 .map_err(ResolveError::PluginResolveError);
         }
     }
@@ -329,6 +339,8 @@ impl PluginManager {
     ///
     /// * `descriptor`: A textual descriptor of the audio source to resolve.
     /// The accepted format(s) depends on the installed plugins.
+    /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
+    /// which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -338,9 +350,11 @@ impl PluginManager {
     /// # Errors
     ///
     /// Any [ResolveError] according to their respective documentation.
-    pub fn resolve_audio_source(&self, descriptor: &str)
+    pub fn resolve_audio_source(&self, descriptor: &str,
+            plugin_guild_config: &PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send>, ResolveError> {
-        resolve_audio(descriptor, &self.audio_source_resolvers)
+        resolve_audio(descriptor, plugin_guild_config,
+            &self.audio_source_resolvers)
     }
 
     /// Resolves an [AudioSourceList] given a textual descriptor by searching
@@ -350,6 +364,8 @@ impl PluginManager {
     ///
     /// * `descriptor`: A textual descriptor of the audio source list to
     /// resolve. The accepted format(s) depends on the installed plugins.
+    /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
+    /// which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -359,9 +375,11 @@ impl PluginManager {
     /// # Errors
     ///
     /// Any [ResolveError] according to their respective documentation.
-    pub fn resolve_audio_source_list(&self, descriptor: &str)
+    pub fn resolve_audio_source_list(&self, descriptor: &str,
+            plugin_guild_config: &PluginGuildConfig)
             -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
-        resolve_audio(descriptor, &self.audio_source_list_resolvers)
+        resolve_audio(descriptor, plugin_guild_config,
+            &self.audio_source_list_resolvers)
     }
 
     /// Resolves an [AudioDescriptorList] given a textual descriptor. This is
@@ -373,15 +391,18 @@ impl PluginManager {
     ///
     /// * `descriptor`: A textual descriptor of the audio descriptor list to
     /// resolve.
+    /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
+    /// which carries guild-specific information for the plugin(s).
     ///
     /// # Errors
     ///
     /// * [ResolveError::PluginResolveError] if a plugin claims to be able to
     /// resolve the descriptor as an audio source list, but fails to do so when
     /// queried.
-    pub fn resolve_audio_descriptor_list(&self, descriptor: &str)
+    pub fn resolve_audio_descriptor_list(&self, descriptor: &str,
+            plugin_guild_config: &PluginGuildConfig)
             -> Result<AudioDescriptorList, ResolveError> {
-        match self.resolve_audio_source_list(descriptor) {
+        match self.resolve_audio_source_list(descriptor, plugin_guild_config) {
             Ok(list) => Ok(AudioDescriptorList::List(list)),
             Err(ResolveError::PluginResolveError(e)) =>
                 Err(ResolveError::PluginResolveError(e)),
@@ -422,6 +443,8 @@ impl PluginManager {
     /// * `key_values`: A [HashMap] that stores key-value pairs provided as
     /// arguments for the effect.
     /// * `child`: The [AudioSource] to which to apply the resolved effect.
+    /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
+    /// which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -433,11 +456,12 @@ impl PluginManager {
     /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_effect(&self, name: &str,
             key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>)
+            child: Box<dyn AudioSource + Send>,
+            plugin_guild_config: &PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send>,
                 (ResolveError, Box<dyn AudioSource + Send>)> {
         if let Some(resolver) = self.effect_resolvers.get(name) {
-            resolver.resolve(key_values, child)
+            resolver.resolve(key_values, child, plugin_guild_config.clone())
                 .map_err(|e| {
                     let (msg, child) = e.into_parts();
                     (ResolveError::PluginResolveError(msg), child)
@@ -487,6 +511,8 @@ impl PluginManager {
     /// * `key_values`: A [HashMap] that stores key-value pairs provided as
     /// arguments for the adapter.
     /// * `child`: The [AudioSource] to which to apply the resolved adapter.
+    /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
+    /// which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -498,10 +524,11 @@ impl PluginManager {
     /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_adapter(&self, name: &str,
             key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSourceList + Send>)
+            child: Box<dyn AudioSourceList + Send>,
+            plugin_guild_config: &PluginGuildConfig)
             -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
         if let Some(resolver) = self.adapter_resolvers.get(name) {
-            resolver.resolve(key_values, child)
+            resolver.resolve(key_values, child, plugin_guild_config.clone())
                 .map_err(ResolveError::PluginResolveError)
         }
         else {

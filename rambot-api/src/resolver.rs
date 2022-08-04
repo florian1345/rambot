@@ -1,4 +1,4 @@
-use crate::AudioDocumentation;
+use crate::{AudioDocumentation, PluginGuildConfig};
 use crate::audio::{AudioSource, AudioSourceList};
 use crate::documentation::ModifierDocumentation;
 
@@ -21,6 +21,7 @@ use std::fmt::{self, Display, Formatter};
 ///     AudioDocumentationBuilder,
 ///     AudioSource,
 ///     AudioSourceResolver,
+///     PluginGuildConfig,
 ///     Sample
 /// };
 /// 
@@ -87,14 +88,14 @@ use std::fmt::{self, Display, Formatter};
 ///             .build().unwrap()
 ///     }
 /// 
-///     fn can_resolve(&self, descriptor: &str) -> bool {
+///     fn can_resolve(&self, descriptor: &str, _: PluginGuildConfig) -> bool {
 ///         // In this function, we get a user-provided audio descriptor and
 ///         // have to determine whether this resolver can build an audio
 ///         // source from it.
 ///         sine_regex().is_match(descriptor)
 ///     }
 /// 
-///     fn resolve(&self, descriptor: &str)
+///     fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSource + Send>, String> {
 ///         // Here we actually have to construct the audio source from the
 ///         // descriptor. We can rely on "can_resolve" to be true for the
@@ -125,12 +126,15 @@ pub trait AudioSourceResolver : Send + Sync {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
     /// True, if and only if this resolver can construct an audio source from
     /// the given descriptor.
-    fn can_resolve(&self, descriptor: &str) -> bool;
+    fn can_resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
+        -> bool;
 
     /// Generates an [AudioSource] trait object from the given descriptor. If
     /// [AudioSourceResolver::can_resolve] returns `true`, this should probably
@@ -146,6 +150,8 @@ pub trait AudioSourceResolver : Send + Sync {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -155,7 +161,7 @@ pub trait AudioSourceResolver : Send + Sync {
     /// # Errors
     ///
     /// An error message provided as a [String] in case resolution fails.
-    fn resolve(&self, descriptor: &str)
+    fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
         -> Result<Box<dyn AudioSource + Send>, String>;
 }
 
@@ -219,6 +225,7 @@ impl Display for ResolveEffectError {
 ///     EffectResolver,
 ///     ModifierDocumentation,
 ///     ModifierDocumentationBuilder,
+///     PluginGuildConfig,
 ///     ResolveEffectError,
 ///     Sample
 /// };
@@ -304,7 +311,7 @@ impl Display for ResolveEffectError {
 ///     }
 ///     
 ///     fn resolve(&self, key_values: &HashMap<String, String>,
-///             child: Box<dyn AudioSource + Send>)
+///             child: Box<dyn AudioSource + Send>, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
 ///         // Here we actually have to construct the effect from the
 ///         // key-value-pairs parsed by the bot. We get the child to which we
@@ -350,6 +357,8 @@ pub trait EffectResolver : Send + Sync {
     /// as the argument value.
     /// * `child`: A boxed [AudioSource] to which the effect shall be applied,
     /// i.e. which should be wrapped in an effect audio source.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -362,7 +371,7 @@ pub trait EffectResolver : Send + Sync {
     /// A [ResolveEffectError] containing an error message as well as the given
     /// `child` in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
-        child: Box<dyn AudioSource + Send>)
+        child: Box<dyn AudioSource + Send>, guild_config: PluginGuildConfig)
         -> Result<Box<dyn AudioSource + Send>, ResolveEffectError>;
 }
 
@@ -378,7 +387,8 @@ pub trait EffectResolver : Send + Sync {
 ///     AudioDocumentation,
 ///     AudioDocumentationBuilder,
 ///     AudioSourceList,
-///     AudioSourceListResolver
+///     AudioSourceListResolver,
+///     PluginGuildConfig
 /// };
 /// 
 /// use std::io;
@@ -431,14 +441,14 @@ pub trait EffectResolver : Send + Sync {
 ///             .build().unwrap()
 ///     }
 ///     
-///     fn can_resolve(&self, descriptor: &str) -> bool {
+///     fn can_resolve(&self, descriptor: &str, _: PluginGuildConfig) -> bool {
 ///         // As with AudioSourceResolvers, we get a user-provided audio
 ///         // descriptor and have to determine whether this resolver can build
 ///         // an audio source list from it.
 ///         resolve_list(descriptor).is_some()
 ///     }
 ///     
-///     fn resolve(&self, descriptor: &str)
+///     fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSourceList + Send>, String> {
 ///         // As with AudioSourceResolvers, here we actually have to construct
 ///         // the audio source list from the descriptor. We can rely on
@@ -464,12 +474,15 @@ pub trait AudioSourceListResolver : Send + Sync {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
     /// True, if and only if this resolver can construct an audio source list
     /// from the given descriptor.
-    fn can_resolve(&self, descriptor: &str) -> bool;
+    fn can_resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
+        -> bool;
 
     /// Generates an [AudioSourceList] trait object from the given descriptor.
     /// If [AudioSourceListResolver::can_resolve] returns `true`, this should
@@ -485,6 +498,8 @@ pub trait AudioSourceListResolver : Send + Sync {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -494,7 +509,7 @@ pub trait AudioSourceListResolver : Send + Sync {
     /// # Errors
     ///
     /// An error message provided as a [String] in case resolution fails.
-    fn resolve(&self, descriptor: &str)
+    fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
         -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 
@@ -513,7 +528,8 @@ pub trait AudioSourceListResolver : Send + Sync {
 ///     AdapterResolver,
 ///     AudioSourceList,
 ///     ModifierDocumentation,
-///     ModifierDocumentationBuilder
+///     ModifierDocumentationBuilder,
+///     PluginGuildConfig
 /// };
 /// 
 /// use std::collections::HashMap;
@@ -577,7 +593,7 @@ pub trait AudioSourceListResolver : Send + Sync {
 ///     }
 ///     
 ///     fn resolve(&self, _key_values: &HashMap<String, String>,
-///             child: Box<dyn AudioSourceList + Send>)
+///             child: Box<dyn AudioSourceList + Send>, _: PluginGuildConfig)
 ///             -> Result<Box<dyn AudioSourceList + Send>, String> {
 ///         // Here we actually have to construct the effect from the
 ///         // key-value-pairs parsed by the bot. We get the child to which we
@@ -621,6 +637,8 @@ pub trait AdapterResolver : Send + Sync {
     /// given as the argument value.
     /// * `child`: A boxed [AudioSourceList] to which the adapter shall be
     /// applied, i.e. which should be wrapped in an adapter audio source list.
+    /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
+    /// information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -631,7 +649,8 @@ pub trait AdapterResolver : Send + Sync {
     ///
     /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
-        child: Box<dyn AudioSourceList + Send>)
+        child: Box<dyn AudioSourceList + Send>,
+        guild_config: PluginGuildConfig)
         -> Result<Box<dyn AudioSourceList + Send>, String>;
 }
 

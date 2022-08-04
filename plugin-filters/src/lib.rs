@@ -12,6 +12,7 @@ use rambot_api::{
     ModifierDocumentationBuilder,
     Plugin,
     PluginConfig,
+    PluginGuildConfig,
     ResolveEffectError,
     ResolverRegistry
 };
@@ -97,7 +98,8 @@ impl EffectResolver for GaussianEffectResolver {
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>)
+            child: Box<dyn AudioSource + Send>,
+            _guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
         resolve_gaussian_like_kernel_filter(
             key_values, child, &self.config, kernel::gaussian)
@@ -131,7 +133,8 @@ impl EffectResolver for InvGaussianEffectResolver {
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>)
+            child: Box<dyn AudioSource + Send>,
+            _plugin_guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
         resolve_gaussian_like_kernel_filter(
             key_values, child, &self.config, kernel::inv_gaussian)
