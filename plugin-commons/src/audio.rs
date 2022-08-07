@@ -14,11 +14,11 @@ struct ResamplingAudioSource<S> {
 impl<S> ResamplingAudioSource<S> {
     fn linear_combination(&self) -> Sample {
         let base = self.frac_index / TARGET_SAMPLING_RATE_USIZE;
-        let rem = self.frac_index - base * TARGET_SAMPLING_RATE_USIZE;
+        let rem = self.frac_index % TARGET_SAMPLING_RATE_USIZE;
 
         if rem > 0 {
             let fraction = rem as f32 / TARGET_SAMPLING_RATE_USIZE as f32;
-    
+
             self.buf[base] * (1.0 - fraction) +
                 self.buf[base + 1] * fraction
         }
@@ -80,14 +80,14 @@ impl<S: AudioSource> ResamplingAudioSource<S> {
                 self.frac_index) / self.step + 1;
         let sample_count = sample_count.min(buf.len());
 
-        for sample in buf.iter_mut().take(sample_count) {
+        for sample in buf[..sample_count].iter_mut() {
             *sample = self.linear_combination();
             self.frac_index += self.step;
         }
 
         let shift = self.frac_index / TARGET_SAMPLING_RATE_USIZE;
 
-        self.buf.drain(..shift);
+        self.buf.copy_within(shift..self.base_buf_len, 0);
         self.base_buf_len -= shift;
         self.frac_index -= shift * TARGET_SAMPLING_RATE_USIZE;
 
