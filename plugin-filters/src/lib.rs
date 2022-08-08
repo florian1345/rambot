@@ -36,8 +36,8 @@ fn get_kernel_size_sigmas(key_values: &HashMap<String, String>, config: &Config)
 }
 
 fn resolve_gaussian_like_kernel_filter<F>(key_values: &HashMap<String, String>,
-    child: Box<dyn AudioSource + Send>, config: &Config, gen_kernel: F)
-    -> Result<Box<dyn AudioSource + Send>, ResolveEffectError>
+    child: Box<dyn AudioSource + Send + Sync>, config: &Config, gen_kernel: F)
+    -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError>
 where
     F: Fn(f32, f32) -> Vec<f32>
 {
@@ -98,9 +98,9 @@ impl EffectResolver for GaussianEffectResolver {
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>,
+            child: Box<dyn AudioSource + Send + Sync>,
             _guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError> {
         resolve_gaussian_like_kernel_filter(
             key_values, child, &self.config, kernel::gaussian)
     }
@@ -133,9 +133,9 @@ impl EffectResolver for InvGaussianEffectResolver {
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>,
+            child: Box<dyn AudioSource + Send + Sync>,
             _plugin_guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError> {
         resolve_gaussian_like_kernel_filter(
             key_values, child, &self.config, kernel::inv_gaussian)
     }

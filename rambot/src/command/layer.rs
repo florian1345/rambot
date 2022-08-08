@@ -1,4 +1,4 @@
-use crate::command::with_mixer;
+use crate::command::{configure_guild_state, with_guild_state};
 
 use rambot_proc_macro::rambot_command;
 
@@ -25,8 +25,9 @@ pub fn get_layer_commands() -> &'static CommandGroup {
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String)
         -> CommandResult<Option<String>> {
-    let added = with_mixer(ctx, msg, move |mut mixer|
-        mixer.add_layer(layer)).await;
+    let guild_id = msg.guild_id.unwrap();
+    let added = configure_guild_state(ctx, guild_id, move |gs|
+        gs.mixer_mut().add_layer(layer)).await;
 
     if added {
         Ok(None)
@@ -44,8 +45,9 @@ async fn add(ctx: &Context, msg: &Message, layer: String)
 )]
 async fn remove(ctx: &Context, msg: &Message, layer: String)
         -> CommandResult<Option<String>> {
-    let removed = with_mixer(ctx, msg, move |mut mixer|
-        mixer.remove_layer(&layer)).await;
+    let guild_id = msg.guild_id.unwrap();
+    let removed = configure_guild_state(ctx, guild_id, move |gs|
+        gs.mixer_mut().remove_layer(&layer)).await;
 
     if removed {
         Ok(None)
@@ -61,9 +63,10 @@ async fn remove(ctx: &Context, msg: &Message, layer: String)
     usage = ""
 )]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
-    let layers = with_mixer(ctx, msg, |mixer| {
-        mixer.layers().iter().map(|l| l.name().to_owned()).collect::<Vec<_>>()
-    }).await;
+    let guild_id = msg.guild_id.unwrap();
+    let layers = with_guild_state(ctx, guild_id, |gs| {
+        gs.mixer().layers().iter().map(|l| l.name().to_owned()).collect::<Vec<_>>()
+    }).await.unwrap_or_default();
 
     let response = if layers.is_empty() {
         "No layers registered in this guild.".to_owned()

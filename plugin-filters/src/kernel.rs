@@ -86,7 +86,7 @@ pub(crate) struct KernelFilter {
 }
 
 impl KernelFilter {
-    pub(crate) fn new(child: Box<dyn AudioSource + Send>, kernel: Vec<f32>)
+    pub(crate) fn new(child: Box<dyn AudioSource + Send + Sync>, kernel: Vec<f32>)
             -> KernelFilter {
         let padding = kernel.len() - 1;
         let child = RightPaddedAudioSource::new(child, padding);
@@ -125,7 +125,7 @@ impl AudioSource for KernelFilter {
         true
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.child.take_child()
     }
 }

@@ -85,7 +85,7 @@ impl<R: Read + Seek> AudioSource for OggAudioSource<R> {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("ogg audio source has no child")
     }
 }
@@ -96,9 +96,9 @@ struct OggAudioSourceResolver {
 
 impl OggAudioSourceResolver {
     fn resolve_reader<R>(&self, reader: R)
-        -> Result<Box<dyn AudioSource + Send>, String>
+        -> Result<Box<dyn AudioSource + Send + Sync>, String>
     where
-        R: Read + Seek + Send + 'static
+        R: Read + Seek + Send + Sync + 'static
     {
         let ogg_reader = OggStreamReader::new(reader)
             .map_err(|e| format!("{}", e))?;
@@ -138,7 +138,7 @@ impl AudioSourceResolver for OggAudioSourceResolver {
     }
 
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, String> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
     
         match file {

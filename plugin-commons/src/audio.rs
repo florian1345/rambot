@@ -113,7 +113,7 @@ impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
         self.base.has_child()
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         Box::new(ResamplingAudioSource {
             base: self.base.take_child(),
             buf: mem::take(&mut self.buf),
@@ -140,9 +140,9 @@ const TARGET_SAMPLING_RATE_USIZE: usize = TARGET_SAMPLING_RATE as usize;
 ///
 /// A boxed audio source which has a sampling rate of 48 kHz.
 pub fn adapt_sampling_rate<S>(audio_source: S, sampling_rate: u32)
-    -> Box<dyn AudioSource + Send>
+    -> Box<dyn AudioSource + Send + Sync>
 where
-    S: AudioSource + Send + 'static
+    S: AudioSource + Send + Sync + 'static
 {
     if sampling_rate == TARGET_SAMPLING_RATE {
         Box::new(audio_source)

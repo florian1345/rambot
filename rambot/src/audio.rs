@@ -5,7 +5,7 @@ use songbird::input::reader::MediaSource;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "bench")]
 use std::time::{Duration, Instant};
@@ -95,8 +95,8 @@ impl AudioSourceList for SingleAudioSourceList {
 /// about the structure of this layer, not the actual audio played.
 pub struct Layer {
     name: String,
-    source: Option<Box<dyn AudioSource + Send>>,
-    list: Option<Box<dyn AudioSourceList + Send>>,
+    source: Option<Box<dyn AudioSource + Send + Sync>>,
+    list: Option<Box<dyn AudioSourceList + Send + Sync>>,
     buffer: AudioBuffer,
     effects: Vec<KeyValueDescriptor>,
     adapters: Vec<KeyValueDescriptor>,
@@ -121,7 +121,7 @@ impl Layer {
         self.buffer.len() > 0 || self.source.is_some()
     }
 
-    fn play(&mut self, source: Box<dyn AudioSource + Send>) {
+    fn play(&mut self, source: Box<dyn AudioSource + Send + Sync>) {
         self.buffer.clear();
         self.source = Some(source);
     }
@@ -219,7 +219,7 @@ fn to_io_err<T, E: Display>(r: Result<T, E>) -> Result<T, io::Error> {
 }
 
 fn play_source_on_layer<P>(layer: &mut Layer,
-    mut source: Box<dyn AudioSource + Send>, plugin_manager: &P)
+    mut source: Box<dyn AudioSource + Send + Sync>, plugin_manager: &P)
     -> Result<(), io::Error>
 where
     P: AsRef<PluginManager>
@@ -248,7 +248,7 @@ where
 }
 
 fn play_list_on_layer<P>(layer: &mut Layer,
-    mut list: Box<dyn AudioSourceList + Send>, plugin_manager: &P)
+    mut list: Box<dyn AudioSourceList + Send + Sync>, plugin_manager: &P)
     -> Result<(), io::Error>
 where
     P: AsRef<PluginManager>
@@ -709,7 +709,7 @@ impl AudioSource for Mixer {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mixer has no child")
     }
 }
@@ -717,7 +717,7 @@ impl AudioSource for Mixer {
 /// A wrapper of an [AudioSource] that implements the [Read] trait. It outputs
 /// 32-bit floating-point PCM audio data.
 pub struct PCMRead<S: AudioSource + Send> {
-    source: Arc<Mutex<S>>,
+    source: Arc<RwLock<S>>,
     sample_buf: Vec<Sample>,
 
     #[cfg(feature = "bench")]
@@ -730,7 +730,7 @@ pub struct PCMRead<S: AudioSource + Send> {
 impl<S: AudioSource + Send> PCMRead<S> {
 
     /// Creates a new PCMRead with the given audio source.
-    pub fn new(source: Arc<Mutex<S>>) -> PCMRead<S> {
+    pub fn new(source: Arc<RwLock<S>>) -> PCMRead<S> {
         PCMRead {
             source,
             sample_buf: Vec::new(),
@@ -765,7 +765,7 @@ impl<S: AudioSource + Send> Read for PCMRead<S> {
             self.sample_buf = vec![Sample::ZERO; sample_capacity];
         }
 
-        let sample_len = self.source.lock().unwrap()
+        let sample_len = self.source.write().unwrap()
             .read(&mut self.sample_buf[..sample_capacity])?;
         let mut buf_stride = buf;
 
@@ -803,7 +803,7 @@ impl<S: AudioSource + Send> Seek for PCMRead<S> {
     }
 }
 
-impl<S: AudioSource + Send> MediaSource for PCMRead<S> {
+impl<S: AudioSource + Send + Sync> MediaSource for PCMRead<S> {
     fn is_seekable(&self) -> bool {
         false
     }
@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn pcm_read_zeros() {
         let source = MockAudioSource::new(vec![Sample::ZERO; 100]);
-        let mut pcm_read = PCMRead::new(Arc::new(Mutex::new(source)));
+        let mut pcm_read = PCMRead::new(Arc::new(RwLock::new(source)));
         let mut buf = vec![1; 1024];
 
         assert_eq!(800, pcm_read_to_end(&mut buf, &mut pcm_read));
@@ -865,7 +865,7 @@ mod tests {
     #[test]
     fn pcm_read_zeros_split() {
         let source = MockAudioSource::new(vec![Sample::ZERO; 100]);
-        let mut pcm_read = PCMRead::new(Arc::new(Mutex::new(source)));
+        let mut pcm_read = PCMRead::new(Arc::new(RwLock::new(source)));
         let mut buf = vec![1; 256];
 
         assert_eq!(256, pcm_read_to_end(&mut buf, &mut pcm_read));
@@ -987,7 +987,7 @@ mod tests {
         }
 
         fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
-                -> Result<Box<dyn AudioSource + Send>, String> {
+                -> Result<Box<dyn AudioSource + Send + Sync>, String> {
             let samples = match descriptor {
                 "1" => test_audio_1(),
                 "2" => test_audio_2(),
@@ -1023,7 +1023,7 @@ mod tests {
         }
 
         fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
-                -> Result<Box<dyn AudioSourceList + Send>, String> {
+                -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
             Ok(Box::new(MockAudioSourceList {
                 entries: descriptor.split(',')
                     .map(|s| s.to_owned())

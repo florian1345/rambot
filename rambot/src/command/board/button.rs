@@ -1,4 +1,8 @@
-use crate::command::board::{with_board_manager_mut, Button, Board};
+use crate::command::board::{
+    configure_board_manager,
+    Button,
+    Board
+};
 
 use rambot_proc_macro::rambot_command;
 
@@ -12,12 +16,12 @@ use serenity::model::prelude::Message;
 #[commands(add, command, remove)]
 struct ButtonCmd;
 
-async fn with_board<F>(ctx: &Context, msg: &Message, board_name: String, f: F)
-    -> CommandResult<Option<String>>
+async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
+    f: F) -> CommandResult<Option<String>>
 where
     F: FnOnce(&mut Board) -> Option<String>
 {
-    Ok(with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
+    Ok(configure_board_manager(ctx, msg.guild_id.unwrap(), |board_mgr| {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
             f(board)
         }
@@ -28,12 +32,12 @@ where
     }).await)
 }
 
-async fn with_button<F>(ctx: &Context, msg: &Message, board_name: String,
+async fn configure_button<F>(ctx: &Context, msg: &Message, board_name: String,
     label: String, f: F) -> CommandResult<Option<String>>
 where
     F: FnOnce(&mut Button) -> Option<String>
 {
-    with_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, msg, board_name, |board| {
         let button = board.buttons.iter_mut()
             .find(|btn| btn.label == label);
 
@@ -56,7 +60,7 @@ where
 async fn add(ctx: &Context, msg: &Message, board_name: String,
         label: String, command: String)
         -> CommandResult<Option<String>> {
-    with_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, msg, board_name, |board| {
         if board.buttons.iter().any(|btn| btn.label == label) {
             Some(format!("Duplicate button: {}.", label))
         }
@@ -84,7 +88,7 @@ async fn command(ctx: &Context, msg: &Message, board_name: String,
         return Ok(Some("Command may not be empty.".to_owned()));
     }
 
-    with_button(ctx, msg, board_name, label, |button| {
+    configure_button(ctx, msg, board_name, label, |button| {
         button.command = command;
         None
     }).await
@@ -98,7 +102,7 @@ async fn command(ctx: &Context, msg: &Message, board_name: String,
 )]
 async fn remove(ctx: &Context, msg: &Message, board_name: String,
         label: String) -> CommandResult<Option<String>> {
-    with_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, msg, board_name, |board| {
         let old_len = board.buttons.len();
 
         board.buttons.retain(|btn| btn.label != label);

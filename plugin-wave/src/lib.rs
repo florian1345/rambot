@@ -116,7 +116,7 @@ impl<R: Read> AudioSource for IntWaveAudioSource<R> {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("wave audio source has no child")
     }
 }
@@ -149,7 +149,7 @@ impl<R: Read> AudioSource for FloatWaveAudioSource<R> {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("wave audio source has no child")
     }
 }
@@ -160,9 +160,9 @@ struct WaveAudioSourceResolver {
 
 impl WaveAudioSourceResolver {
     fn resolve_reader<R>(&self, reader: R)
-        -> Result<Box<dyn AudioSource + Send>, String>
+        -> Result<Box<dyn AudioSource + Send + Sync>, String>
     where
-        R: Read + Send + 'static
+        R: Read + Send + Sync + 'static
     {
         let wav_reader = WavReader::new(reader).map_err(|e| format!("{}", e))?;
         let spec = wav_reader.spec();
@@ -216,7 +216,7 @@ impl AudioSourceResolver for WaveAudioSourceResolver {
     }
 
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, String> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {

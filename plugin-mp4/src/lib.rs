@@ -206,7 +206,7 @@ impl<D: Decoder> AudioSource for Mp4AudioSource<D> {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mp4 audio source has no child")
     }
 }
@@ -289,7 +289,7 @@ fn select_channels(channels: Channels) -> (usize, usize) {
 }
 
 fn construct_source<D>(reader: IsoMp4Reader, track: &Track)
-    -> Result<Box<dyn AudioSource + Send>, String>
+    -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
     D: Decoder + 'static
 {
@@ -319,7 +319,7 @@ where
     }, sampling_rate)))
 }
 
-fn resolve_reader<R>(reader: R) -> Result<Box<dyn AudioSource + Send>, String>
+fn resolve_reader<R>(reader: R) -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
     R: Read + Send + Sync + 'static
 {
@@ -393,7 +393,7 @@ impl AudioSourceResolver for Mp4AudioSourceResolver {
     }
 
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, String> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {
