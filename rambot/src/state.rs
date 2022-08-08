@@ -229,7 +229,8 @@ impl Display for StateError {
 /// corresponding file after modification has finished.
 pub struct GuildStateGuard<'a> {
     guild_state: &'a mut GuildState,
-    path: PathBuf
+    path: PathBuf,
+    id: GuildId
 }
 
 impl<'a> Deref for GuildStateGuard<'a> {
@@ -266,6 +267,8 @@ impl<'a> Drop for GuildStateGuard<'a> {
         if let Err(e) = serde_json::to_writer(file, &self.guild_state) {
             log::warn!("Could not save changed state: {}", e);
         }
+
+        log::debug!("Saved state for guild {}.", self.id);
     }
 }
 
@@ -364,7 +367,8 @@ impl State {
 
         GuildStateGuard {
             path: file_path,
-            guild_state
+            guild_state,
+            id
         }
     }
 
