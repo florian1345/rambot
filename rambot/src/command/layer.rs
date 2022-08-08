@@ -66,7 +66,7 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
     let layers = with_guild_state(ctx, guild_id, |gs| {
         gs.mixer().layers().iter().map(|l| l.name().to_owned()).collect::<Vec<_>>()
-    }).await.unwrap_or_else(Vec::new);
+    }).await.unwrap_or_default();
 
     let response = if layers.is_empty() {
         "No layers registered in this guild.".to_owned()
