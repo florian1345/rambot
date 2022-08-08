@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use serenity::client::{EventHandler, Context};
+use serenity::model::application::interaction::Interaction;
 use serenity::model::channel::Reaction;
 use serenity::model::prelude::Ready;
 use serenity::model::event::ResumedEvent;
@@ -33,6 +34,19 @@ where
         Box::pin(async move {
             self.e1.guild_create(ctx.clone(), guild.clone(), is_new).await;
             self.e2.guild_create(ctx, guild, is_new).await;
+        })
+    }
+
+    fn interaction_create<'life0, 'async_trait>(&'life0 self, ctx: Context,
+        interaction: Interaction)
+        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait
+    {
+        Box::pin(async move {
+            self.e1.interaction_create(ctx.clone(), interaction.clone()).await;
+            self.e2.interaction_create(ctx, interaction).await;
         })
     }
 
