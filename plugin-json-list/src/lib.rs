@@ -30,7 +30,7 @@ struct JsonAudioSourceListResolver {
 
 impl JsonAudioSourceListResolver {
     fn resolve_reader<R>(&self, reader: R)
-        -> Result<Box<dyn AudioSourceList + Send>, String>
+        -> Result<Box<dyn AudioSourceList + Send + Sync>, String>
     where
         R: Read + Send + 'static
     {
@@ -72,7 +72,7 @@ impl AudioSourceListResolver for JsonAudioSourceListResolver {
     }
 
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSourceList + Send>, String> {
+            -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {

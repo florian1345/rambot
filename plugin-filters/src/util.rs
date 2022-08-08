@@ -4,12 +4,12 @@ use std::io;
 
 pub(crate) struct RightPaddedAudioSource {
     padding: usize,
-    child: Option<Box<dyn AudioSource + Send>>,
+    child: Option<Box<dyn AudioSource + Send + Sync>>,
     child_finished: bool
 }
 
 impl RightPaddedAudioSource {
-    pub(crate) fn new(child: Box<dyn AudioSource + Send>, padding: usize)
+    pub(crate) fn new(child: Box<dyn AudioSource + Send + Sync>, padding: usize)
             -> RightPaddedAudioSource {
         RightPaddedAudioSource {
             padding,
@@ -43,7 +43,7 @@ impl AudioSource for RightPaddedAudioSource {
         true
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.child.take().unwrap()
     }
 }

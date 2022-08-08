@@ -63,7 +63,7 @@ use std::fmt::{self, Display, Formatter};
 ///         false
 ///     }
 ///
-///     fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+///     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
 ///         // As discussed above, we have no child => panic.
 ///         panic!("cannot take child from sine audio source")
 ///     }
@@ -96,7 +96,7 @@ use std::fmt::{self, Display, Formatter};
 ///     }
 /// 
 ///     fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
-///             -> Result<Box<dyn AudioSource + Send>, String> {
+///             -> Result<Box<dyn AudioSource + Send + Sync>, String> {
 ///         // Here we actually have to construct the audio source from the
 ///         // descriptor. We can rely on "can_resolve" to be true for the
 ///         // given descriptor, as the bot will not query this method
@@ -162,7 +162,7 @@ pub trait AudioSourceResolver : Send + Sync {
     ///
     /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-        -> Result<Box<dyn AudioSource + Send>, String>;
+        -> Result<Box<dyn AudioSource + Send + Sync>, String>;
 }
 
 /// An error that occurs when a plugin attempts to resolve an effect, i.e.
@@ -173,7 +173,7 @@ pub trait AudioSourceResolver : Send + Sync {
 /// resolution.
 pub struct ResolveEffectError {
     message: String,
-    child: Box<dyn AudioSource + Send>
+    child: Box<dyn AudioSource + Send + Sync>
 }
 
 impl ResolveEffectError {
@@ -185,7 +185,7 @@ impl ResolveEffectError {
     /// * `message`: The error message to be displayed to the user.
     /// * `child`: The child audio source to which the effect should have been
     /// applied.
-    pub fn new<S>(message: S, child: Box<dyn AudioSource + Send>)
+    pub fn new<S>(message: S, child: Box<dyn AudioSource + Send + Sync>)
         -> ResolveEffectError
     where
         S: Into<String>
@@ -198,7 +198,7 @@ impl ResolveEffectError {
 
     /// Destructures this resolve effect error into its raw parts, i.e. the
     /// error message as the first and intended child as the second part.
-    pub fn into_parts(self) -> (String, Box<dyn AudioSource + Send>) {
+    pub fn into_parts(self) -> (String, Box<dyn AudioSource + Send + Sync>) {
         (self.message, self.child)
     }
 }
@@ -238,7 +238,7 @@ impl Display for ResolveEffectError {
 /// struct VolumeEffect {
 ///     // Because we need to be able to remove the child from the effect, we
 ///     // wrap it in an Option so we can move out of it later.
-///     child: Option<Box<dyn AudioSource + Send>>,
+///     child: Option<Box<dyn AudioSource + Send + Sync>>,
 ///     volume: f32
 /// }
 /// 
@@ -263,7 +263,7 @@ impl Display for ResolveEffectError {
 ///         true
 ///     }
 ///     
-///     fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+///     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
 ///         // Remove and return the child. We can rely on this being the last
 ///         // call made to the effect, so it does not matter that the child
 ///         // will no longer be present after.
@@ -311,8 +311,8 @@ impl Display for ResolveEffectError {
 ///     }
 ///     
 ///     fn resolve(&self, key_values: &HashMap<String, String>,
-///             child: Box<dyn AudioSource + Send>, _: PluginGuildConfig)
-///             -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+///             child: Box<dyn AudioSource + Send + Sync>, _: PluginGuildConfig)
+///             -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError> {
 ///         // Here we actually have to construct the effect from the
 ///         // key-value-pairs parsed by the bot. We get the child to which we
 ///         // are supposed to apply the effect.
@@ -371,8 +371,8 @@ pub trait EffectResolver : Send + Sync {
     /// A [ResolveEffectError] containing an error message as well as the given
     /// `child` in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
-        child: Box<dyn AudioSource + Send>, guild_config: PluginGuildConfig)
-        -> Result<Box<dyn AudioSource + Send>, ResolveEffectError>;
+        child: Box<dyn AudioSource + Send + Sync>, guild_config: PluginGuildConfig)
+        -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError>;
 }
 
 /// A trait for resolvers which can create [AudioSourceList]s from string
@@ -449,7 +449,7 @@ pub trait EffectResolver : Send + Sync {
 ///     }
 ///     
 ///     fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
-///             -> Result<Box<dyn AudioSourceList + Send>, String> {
+///             -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
 ///         // As with AudioSourceResolvers, here we actually have to construct
 ///         // the audio source list from the descriptor. We can rely on
 ///         // "can_resolve" to be true for the given descriptor, as the bot
@@ -510,7 +510,7 @@ pub trait AudioSourceListResolver : Send + Sync {
     ///
     /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-        -> Result<Box<dyn AudioSourceList + Send>, String>;
+        -> Result<Box<dyn AudioSourceList + Send + Sync>, String>;
 }
 
 /// A trait for resolvers which can create adapters from key-value arguments.
@@ -539,7 +539,7 @@ pub trait AudioSourceListResolver : Send + Sync {
 /// // audio source list and implements AudioSourceList itself, returning the
 /// // modified playlist.
 /// struct LoopAudioSourceList {
-///     child: Box<dyn AudioSourceList + Send>,
+///     child: Box<dyn AudioSourceList + Send + Sync>,
 ///     buf: Vec<String>,
 ///     idx: usize
 /// }
@@ -593,8 +593,8 @@ pub trait AudioSourceListResolver : Send + Sync {
 ///     }
 ///     
 ///     fn resolve(&self, _key_values: &HashMap<String, String>,
-///             child: Box<dyn AudioSourceList + Send>, _: PluginGuildConfig)
-///             -> Result<Box<dyn AudioSourceList + Send>, String> {
+///             child: Box<dyn AudioSourceList + Send + Sync>, _: PluginGuildConfig)
+///             -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
 ///         // Here we actually have to construct the effect from the
 ///         // key-value-pairs parsed by the bot. We get the child to which we
 ///         // are supposed to apply the effect. As looping does not depend on
@@ -649,9 +649,9 @@ pub trait AdapterResolver : Send + Sync {
     ///
     /// An error message provided as a [String] in case resolution fails.
     fn resolve(&self, key_values: &HashMap<String, String>,
-        child: Box<dyn AudioSourceList + Send>,
+        child: Box<dyn AudioSourceList + Send + Sync>,
         guild_config: PluginGuildConfig)
-        -> Result<Box<dyn AudioSourceList + Send>, String>;
+        -> Result<Box<dyn AudioSourceList + Send + Sync>, String>;
 }
 
 /// An interface given to plugins that they can use to register all kinds of

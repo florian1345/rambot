@@ -1,4 +1,9 @@
-use crate::command::board::{with_board_manager_mut, Button, Board};
+use crate::command::board::{
+    configure_board_manager,
+    with_board_manager,
+    Button,
+    Board
+};
 
 use rambot_proc_macro::rambot_command;
 
@@ -15,12 +20,12 @@ use std::fmt::Write;
 #[commands(add, command, description, get, remove)]
 struct ButtonCmd;
 
-async fn with_board<F>(ctx: &Context, msg: &Message, board_name: String, f: F)
-    -> CommandResult<Option<String>>
+async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
+    f: F) -> CommandResult<Option<String>>
 where
     F: FnOnce(&mut Board) -> Option<String>
 {
-    Ok(with_board_manager_mut(ctx, msg.guild_id.unwrap(), |board_mgr| {
+    Ok(configure_board_manager(ctx, msg.guild_id.unwrap(), |board_mgr| {
         if let Some(board) = board_mgr.boards.get_mut(&board_name) {
             f(board)
         }
@@ -31,12 +36,12 @@ where
     }).await)
 }
 
-async fn with_button<F>(ctx: &Context, msg: &Message, board_name: String,
+async fn configure_button<F>(ctx: &Context, msg: &Message, board_name: String,
     button_emote: ReactionType, f: F) -> CommandResult<Option<String>>
 where
     F: FnOnce(&mut Button) -> Option<String>
 {
-    with_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, msg, board_name, |board| {
         let button = board.buttons.iter_mut()
             .find(|btn| btn.emote == button_emote);
 
@@ -59,7 +64,7 @@ where
 async fn add(ctx: &Context, msg: &Message, board_name: String,
         emote: ReactionType, command: String)
         -> CommandResult<Option<String>> {
-    with_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, msg, board_name, |board| {
         if board.buttons.iter().any(|btn| btn.emote == emote) {
             Some(format!("Duplicate button: {}.", emote))
         }
@@ -85,7 +90,7 @@ async fn add(ctx: &Context, msg: &Message, board_name: String,
 async fn description(ctx: &Context, msg: &Message, board_name: String,
         emote: ReactionType, description: String)
         -> CommandResult<Option<String>> {
-    with_button(ctx, msg, board_name, emote, |button| {
+    configure_button(ctx, msg, board_name, emote, |button| {
         button.description = description;
         None
     }).await
@@ -105,7 +110,7 @@ async fn command(ctx: &Context, msg: &Message, board_name: String,
         return Ok(Some("Command may not be empty.".to_owned()));
     }
 
-    with_button(ctx, msg, board_name, emote, |button| {
+    configure_button(ctx, msg, board_name, emote, |button| {
         button.command = command;
         None
     }).await
@@ -119,18 +124,32 @@ async fn command(ctx: &Context, msg: &Message, board_name: String,
 async fn get(ctx: &Context, msg: &Message, board_name: String,
         emote: ReactionType) -> CommandResult<Option<String>> {
     let mut response = String::new();
-    let with_button_res = with_button(ctx, msg, board_name, emote, |button| {
-        response = format!("Command: `{}`\n", button.command);
+    let guild_id = msg.guild_id.unwrap();
+    let with_button_res = with_board_manager(ctx, guild_id, |board_mgr| {
+        if let Some(board) = board_mgr.boards.get(&board_name) {
+            let button = board.buttons.iter().find(|b| b.emote == emote);
 
-        if button.description.is_empty() {
-            write!(response, "No description.").unwrap();
+            if let Some(button) = button {
+                response = format!("Command: `{}`\n", button.command);
+        
+                if button.description.is_empty() {
+                    write!(response, "No description.").unwrap();
+                }
+                else {
+                    write!(response, "Description: {}", button.description).unwrap();
+                }
+        
+                None
+            }
+            else {
+                Some(format!("No button with emote {}.", emote))
+            }
         }
         else {
-            write!(response, "Description: {}", button.description).unwrap();
+            Some(format!("No board with name {}.", board_name))
         }
-
-        None
-    }).await?;
+    }).await.unwrap_or_else(||
+        Some(format!("No board with name {}.", board_name)));
 
     if let Some(e) = with_button_res {
         return Ok(Some(e));
@@ -148,7 +167,7 @@ async fn get(ctx: &Context, msg: &Message, board_name: String,
 )]
 async fn remove(ctx: &Context, msg: &Message, board_name: String,
         emote: ReactionType) -> CommandResult<Option<String>> {
-    with_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, msg, board_name, |board| {
         let old_len = board.buttons.len();
 
         board.buttons.retain(|btn| btn.emote != emote);

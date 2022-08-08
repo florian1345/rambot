@@ -178,7 +178,7 @@ impl<D: Distribution<usize>, R: Rng> AudioSource for MockAudioSource<D, R> {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mock audio source asked for child")
     }
 }

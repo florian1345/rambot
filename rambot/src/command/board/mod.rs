@@ -1,5 +1,10 @@
 use crate::FrameworkTypeMapKey;
-use crate::command::{with_guild_state};
+use crate::command::{
+    configure_guild_state,
+    with_guild_state,
+    with_guild_state_mut_unguarded,
+    unwrap_or_return
+};
 
 use rambot_proc_macro::rambot_command;
 
@@ -43,7 +48,7 @@ pub fn get_board_commands() -> &'static CommandGroup {
 async fn add(ctx: &Context, msg: &Message, name: String)
         -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let added = with_board_manager_mut(ctx, guild_id, |board_mgr| {
+    let added = configure_board_manager(ctx, guild_id, |board_mgr| {
         board_mgr.add_board(Board {
             name,
             buttons: Vec::new()
@@ -66,7 +71,7 @@ async fn add(ctx: &Context, msg: &Message, name: String)
 async fn remove(ctx: &Context, msg: &Message, name: String)
         -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let found = with_board_manager_mut(ctx, guild_id, |board_mgr| {
+    let found = configure_board_manager(ctx, guild_id, |board_mgr| {
         if board_mgr.boards.remove(&name).is_some() {
             board_mgr.active_boards.retain(|_, v| v != &name);
             true
@@ -91,14 +96,15 @@ async fn remove(ctx: &Context, msg: &Message, name: String)
 async fn display(ctx: &Context, msg: &Message, name: String)
         -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let board_res = with_board_manager(ctx, guild_id, |board_mgr| {
-        if let Some(board) = board_mgr.boards.get(&name) {
-            Ok(board.clone())
-        }
-        else {
-            Err(format!("I found no board with name `{}`.", name))
-        }
-    }).await;
+    let board_res = unwrap_or_return!(with_board_manager(ctx, guild_id,
+        |board_mgr| {
+            if let Some(board) = board_mgr.boards.get(&name) {
+                Ok(board.clone())
+            }
+            else {
+                Err(format!("I found no board with name `{}`.", name))
+            }
+        }).await, Ok(Some(format!("I found no board with name `{}`.", name))));
 
     match board_res {
         Ok(board) => {
@@ -117,7 +123,8 @@ async fn display(ctx: &Context, msg: &Message, name: String)
                 board_msg.react(ctx, button.emote.clone()).await?;
             }
 
-            with_board_manager_mut(ctx, guild_id, |board_mgr| {
+            with_guild_state_mut_unguarded(ctx, guild_id, |gs| {
+                let board_mgr = gs.board_manager_mut();
                 board_mgr.active_boards.insert(board_msg.id, name);
             }).await;
 
@@ -133,11 +140,13 @@ async fn display(ctx: &Context, msg: &Message, name: String)
 )]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let mut names = with_board_manager(ctx, guild_id, |board_mgr| {
-        board_mgr.boards()
-            .map(|b| b.name.clone())
-            .collect::<Vec<_>>()
-    }).await;
+    let mut names = unwrap_or_return!(with_board_manager(ctx, guild_id,
+        |board_mgr| {
+            board_mgr.boards()
+                .map(|b| b.name.clone())
+                .collect::<Vec<_>>()
+        }).await,
+        Ok(Some("I found no sound boards in this guild.".to_owned())));
     names.sort();
     let mut reply = "Sound boards:".to_owned();
 
@@ -214,18 +223,20 @@ impl BoardManager {
     }
 }
 
-async fn with_board_manager<T, F>(ctx: &Context, guild_id: GuildId, f: F) -> T
+async fn with_board_manager<T, F>(ctx: &Context, guild_id: GuildId, f: F)
+    -> Option<T>
 where
     F: FnOnce(&BoardManager) -> T
 {
     with_guild_state(ctx, guild_id, |gs| f(gs.board_manager())).await
 }
 
-async fn with_board_manager_mut<T, F>(ctx: &Context, guild_id: GuildId, f: F) -> T
+async fn configure_board_manager<T, F>(ctx: &Context, guild_id: GuildId, f: F)
+    -> T
 where
     F: FnOnce(&mut BoardManager) -> T
 {
-    with_guild_state(ctx, guild_id, |mut gs| f(gs.board_manager_mut())).await
+    configure_guild_state(ctx, guild_id, |mut gs| f(gs.board_manager_mut())).await
 }
 
 /// An [EventHandler] which listens for reactions added to sound board messages
@@ -261,7 +272,7 @@ impl EventHandler for BoardButtonEventHandler {
                         .and_then(|b| b.buttons.iter()
                             .find(|btn| btn.emote == add_reaction.emoji)
                             .map(|btn| &btn.command))
-                        .cloned()).await;
+                        .cloned()).await.flatten();
 
                 if let Some(command) = command {
                     if let Err(e) = add_reaction.delete(&ctx).await {

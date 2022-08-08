@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::io;
 
 struct LoopAudioSourceList {
-    child: Box<dyn AudioSourceList + Send>,
+    child: Box<dyn AudioSourceList + Send + Sync>,
     buf: Vec<String>,
     idx: usize
 }
@@ -54,9 +54,9 @@ impl AdapterResolver for LoopAdapterResolver {
     }
 
     fn resolve(&self, _key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSourceList + Send>,
+            child: Box<dyn AudioSourceList + Send + Sync>,
             _guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSourceList + Send>, String> {
+            -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
         Ok(Box::new(LoopAudioSourceList {
             child,
             buf: Vec::new(),

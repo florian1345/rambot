@@ -75,7 +75,7 @@ impl AudioSourceListResolver for FolderListResolver {
     }
 
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSourceList + Send>, String> {
+            -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
         let path = self.path(descriptor, &guild_config);
         let read_dir = fs::read_dir(&path).map_err(|e| format!("{}", e))?;
 
