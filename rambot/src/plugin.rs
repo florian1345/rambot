@@ -103,7 +103,7 @@ pub enum AudioDescriptorList {
 
     /// An [AudioSourceList] providing audio descriptors, which is wrapped in
     /// this variant.
-    List(Box<dyn AudioSourceList + Send>)
+    List(Box<dyn AudioSourceList + Send + Sync>)
 }
 
 trait AudioResolver {
@@ -117,7 +117,7 @@ trait AudioResolver {
 }
 
 impl AudioResolver for Box<dyn AudioSourceResolver> {
-    type Value = Box<dyn AudioSource + Send>;
+    type Value = Box<dyn AudioSource + Send + Sync>;
 
     fn can_resolve(&self, descriptor: &str,
             plugin_guild_config: PluginGuildConfig) -> bool {
@@ -131,7 +131,7 @@ impl AudioResolver for Box<dyn AudioSourceResolver> {
 }
 
 impl AudioResolver for Box<dyn AudioSourceListResolver> {
-    type Value = Box<dyn AudioSourceList + Send>;
+    type Value = Box<dyn AudioSourceList + Send + Sync>;
 
     fn can_resolve(&self, descriptor: &str,
             plugin_guild_config: PluginGuildConfig) -> bool {
@@ -362,7 +362,7 @@ impl PluginManager {
     /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_audio_source(&self, descriptor: &str,
             plugin_guild_config: &PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, ResolveError> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, ResolveError> {
         resolve_audio(descriptor, plugin_guild_config,
             &self.audio_source_resolvers)
     }
@@ -387,7 +387,7 @@ impl PluginManager {
     /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_audio_source_list(&self, descriptor: &str,
             plugin_guild_config: &PluginGuildConfig)
-            -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
+            -> Result<Box<dyn AudioSourceList + Send + Sync>, ResolveError> {
         resolve_audio(descriptor, plugin_guild_config,
             &self.audio_source_list_resolvers)
     }
@@ -466,10 +466,10 @@ impl PluginManager {
     /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_effect(&self, name: &str,
             key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>,
+            child: Box<dyn AudioSource + Send + Sync>,
             plugin_guild_config: &PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>,
-                (ResolveError, Box<dyn AudioSource + Send>)> {
+            -> Result<Box<dyn AudioSource + Send + Sync>,
+                (ResolveError, Box<dyn AudioSource + Send + Sync>)> {
         if let Some(resolver) = self.effect_resolvers.get(name) {
             resolver.resolve(key_values, child, plugin_guild_config.clone())
                 .map_err(|e| {
@@ -534,9 +534,9 @@ impl PluginManager {
     /// Any [ResolveError] according to their respective documentation.
     pub fn resolve_adapter(&self, name: &str,
             key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSourceList + Send>,
+            child: Box<dyn AudioSourceList + Send + Sync>,
             plugin_guild_config: &PluginGuildConfig)
-            -> Result<Box<dyn AudioSourceList + Send>, ResolveError> {
+            -> Result<Box<dyn AudioSourceList + Send + Sync>, ResolveError> {
         if let Some(resolver) = self.adapter_resolvers.get(name) {
             resolver.resolve(key_values, child, plugin_guild_config.clone())
                 .map_err(ResolveError::PluginResolveError)

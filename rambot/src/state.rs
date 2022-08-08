@@ -17,11 +17,11 @@ use std::io;
 use std::num::ParseIntError;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// The bot's state for one specific guild.
 pub struct GuildState {
-    mixer: Arc<Mutex<Mixer>>,
+    mixer: Arc<RwLock<Mixer>>,
     board_manager: BoardManager,
     root_directory: Option<String>
 }
@@ -31,7 +31,7 @@ impl GuildState {
         log::info!("New guild state created.");
 
         GuildState {
-            mixer: Arc::new(Mutex::new(Mixer::new(plugin_manager))),
+            mixer: Arc::new(RwLock::new(Mixer::new(plugin_manager))),
             board_manager: BoardManager::new(),
             root_directory: None
         }
@@ -60,15 +60,28 @@ impl GuildState {
         }
         
         GuildState {
-            mixer: Arc::new(Mutex::new(mixer)),
+            mixer: Arc::new(RwLock::new(mixer)),
             board_manager,
             root_directory: serde.directory
         }
     }
 
-    /// Gets an [Arc] to a [Mutex]ed audio [Mixer] for audio playback in this
-    /// guild. This also manages the layers.
-    pub fn mixer(&self) -> Arc<Mutex<Mixer>> {
+    /// Read-locks the [Mixer] for this guild and returns an appropriate guard.
+    pub fn mixer(&self) -> RwLockReadGuard<Mixer> {
+        self.mixer.read().unwrap()
+    }
+
+    /// Write-locks the [Mixer] for this guild and returns an appropriate
+    /// guard. Note that while this method only requires an immutable
+    /// reference, modifying any configuration of the mixer should only be done
+    /// while the guild state is behind a [GuildStateGuard]. This ensures that
+    /// any changes in the configuration are propagated to the associated file
+    /// on the hard drive.
+    pub fn mixer_mut(&self) -> RwLockWriteGuard<Mixer> {
+        self.mixer.write().unwrap()
+    }
+
+    pub fn mixer_arc(&self) -> Arc<RwLock<Mixer>> {
         Arc::clone(&self.mixer)
     }
 
@@ -104,7 +117,7 @@ impl GuildState {
     fn serde(&self) -> SerdeGuildState {
         let mut layers = Vec::new();
 
-        for layer in self.mixer.lock().unwrap().layers() {
+        for layer in self.mixer.read().unwrap().layers() {
             layers.push(SerdeLayer {
                 name: layer.name().to_owned(),
                 effects: layer.effects().to_vec(),
@@ -216,7 +229,8 @@ impl Display for StateError {
 /// corresponding file after modification has finished.
 pub struct GuildStateGuard<'a> {
     guild_state: &'a mut GuildState,
-    path: PathBuf
+    path: PathBuf,
+    id: GuildId
 }
 
 impl<'a> Deref for GuildStateGuard<'a> {
@@ -253,6 +267,8 @@ impl<'a> Drop for GuildStateGuard<'a> {
         if let Err(e) = serde_json::to_writer(file, &self.guild_state) {
             log::warn!("Could not save changed state: {}", e);
         }
+
+        log::debug!("Saved state for guild {}.", self.id);
     }
 }
 
@@ -333,16 +349,15 @@ impl State {
 
     /// Gets an immutable reference to the [GuildState] with the given ID. This
     /// is intended to be used whenever any potential state changes do not need
-    /// to be saved.
-    pub fn guild_state(&mut self, id: GuildId,
-            plugin_manager: Arc<PluginManager>) -> &GuildState {
-        self.guild_states.entry(id)
-            .or_insert_with(|| GuildState::new(plugin_manager))
+    /// to be saved. If no guild state for the given ID exists yet, `None` is
+    /// returned.
+    pub fn guild_state(&self, id: GuildId) -> Option<&GuildState> {
+        self.guild_states.get(&id)
     }
 
-    /// Gets a [GuildStateGuard] to the [GuildState] with the given ID. This is
-    /// intended to be used whenever any potential state changes need to be
-    /// saved.
+    /// Gets a [GuildStateGuard] to the [GuildState] with the given ID. Any
+    /// changes in the configuration will be comitted to the hard drive once
+    /// the guard goes out of scope.
     pub fn guild_state_mut(&mut self, id: GuildId,
             plugin_manager: Arc<PluginManager>) -> GuildStateGuard<'_> {
         let path = Path::new(&self.directory);
@@ -352,8 +367,18 @@ impl State {
 
         GuildStateGuard {
             path: file_path,
-            guild_state
+            guild_state,
+            id
         }
+    }
+
+    /// Gets a raw mutable reference to the [GuildState] with the given ID.
+    /// Only use this if you do not intend any changes to be stored on the hard
+    /// drive! If you alter the configuration in any way, use
+    /// [State::guild_state_mut] instead.
+    pub fn guild_state_mut_unguarded(&mut self, id: GuildId)
+            -> Option<&mut GuildState> {
+        self.guild_states.get_mut(&id)
     }
 
     /// Gets the number of guilds for which a state is registered.

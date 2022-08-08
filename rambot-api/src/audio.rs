@@ -201,10 +201,10 @@ pub trait AudioSource {
     /// Unless this method is called outside the framework, it is guaranteed
     /// that the audio source is dropped immediately afterwards. It is
     /// therefore not necessary to keep it in a usable state.
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send>;
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync>;
 }
 
-impl AudioSource for Box<dyn AudioSource + Send> {
+impl AudioSource for Box<dyn AudioSource + Send + Sync> {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         self.as_mut().read(buf)
     }
@@ -213,7 +213,7 @@ impl AudioSource for Box<dyn AudioSource + Send> {
         self.as_ref().has_child()
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.as_mut().take_child()
     }
 }

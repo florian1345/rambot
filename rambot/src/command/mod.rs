@@ -1,8 +1,8 @@
 use crate::FrameworkTypeMapKey;
-use crate::audio::{Mixer, PCMRead, Layer};
+use crate::audio::{PCMRead, Layer, Mixer};
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
-use crate::state::{State, GuildStateGuard};
+use crate::state::{State, GuildStateGuard, GuildState};
 
 use rambot_api::{AudioSource, ModifierDocumentation};
 
@@ -21,7 +21,7 @@ use songbird::input::{Input, Reader};
 
 use std::collections::hash_map::Keys;
 use std::fmt::Write;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use tokio::sync::Mutex as TokioMutex;
 
@@ -34,6 +34,17 @@ pub use adapter::get_adapter_commands;
 pub use board::get_board_commands;
 pub use effect::get_effect_commands;
 pub use layer::get_layer_commands;
+
+macro_rules! unwrap_or_return {
+    ($e:expr, $r:expr) => {
+        match $e {
+            Some(v) => v,
+            None => return $r
+        }
+    }
+}
+
+pub(crate) use unwrap_or_return;
 
 #[group]
 #[commands(audio, connect, directory, disconnect, cmd_do, play, skip, stop)]
@@ -120,21 +131,36 @@ async fn disconnect(ctx: &Context, msg: &Message)
     }
 }
 
-fn to_input<S: AudioSource + Send + 'static>(source: Arc<Mutex<S>>) -> Input {
+fn to_input<S>(source: Arc<RwLock<S>>) -> Input
+where
+    S: AudioSource + Send + Sync + 'static
+{
     let read = PCMRead::new(source);
     Input::float_pcm(true, Reader::Extension(Box::new(read)))
 }
 
-async fn get_mixer(ctx: &Context, msg: &Message)
-        -> Arc<Mutex<Mixer>> {
-    let mut data_guard = ctx.data.write().await;
-    let plugin_manager =
-        Arc::clone(data_guard.get::<PluginManager>().unwrap());
-    let state = data_guard.get_mut::<State>().unwrap();
-    state.guild_state(msg.guild_id.unwrap(), plugin_manager).mixer()
+async fn with_guild_state<T, F>(ctx: &Context, guild_id: GuildId, f: F)
+    -> Option<T>
+where
+    F: FnOnce(&GuildState) -> T
+{
+    let data_guard = ctx.data.read().await;
+    let state = data_guard.get::<State>().unwrap();
+    state.guild_state(guild_id).map(f)
 }
 
-async fn with_guild_state<T, F>(ctx: &Context, guild_id: GuildId, f: F) -> T
+async fn with_guild_state_mut_unguarded<T, F>(ctx: &Context, guild_id: GuildId,
+    f: F) -> Option<T>
+where
+    F: FnOnce(&mut GuildState) -> T
+{
+    let mut data_guard = ctx.data.write().await;
+    let state = data_guard.get_mut::<State>().unwrap();
+    state.guild_state_mut_unguarded(guild_id).map(f)
+}
+
+async fn configure_guild_state<T, F>(ctx: &Context, guild_id: GuildId, f: F)
+    -> T
 where
     F: FnOnce(GuildStateGuard) -> T
 {
@@ -146,36 +172,13 @@ where
     f(guild_state)
 }
 
-async fn with_mixer<T, F>(ctx: &Context, msg: &Message, f: F) -> T
-where
-    F: FnOnce(MutexGuard<Mixer>) -> T
-{
-    with_guild_state(ctx, msg.guild_id.unwrap(),
-        |gs| f(gs.mixer().lock().unwrap())).await
-}
-
-async fn with_mixer_and_layer<T, F>(ctx: &Context, msg: &Message, layer: &str,
-    f: F) -> Option<T>
-where
-    F: FnOnce(MutexGuard<Mixer>) -> T
-{
-    with_mixer(ctx, msg, |mixer| {
-        if mixer.contains_layer(layer) {
-            Some(f(mixer))
-        }
-        else {
-            None
-        }
-    }).await
-}
-
 async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
         call: Arc<TokioMutex<Call>>) -> Option<String> {
-    let plugin_guild_config = with_guild_state(ctx, msg.guild_id.unwrap(),
-        |gs| {
-            gs.build_plugin_guild_config()
-        }).await;
-    let mixer = get_mixer(ctx, msg).await;
+    let guild_id = msg.guild_id.unwrap();
+    let (plugin_guild_config, mixer) = unwrap_or_return!(
+        with_guild_state(ctx, guild_id, |gs| {
+            (gs.build_plugin_guild_config(), gs.mixer_arc())
+        }).await, Some(format!("No layer of name {}.", &layer)));
     let mut call_guard = call.lock().await;
 
     if call_guard.current_channel().is_none() {
@@ -183,7 +186,7 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     }
 
     let active_before = {
-        let mut mixer_guard = mixer.lock().unwrap();
+        let mut mixer_guard = mixer.write().unwrap();
 
         if !mixer_guard.contains_layer(layer) {
             return Some(format!("No layer of name {}.", &layer));
@@ -229,10 +232,19 @@ async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
 )]
 async fn skip(ctx: &Context, msg: &Message, layer: String)
         -> CommandResult<Option<String>> {
-    let result = with_mixer_and_layer(ctx, msg, &layer,
-        |mut mixer| mixer.skip_on_layer(&layer)).await;
+    let result = with_guild_state(ctx, msg.guild_id.unwrap(),
+        |gs| {
+            let mut mixer = gs.mixer_mut();
 
-    match result {
+            if mixer.contains_layer(&layer) {
+                Some(mixer.skip_on_layer(&layer))
+            }
+            else {
+                None
+            }
+        }).await;
+
+    match result.flatten() {
         Some(Ok(())) => Ok(None),
         Some(Err(e)) => Ok(Some(format!("{}", e))),
         None => Ok(Some(format!("Found no layer with name {}.", layer)))
@@ -240,30 +252,34 @@ async fn skip(ctx: &Context, msg: &Message, layer: String)
 }
 
 async fn stop_do(ctx: &Context, msg: &Message, layer: &str) -> Option<String> {
-    let mixer = get_mixer(ctx, msg).await;
-    let mut mixer_guard = mixer.lock().unwrap();
-    
-    if !mixer_guard.contains_layer(layer) {
-        Some(format!("No layer of name {}.", layer))
-    }
-    else if !mixer_guard.stop_layer(layer) {
-        Some("No audio to stop.".to_owned())
-    }
-    else {
-        None
-    }
+    let guild_id = msg.guild_id.unwrap();
+
+    unwrap_or_return!(with_guild_state(ctx, guild_id, |gs| {
+        let mut mixer = gs.mixer_mut();
+
+        if !mixer.contains_layer(layer) {
+            Some(format!("No layer of name {}.", layer))
+        }
+        else if !mixer.stop_layer(layer) {
+            Some("No audio to stop.".to_owned())
+        }
+        else {
+            None
+        }
+    }).await, Some(format!("No layer of name {}.", layer)))
 }
 
 async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
-    let mixer = get_mixer(ctx, msg).await;
-    let mut mixer_guard = mixer.lock().unwrap();
+    let guild_id = msg.guild_id.unwrap();
 
-    if mixer_guard.stop_all() {
-        None
-    }
-    else {
-        Some("No audio to stop.".to_owned())
-    }
+    unwrap_or_return!(with_guild_state(ctx, guild_id, |gs| {
+        if gs.mixer_mut().stop_all() {
+            None
+        }
+        else {
+            Some("No audio to stop.".to_owned())
+        }
+    }).await, Some("No audio to stop.".to_owned()))
 }
 
 #[rambot_command(
@@ -360,7 +376,7 @@ async fn audio(ctx: &Context, msg: &Message, audio: String)
 )]
 async fn directory(ctx: &Context, msg: &Message, directory: String)
         -> CommandResult<Option<String>> {
-    with_guild_state(ctx, msg.guild_id.unwrap(), |mut guild_state|
+    configure_guild_state(ctx, msg.guild_id.unwrap(), |mut guild_state|
         if directory.is_empty() {
             guild_state.unset_root_directory()
         }
@@ -371,16 +387,42 @@ async fn directory(ctx: &Context, msg: &Message, directory: String)
     Ok(None)
 }
 
+async fn configure_layer<F, T>(ctx: &Context, guild_id: GuildId, layer: &str,
+    f: F) -> Option<T>
+where
+    F: FnOnce(RwLockWriteGuard<Mixer>) -> T
+{
+    configure_guild_state(ctx, guild_id, |gs| {
+        let mixer = gs.mixer_mut();
+
+        if mixer.contains_layer(layer) {
+            Some(f(mixer))
+        }
+        else {
+            None
+        }
+    }).await
+}
+
 async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,
     layer: String, name_plural_capital: &str, get: F)
     -> CommandResult<Option<String>>
 where
     F: FnOnce(&Layer) -> &[KeyValueDescriptor]
 {
-    let descriptors = with_mixer_and_layer(ctx, msg, &layer, |mixer|
-        get(mixer.layer(&layer)).iter()
-            .map(|e| format!("{}", e))
-            .collect::<Vec<_>>()).await;
+    let guild_id = msg.guild_id.unwrap();
+    let descriptors = with_guild_state(ctx, guild_id, |gs| {
+        let mixer = gs.mixer();
+
+        if mixer.contains_layer(&layer) {
+            Some(get(mixer.layer(&layer)).iter()
+                .map(|e| format!("{}", e))
+                .collect::<Vec<_>>())
+        }
+        else {
+            None
+        }
+    }).await.flatten();
 
     if let Some(descriptors) = descriptors {
         let mut reply =

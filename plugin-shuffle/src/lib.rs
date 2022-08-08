@@ -23,7 +23,7 @@ fn shuffle<T, R: Rng>(slice: &mut [T], rng: &mut R) {
 }
 
 struct ShuffleAudioSourceList<R> {
-    child: Box<dyn AudioSourceList + Send>,
+    child: Box<dyn AudioSourceList + Send + Sync>,
     next: Option<String>,
     buf: Vec<String>,
     rng: R
@@ -77,9 +77,9 @@ impl AdapterResolver for ShuffleAdapterResolver {
     }
 
     fn resolve(&self, _key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSourceList + Send>,
+            child: Box<dyn AudioSourceList + Send + Sync>,
             _guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSourceList + Send>, String> {
+            -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
         Ok(Box::new(ShuffleAudioSourceList {
             child,
             next: None,

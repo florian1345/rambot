@@ -14,7 +14,7 @@ use rambot_api::{
 use std::{io, collections::HashMap};
 
 struct VolumeEffect {
-    child: Option<Box<dyn AudioSource + Send>>,
+    child: Option<Box<dyn AudioSource + Send + Sync>>,
     volume: f32
 }
 
@@ -33,7 +33,7 @@ impl AudioSource for VolumeEffect {
         true
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.child.take().unwrap()
     }
 }
@@ -69,9 +69,9 @@ impl EffectResolver for VolumeEffectResolver {
     }
 
     fn resolve(&self, key_values: &HashMap<String, String>,
-            child: Box<dyn AudioSource + Send>,
+            child: Box<dyn AudioSource + Send + Sync>,
             _guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, ResolveEffectError> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError> {
         let volume = match get_volume(key_values) {
             Ok(v) => v,
             Err(msg) => return Err(ResolveEffectError::new(msg, child))

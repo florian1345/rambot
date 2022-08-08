@@ -94,7 +94,7 @@ impl<R: Read> AudioSource for Mp3AudioSource<R> {
         false
     }
 
-    fn take_child(&mut self) -> Box<dyn AudioSource + Send> {
+    fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mp3 audio source has no child")
     }
 }
@@ -103,9 +103,9 @@ struct Mp3AudioSourceResolver {
     file_manager: FileManager
 }
 
-fn resolve_reader<R>(reader: R) -> Result<Box<dyn AudioSource + Send>, String>
+fn resolve_reader<R>(reader: R) -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
-    R: Read + Send + 'static
+    R: Read + Send + Sync + 'static
 {
     let decoder = Decoder::new(reader);
     let mut frames = FrameIterator {
@@ -149,7 +149,7 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
     }
 
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
-            -> Result<Box<dyn AudioSource + Send>, String> {
+            -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
     
         match file {

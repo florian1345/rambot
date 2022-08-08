@@ -1,8 +1,8 @@
 use crate::audio::Layer;
 use crate::command::{
+    configure_layer,
     help_modifiers,
-    list_layer_key_value_descriptors,
-    with_mixer_and_layer
+    list_layer_key_value_descriptors
 };
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
@@ -37,7 +37,8 @@ pub fn get_adapter_commands() -> &'static CommandGroup {
 )]
 async fn add(ctx: &Context, msg: &Message, layer: String,
         adapter: KeyValueDescriptor) -> CommandResult<Option<String>> {
-    let success = with_mixer_and_layer(ctx, msg, &layer,
+    let guild_id = msg.guild_id.unwrap();
+    let success = configure_layer(ctx, guild_id, &layer,
         |mut mixer| mixer.add_adapter(&layer, adapter)).await.is_some();
 
     if success {
@@ -57,7 +58,8 @@ async fn add(ctx: &Context, msg: &Message, layer: String,
 )]
 async fn clear(ctx: &Context, msg: &Message, layer: String,
         name: Option<String>) -> CommandResult<Option<String>> {
-    let removed = with_mixer_and_layer(ctx, msg, &layer, |mut mixer|
+    let guild_id = msg.guild_id.unwrap();
+    let removed = configure_layer(ctx, guild_id, &layer, |mut mixer|
         if let Some(name) = &name {
             mixer.retain_adapters(&layer,
                 |descriptor| &descriptor.name != name)
