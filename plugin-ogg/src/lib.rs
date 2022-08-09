@@ -14,25 +14,19 @@ use rambot_api::{
     Sample
 };
 
-use std::collections::VecDeque;
 use std::io::{self, ErrorKind, Read, Seek};
-
-fn fill<T, I>(slice: &mut [T], iter: I)
-where
-    I: Iterator<Item = T>
-{
-    for (i, t) in iter.enumerate() {
-        slice[i] = t;
-    }
-}
 
 struct OggAudioSource<R: Read + Seek> {
     reader: OggStreamReader<R>,
-    remaining: VecDeque<Sample>
+    remaining: Vec<Sample>,
+    remaining_idx: usize
 }
 
 impl<R: Read + Seek> OggAudioSource<R> {
     fn extend_remaining(&mut self, packet: Vec<Vec<f32>>) {
+        self.remaining.clear();
+        self.remaining_idx = 0;
+
         if packet.len() == 1 {
             // Mono
 
@@ -58,14 +52,19 @@ impl<R: Read + Seek> OggAudioSource<R> {
 impl<R: Read + Seek> AudioSource for OggAudioSource<R> {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         loop {
-            let remaining_len = self.remaining.len();
+            let remaining_len = self.remaining.len() - self.remaining_idx;
 
             if remaining_len > buf.len() {
-                fill(buf, self.remaining.drain(..buf.len()));
+                let start = self.remaining_idx;
+                let end = start + buf.len();
+                buf.copy_from_slice(&self.remaining[start..end]);
+                self.remaining_idx = end;
                 return Ok(buf.len());
             }
             else if remaining_len > 0 {
-                fill(buf, self.remaining.drain(..));
+                let start = self.remaining_idx;
+                buf[..remaining_len].copy_from_slice(&self.remaining[start..]);
+                self.remaining_idx = self.remaining.len();
                 return Ok(remaining_len);
             }
             else {
@@ -106,7 +105,8 @@ impl OggAudioSourceResolver {
 
         Ok(plugin_commons::adapt_sampling_rate(OggAudioSource {
             reader: ogg_reader,
-            remaining: VecDeque::new()
+            remaining: Vec::new(),
+            remaining_idx: 0
         }, sampling_rate))
     }
 }
