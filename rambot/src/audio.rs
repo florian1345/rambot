@@ -149,6 +149,56 @@ impl Layer {
     pub fn adapters(&self) -> &[KeyValueDescriptor] {
         &self.adapters
     }
+
+    fn read_from_source<P>(&mut self, capacity: usize, plugin_manager: &P)
+        -> Result<(), io::Error>
+    where
+        P: AsRef<PluginManager>
+    {
+        self.buffer.ensure_capacity(capacity);
+
+        while let Some(source) = &mut self.source {
+            let sample_count = unsafe {
+                let inactive_slice = self.buffer.inactive_slice_mut();
+                let count = source.read(inactive_slice)?;
+                self.buffer.advance_tail(count);
+                count
+            };
+
+            if sample_count == 0 {
+                if let Some(list) = &mut self.list {
+                    if let Some(next) = list.next()? {
+                        // Audio source ran out but list continues
+
+                        let res = play_on_layer(self, &next, plugin_manager);
+
+                        if res.is_err() {
+                            self.list = None;
+                            self.source = None;
+                        }
+
+                        res?;
+                    }
+                    else {
+                        // Audio source ran out and list is finished
+
+                        self.list = None;
+                        self.source = None;
+                    }
+                }
+                else {
+                    // Audio source ran out and there is no list
+
+                    self.source = None;
+                }
+            }
+            else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 struct Layers {
@@ -612,60 +662,12 @@ impl Mixer {
 
 impl AudioSource for Mixer {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
-        // TODO this is too complex. simplify or divide.
-
         let mut size = usize::MAX;
         let mut active_layers = Vec::new();
 
         for layer in self.layers.iter_mut() {
-            if !layer.active() {
-                continue;
-            }
-
-            if layer.buffer.len() < buf.len() {
-                layer.buffer.ensure_capacity(buf.len());
-
-                while let Some(source) = &mut layer.source {
-                    let sample_count = unsafe {
-                        let inactive_slice =
-                            layer.buffer.inactive_slice_mut();
-                        let count = source.read(inactive_slice)?;
-                        layer.buffer.advance_tail(count);
-                        count
-                    };
-
-                    if sample_count == 0 {
-                        if let Some(list) = &mut layer.list {
-                            if let Some(next) = list.next()? {
-                                // Audio source ran out but list continues
-    
-                                let res = play_on_layer(
-                                    layer, &next, &self.plugin_manager);
-
-                                if res.is_err() {
-                                    layer.list = None;
-                                    layer.source = None;
-                                }
-
-                                res?;
-                            }
-                            else {
-                                // Audio source ran out list is finished
-    
-                                layer.list = None;
-                                layer.source = None;
-                            }
-                        }
-                        else {
-                            // Audio source ran out and there is no list
-        
-                            layer.source = None;
-                        }
-                    }
-                    else {
-                        break;
-                    }
-                }
+            if layer.active() && layer.buffer.len() < buf.len() {
+                layer.read_from_source(buf.len(), &self.plugin_manager)?;
             }
 
             // The layer may have been deactivated just now, so we check again
