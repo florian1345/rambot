@@ -73,7 +73,7 @@ async fn remove(ctx: &Context, msg: &Message, name: String)
     let guild_id = msg.guild_id.unwrap();
     let found = configure_board_manager(ctx, guild_id, |board_mgr| {
         if board_mgr.boards.remove(&name).is_some() {
-            board_mgr.active_boards.retain(|_, v| v != &name);
+            board_mgr.active_boards.retain(|_, v| v.name != name);
             true
         }
         else {
@@ -124,8 +124,7 @@ async fn display(ctx: &Context, msg: &Message, name: String)
             }
 
             with_guild_state_mut_unguarded(ctx, guild_id, |gs| {
-                let board_mgr = gs.board_manager_mut();
-                board_mgr.active_boards.insert(board_msg.id, name);
+                gs.board_manager_mut().activate(&name, board_msg.id);
             }).await;
 
             Ok(None)
@@ -180,7 +179,7 @@ pub struct Board {
 /// Manages all sound boards of a guild.
 pub struct BoardManager {
     boards: HashMap<String, Board>,
-    active_boards: HashMap<MessageId, String>
+    active_boards: HashMap<MessageId, Board>
 }
 
 impl Default for BoardManager {
@@ -217,9 +216,14 @@ impl BoardManager {
         }
     }
 
+    fn activate(&mut self, name: &str, message_id: MessageId) {
+        if let Some(board) = self.boards.get(name) {
+            self.active_boards.insert(message_id, board.clone());
+        }
+    }
+
     fn active_board(&self, message_id: MessageId) -> Option<&Board> {
         self.active_boards.get(&message_id)
-            .and_then(|name| self.boards.get(name))
     }
 }
 
