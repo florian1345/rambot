@@ -375,7 +375,7 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
     new_body.stmts.push(syn::parse_quote! {
         let result:
             serenity::framework::standard::CommandResult<Option<String>> =
-                (|| async { return #old_body })().await;
+                (|| async #old_body)().await;
     });
 
     new_body.stmts.push(syn::parse_quote! {
