@@ -4,7 +4,7 @@ use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildStateGuard, GuildState};
 
-use rambot_api::{AudioSource, ModifierDocumentation};
+use rambot_api::{AudioSource, ModifierDocumentation, PluginGuildConfig};
 
 use rambot_proc_macro::rambot_command;
 
@@ -24,6 +24,7 @@ use std::fmt::Write;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::MutexGuard as TokioMutexGuard;
 
 pub mod adapter;
 pub mod board;
@@ -56,6 +57,36 @@ pub fn get_root_commands() -> &'static CommandGroup {
     &ROOT_GROUP
 }
 
+async fn connect_do<'a>(ctx: &Context, msg: &Message,
+        call: TokioMutexGuard<'a, Call>)
+        -> CommandResult<Option<String>> {
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
+    let channel_id_opt = guild.voice_states
+        .get(&msg.author.id)
+        .and_then(|v| v.channel_id);
+    let channel_id = unwrap_or_return!(channel_id_opt,
+        Ok(Some("I cannot see your voice channel. Are you connected?"
+            .to_owned())));
+
+    if let Some(channel) = call.current_channel() {
+        if channel.0 == channel_id.0 {
+            return Ok(Some(
+                "I am already connected to your voice channel."
+                .to_owned()));
+        }
+    }
+
+    drop(call);
+
+    log::debug!("Joining channel {} on guild {}.", channel_id, guild_id);
+
+    let songbird = songbird::get(ctx).await.unwrap();
+    songbird.join(guild_id, channel_id).await.1.unwrap();
+
+    Ok(None)
+}
+
 #[rambot_command(
     description = "Connects the bot to the voice channel to which the sender \
         of the command is currently connected.",
@@ -63,44 +94,14 @@ pub fn get_root_commands() -> &'static CommandGroup {
 )]
 async fn connect(ctx: &Context, msg: &Message)
         -> CommandResult<Option<String>> {
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-    let channel_id_opt = guild.voice_states
-        .get(&msg.author.id)
-        .and_then(|v| v.channel_id);
-
-    let channel_id = match channel_id_opt {
-        Some(c) => c,
-        None => {
-            return Ok(Some(
-                "I cannot see your voice channel. Are you connected?"
-                .to_owned()));
-        }
-    };
-
-    let songbird = songbird::get(ctx).await.unwrap();
-
-    if let Some(call) = songbird.get(guild_id) {
-        if let Some(channel) = call.lock().await.current_channel() {
-            if channel.0 == channel_id.0 {
-                return Ok(Some(
-                    "I am already connected to your voice channel."
-                    .to_owned()));
-            }
-        }
-    }
-
-    log::debug!("Joining channel {} on guild {}.", channel_id, guild_id);
-    songbird.join(guild_id, channel_id).await.1.unwrap();
-    Ok(None)
+    let call = get_songbird_call(ctx, msg).await;
+    connect_do(ctx, msg, call.lock().await).await
 }
 
 async fn get_songbird_call(ctx: &Context, msg: &Message)
-        -> Option<Arc<TokioMutex<Call>>> {
-    let guild = msg.guild(&ctx.cache)?;
-    let guild_id = guild.id;
-    let songbird = songbird::get(ctx).await?;
-    songbird.get(guild_id)
+        -> Arc<TokioMutex<Call>> {
+    let guild_id = msg.guild_id.unwrap();
+    songbird::get(ctx).await.unwrap().get_or_insert(guild_id)
 }
 
 const NOT_CONNECTED: &str = "I am not connected to a voice channel";
@@ -172,42 +173,24 @@ where
     f(guild_state)
 }
 
-async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
-        call: Arc<TokioMutex<Call>>) -> Option<String> {
-    let guild_id = msg.guild_id.unwrap();
-    let (plugin_guild_config, mixer) = unwrap_or_return!(
-        with_guild_state(ctx, guild_id, |gs| {
-            (gs.build_plugin_guild_config(), gs.mixer_arc())
-        }).await, Some(format!("No layer of name {}.", &layer)));
-    let mut call_guard = call.lock().await;
+fn play_mixer(mixer: Arc<RwLock<Mixer>>, layer: &str, audio: &str,
+        plugin_guild_config: PluginGuildConfig) -> (bool, Option<String>) {
+    let mut mixer_guard = mixer.write().unwrap();
 
-    if call_guard.current_channel().is_none() {
-        return Some(NOT_CONNECTED.to_owned());
+    if !mixer_guard.contains_layer(layer) {
+        return (false, Some(format!("No layer of name {}.", &layer)));
     }
 
-    let active_before = {
-        let mut mixer_guard = mixer.write().unwrap();
+    let active_before = mixer_guard.active();
+    let play_res =
+        mixer_guard.play_on_layer(layer, audio, plugin_guild_config);
 
-        if !mixer_guard.contains_layer(layer) {
-            return Some(format!("No layer of name {}.", &layer));
-        }
-
-        let result = mixer_guard.active();
-        let play_res = mixer_guard.play_on_layer(
-            layer, command, plugin_guild_config);
-
-        if let Err(e) = play_res {
-            return Some(format!("{}", e));
-        }
-        
-        result
-    };
-
-    if !active_before {
-        call_guard.play_only_source(to_input(mixer));
+    if let Err(e) = play_res {
+        (active_before, Some(format!("{}", e)))
     }
-
-    None
+    else {
+        (active_before, None)
+    }
 }
 
 #[rambot_command(
@@ -216,12 +199,35 @@ async fn play_do(ctx: &Context, msg: &Message, layer: &str, command: &str,
     usage = "layer audio",
     rest
 )]
-async fn play(ctx: &Context, msg: &Message, layer: String, command: String)
+async fn play(ctx: &Context, msg: &Message, layer: String, audio: String)
         -> CommandResult<Option<String>> {
-    match get_songbird_call(ctx, msg).await {
-        Some(call) => Ok(play_do(ctx, msg, &layer, &command, call).await),
-        None => Ok(Some(NOT_CONNECTED.to_owned()))
+    let guild_id = msg.guild_id.unwrap();
+    let (plugin_guild_config, mixer) = unwrap_or_return!(
+        with_guild_state(ctx, guild_id, |gs| {
+            (gs.build_plugin_guild_config(), gs.mixer_arc())
+        }).await, Ok(Some(format!("No layer of name {}.", &layer))));
+    let call = get_songbird_call(ctx, msg).await;
+    let (active_before, err_msg) =
+        play_mixer(Arc::clone(&mixer), &layer, &audio, plugin_guild_config);
+
+    if let Some(err_msg) = err_msg {
+        return Ok(Some(err_msg));
     }
+
+    let mut call_guard = call.lock().await;
+
+    if !active_before {
+        call_guard.play_only_source(to_input(Arc::clone(&mixer)));
+    }
+
+    if call_guard.current_channel().is_none() {
+        if let Some(err_msg) = connect_do(ctx, msg, call_guard).await? {
+            mixer.write().unwrap().stop_all();
+            return Ok(Some(err_msg));
+        }
+    }
+
+    Ok(None)
 }
 
 #[rambot_command(

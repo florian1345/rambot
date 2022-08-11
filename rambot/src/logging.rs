@@ -21,10 +21,8 @@ use simplelog::{
 
 use std::fmt::{self, Display, Formatter};
 use std::fs::{self, File};
-use std::future::Future;
 use std::io;
 use std::path::Path;
-use std::pin::Pin;
 
 const LOG_DIR: &str = "logs";
 
@@ -136,54 +134,23 @@ pub fn init(level_filter: LevelFilter) -> Result<(), LogInitError> {
 /// An [EventHandler] that creates log entries for some important events.
 pub struct LoggingEventHandler;
 
+#[async_trait::async_trait]
 impl EventHandler for LoggingEventHandler {
 
-    fn guild_create<'life0, 'async_trait>(&'life0 self, _ctx: Context,
-        guild: Guild, _is_new: bool)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
+    async fn guild_create(&self, _ctx: Context, guild: Guild, _is_new: bool) {
         log::info!("Guild \"{}\" (ID {}) created.", guild.name, guild.id);
-
-        Box::pin(async { })
     }
 
-    fn ready<'life0, 'async_trait>(&'life0 self, _ctx: Context,
-        data_about_bot: Ready)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
+    async fn ready(&self, _ctx: Context, data_about_bot: Ready) {
         log::info!("Started session {}.", data_about_bot.session_id);
         log::info!("Running version {}.", data_about_bot.version);
-
-        Box::pin(async { })
     }
 
-    fn resume<'life0, 'async_trait>(&'life0 self, _ctx: Context,
-        _resumed_event: ResumedEvent)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
+    async fn resume(&self, _ctx: Context, _resumed_event: ResumedEvent) {
         log::info!("Resumed session.");
-
-        Box::pin(async { })
     }
 
-    fn unknown<'life0, 'async_trait>(&'life0 self, _ctx: Context,
-        name: String, _raw: Value)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
+    async fn unknown(&self, _ctx: Context, name: String, _raw: Value) {
         log::warn!("Unknown event of name \"{}\".", name);
-
-        Box::pin(async { })
     }
 }

@@ -9,8 +9,6 @@ use crate::command::{
 use rambot_proc_macro::rambot_command;
 
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -303,56 +301,50 @@ where
 /// the reaction is removed, making the button pressable again.
 pub struct BoardButtonEventHandler;
 
+#[async_trait::async_trait]
 impl EventHandler for BoardButtonEventHandler {
-    fn interaction_create<'life0, 'async_trait>(&self, ctx: Context,
-        interaction: Interaction)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            let interaction = match interaction {
-                Interaction::MessageComponent(c) => c,
-                _ => return
-            };
+    async fn interaction_create(&self, ctx: Context,
+            interaction: Interaction) {
+        let interaction = match interaction {
+            Interaction::MessageComponent(c) => c,
+            _ => return
+        };
 
-            if let Some(guild_id) = interaction.guild_id {
-                let command = with_board_manager(&ctx, guild_id, |board_mgr|
-                    board_mgr.active_board(interaction.message.id)
-                        .and_then(|b| {
-                            let id: usize = interaction.data.custom_id.parse()
-                                .unwrap();
-                            b.buttons.get(id)
-                        })
-                        .map(|b| &b.command)
-                        .cloned()).await.flatten();
+        if let Some(guild_id) = interaction.guild_id {
+            let command = with_board_manager(&ctx, guild_id, |board_mgr|
+                board_mgr.active_board(interaction.message.id)
+                    .and_then(|b| {
+                        let id: usize = interaction.data.custom_id.parse()
+                            .unwrap();
+                        b.buttons.get(id)
+                    })
+                    .map(|b| &b.command)
+                    .cloned()).await.flatten();
 
-                if let Some(command) = command {
-                    let channel_id = interaction.channel_id.0;
-                    let message_id = interaction.message.id.0;
-                    let mut msg = ctx.http.get_message(channel_id, message_id)
-                        .await.unwrap();
+            if let Some(command) = command {
+                let channel_id = interaction.channel_id.0;
+                let message_id = interaction.message.id.0;
+                let mut msg = ctx.http.get_message(channel_id, message_id)
+                    .await.unwrap();
 
-                    msg.content = command;
-                    msg.author = interaction.user.clone();
-                    msg.webhook_id = None;
-                    msg.kind = MessageType::Unknown; // Prevents :ok_hand:
+                msg.content = command;
+                msg.author = interaction.user.clone();
+                msg.webhook_id = None;
+                msg.kind = MessageType::Unknown; // Prevents :ok_hand:
 
-                    // For some reason, this becomes unset
-                    msg.guild_id = Some(guild_id);
+                // For some reason, this becomes unset
+                msg.guild_id = Some(guild_id);
 
-                    let framework = Arc::clone(ctx.data
-                        .read()
-                        .await
-                        .get::<FrameworkTypeMapKey>()
-                        .unwrap());
+                let framework = Arc::clone(ctx.data
+                    .read()
+                    .await
+                    .get::<FrameworkTypeMapKey>()
+                    .unwrap());
 
-                    interaction.create_interaction_response(&ctx, |r|
-                        r.kind(InteractionResponseType::DeferredUpdateMessage)).await.unwrap();
-                    framework.dispatch(ctx, msg).await;
-                }
+                interaction.create_interaction_response(&ctx, |r|
+                    r.kind(InteractionResponseType::DeferredUpdateMessage)).await.unwrap();
+                framework.dispatch(ctx, msg).await;
             }
-        })
+        }
     }
 }
