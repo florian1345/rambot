@@ -10,8 +10,6 @@ use rambot_proc_macro::rambot_command;
 
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -249,63 +247,56 @@ where
 /// the reaction is removed, making the button pressable again.
 pub struct BoardButtonEventHandler;
 
+#[async_trait::async_trait]
 impl EventHandler for BoardButtonEventHandler {
-    fn reaction_add<'life0, 'async_trait>(&self, ctx: Context,
-        add_reaction: Reaction)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            let sender = match add_reaction.user(&ctx).await {
-                Ok(u) => u,
-                Err(e) => {
-                    log::error!("Could not find reaction sender: {}", e);
-                    return;
-                }
-            };
-
-            if sender.id == ctx.cache.current_user_id() {
+    async fn reaction_add(&self, ctx: Context, add_reaction: Reaction) {
+        let sender = match add_reaction.user(&ctx).await {
+            Ok(u) => u,
+            Err(e) => {
+                log::error!("Could not find reaction sender: {}", e);
                 return;
             }
+        };
 
-            if let Some(guild_id) = add_reaction.guild_id {
-                let command = with_board_manager(&ctx, guild_id, |board_mgr|
-                    board_mgr.active_board(add_reaction.message_id)
-                        .and_then(|b| b.buttons.iter()
-                            .find(|btn| btn.emote == add_reaction.emoji)
-                            .map(|btn| &btn.command))
-                        .cloned()).await.flatten();
+        if sender.id == ctx.cache.current_user_id() {
+            return;
+        }
 
-                if let Some(command) = command {
-                    if let Err(e) = add_reaction.delete(&ctx).await {
-                        log::error!("Could not remove reaction of sound board: {}", e);
-                        return;
-                    }
+        if let Some(guild_id) = add_reaction.guild_id {
+            let command = with_board_manager(&ctx, guild_id, |board_mgr|
+                board_mgr.active_board(add_reaction.message_id)
+                    .and_then(|b| b.buttons.iter()
+                        .find(|btn| btn.emote == add_reaction.emoji)
+                        .map(|btn| &btn.command))
+                    .cloned()).await.flatten();
 
-                    let channel_id = add_reaction.channel_id.0;
-                    let message_id = add_reaction.message_id.0;
-                    let mut msg = ctx.http.get_message(channel_id, message_id)
-                        .await.unwrap();
-
-                    msg.content = command;
-                    msg.author = sender;
-                    msg.webhook_id = None;
-                    msg.kind = MessageType::Unknown; // Prevents :ok_hand:
-
-                    // For some reason, this becomes unset
-                    msg.guild_id = Some(guild_id);
-
-                    let framework = Arc::clone(ctx.data
-                        .read()
-                        .await
-                        .get::<FrameworkTypeMapKey>()
-                        .unwrap());
-
-                    framework.dispatch(ctx, msg).await;
+            if let Some(command) = command {
+                if let Err(e) = add_reaction.delete(&ctx).await {
+                    log::error!("Could not remove reaction of sound board: {}", e);
+                    return;
                 }
+
+                let channel_id = add_reaction.channel_id.0;
+                let message_id = add_reaction.message_id.0;
+                let mut msg = ctx.http.get_message(channel_id, message_id)
+                    .await.unwrap();
+
+                msg.content = command;
+                msg.author = sender;
+                msg.webhook_id = None;
+                msg.kind = MessageType::Unknown; // Prevents :ok_hand:
+
+                // For some reason, this becomes unset
+                msg.guild_id = Some(guild_id);
+
+                let framework = Arc::clone(ctx.data
+                    .read()
+                    .await
+                    .get::<FrameworkTypeMapKey>()
+                    .unwrap());
+
+                framework.dispatch(ctx, msg).await;
             }
-        })
+        }
     }
 }

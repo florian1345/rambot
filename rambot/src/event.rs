@@ -6,9 +6,6 @@ use serenity::model::prelude::Ready;
 use serenity::model::event::ResumedEvent;
 use serenity::model::guild::Guild;
 
-use std::pin::Pin;
-use std::future::Future;
-
 /// An [EventHandler] that sequentially forwards all received events to two
 /// child event handlers. To construct this, use the [EventHandlerComposer].
 pub struct CompositeEventHandler<E1, E2> {
@@ -16,6 +13,7 @@ pub struct CompositeEventHandler<E1, E2> {
     e2: E2
 }
 
+#[async_trait::async_trait]
 impl<E1, E2> EventHandler for CompositeEventHandler<E1, E2>
 where
     E1: EventHandler,
@@ -23,69 +21,29 @@ where
 {
     // TODO complete this list
 
-    fn guild_create<'life0, 'async_trait>(&'life0 self, ctx: Context,
-        guild: Guild, is_new: bool)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            self.e1.guild_create(ctx.clone(), guild.clone(), is_new).await;
-            self.e2.guild_create(ctx, guild, is_new).await;
-        })
+    async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
+        self.e1.guild_create(ctx.clone(), guild.clone(), is_new).await;
+        self.e2.guild_create(ctx, guild, is_new).await;
     }
 
-    fn reaction_add<'life0, 'async_trait>(&'life0 self, ctx: Context,
-        add_reaction: Reaction)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            self.e1.reaction_add(ctx.clone(), add_reaction.clone()).await;
-            self.e2.reaction_add(ctx, add_reaction).await;
-        })
+    async fn reaction_add(&self, ctx: Context, add_reaction: Reaction) {
+        self.e1.reaction_add(ctx.clone(), add_reaction.clone()).await;
+        self.e2.reaction_add(ctx, add_reaction).await;
     }
 
-    fn ready<'life0, 'async_trait>(&'life0 self, ctx: Context,
-        data_about_bot: Ready)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            self.e1.ready(ctx.clone(), data_about_bot.clone()).await;
-            self.e2.ready(ctx, data_about_bot).await;
-        })
+    async fn ready(&self, ctx: Context, data_about_bot: Ready) {
+        self.e1.ready(ctx.clone(), data_about_bot.clone()).await;
+        self.e2.ready(ctx, data_about_bot).await;
     }
 
-    fn resume<'life0, 'async_trait>(&'life0 self, ctx: Context,
-        resumed_event: ResumedEvent)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            self.e1.resume(ctx.clone(), resumed_event.clone()).await;
-            self.e2.resume(ctx, resumed_event).await;
-        })
+    async fn resume(&self, ctx: Context, resumed_event: ResumedEvent) {
+        self.e1.resume(ctx.clone(), resumed_event.clone()).await;
+        self.e2.resume(ctx, resumed_event).await;
     }
 
-    fn unknown<'life0, 'async_trait>(&'life0 self, ctx: Context,
-        name: String, raw: Value)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait
-    {
-        Box::pin(async move {
-            self.e1.unknown(ctx.clone(), name.clone(), raw.clone()).await;
-            self.e2.unknown(ctx, name, raw).await;
-        })
+    async fn unknown(&self, ctx: Context, name: String, raw: Value) {
+        self.e1.unknown(ctx.clone(), name.clone(), raw.clone()).await;
+        self.e2.unknown(ctx, name, raw).await;
     }
 }
 
