@@ -177,13 +177,13 @@ fn play_mixer(mixer: Arc<RwLock<Mixer>>, layer: &str, audio: &str,
         plugin_guild_config: PluginGuildConfig) -> (bool, Option<String>) {
     let mut mixer_guard = mixer.write().unwrap();
 
-    if !mixer_guard.contains_layer(&layer) {
+    if !mixer_guard.contains_layer(layer) {
         return (false, Some(format!("No layer of name {}.", &layer)));
     }
 
     let active_before = mixer_guard.active();
     let play_res =
-        mixer_guard.play_on_layer(&layer, &audio, plugin_guild_config);
+        mixer_guard.play_on_layer(layer, audio, plugin_guild_config);
 
     if let Err(e) = play_res {
         (active_before, Some(format!("{}", e)))
