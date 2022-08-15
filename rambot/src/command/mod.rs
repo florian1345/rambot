@@ -186,8 +186,9 @@ fn play_mixer(ctx: &Context, msg: &Message, mixer: Arc<RwLock<Mixer>>,
     let active_before = mixer_guard.active();
     let ctx_clone = ctx.clone();
     let msg_clone = msg.clone();
-    let error_callback = move |e| {
-        let future = msg_clone.reply(&ctx_clone, e);
+    let error_callback = move |layer, e| {
+        let content = format!("Error on layer {}: {}", layer, e);
+        let future = msg_clone.reply(&ctx_clone, content);
 
         if let Ok(handle) = Handle::try_current() {
             handle.block_on(future).unwrap();

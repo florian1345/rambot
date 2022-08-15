@@ -90,10 +90,10 @@ impl AudioSourceList for SingleAudioSourceList {
     }
 }
 
-type ErrorCallback = Box<dyn Fn(String) + Send + Sync>;
+type ErrorCallback = Box<dyn Fn(String, io::Error) + Send + Sync>;
 
 fn no_callback() -> ErrorCallback {
-    Box::new(|_| { })
+    Box::new(|_, _| { })
 }
 
 /// A single layer of a [Mixer] which wraps up to one active [AudioSource]. The
@@ -188,16 +188,9 @@ impl Layer {
                         let res = play_on_layer(self, &next, plugin_manager);
 
                         if let Err(e) = res {
-                            let msg = format!("Error on layer `{}`: {}",
-                                self.name(), &e);
-
-                            (self.error_callback)(msg);
+                            (self.error_callback)(self.name.clone(), e);
                             self.deactivate();
-
-                            return Err(e);
                         }
-
-                        res?;
                     }
                     else {
                         // Audio source ran out and list is finished
@@ -616,7 +609,7 @@ impl Mixer {
         plugin_guild_config: PluginGuildConfig, error_callback: E)
         -> Result<(), io::Error>
     where
-        E: Fn(String) + Send + Sync + 'static
+        E: Fn(String, io::Error) + Send + Sync + 'static
     {
         let layer = self.layers.get_mut(layer);
         let audio = to_io_err(
