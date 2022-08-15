@@ -188,7 +188,6 @@ impl Layer {
                         let res = play_on_layer(self, &next, plugin_manager);
 
                         if let Err(e) = res {
-                            println!("Calling error callback ...");
                             let msg = format!("Error on layer `{}`: {}",
                                 self.name(), &e);
 
