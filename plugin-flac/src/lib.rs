@@ -1,6 +1,3 @@
-// TODO occasionally check for ouroboros update that mitigates this issue
-#![allow(clippy::drop_non_drop)]
-
 use claxon::FlacReader;
 use claxon::frame::{Block, FrameReader};
 use claxon::input::BufferedReader;
