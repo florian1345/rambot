@@ -746,14 +746,15 @@ impl<S: AudioSource + Send> PCMRead<S> {
     }
 }
 
-const SAMPLE_SIZE: usize = 8;
+const CHANNEL_SIZE: usize = 4;
+const SAMPLE_SIZE: usize = 2 * CHANNEL_SIZE;
 
 #[cfg(feature = "bench")]
 const SAMPLES_FOR_REPORT: usize = 96000;
 
 fn to_bytes(buf: &mut [u8], s: &Sample) {
-    buf[..4].copy_from_slice(&s.left.to_le_bytes());
-    buf[4..8].copy_from_slice(&s.right.to_le_bytes());
+    buf[..CHANNEL_SIZE].copy_from_slice(&s.left.to_le_bytes());
+    buf[CHANNEL_SIZE..SAMPLE_SIZE].copy_from_slice(&s.right.to_le_bytes());
 }
 
 impl<S: AudioSource + Send> Read for PCMRead<S> {
