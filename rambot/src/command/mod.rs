@@ -18,6 +18,7 @@ use serenity::model::prelude::Message;
 use songbird::Call;
 use songbird::error::JoinError;
 use songbird::input::{Input, Reader};
+use tokio::runtime::{Handle, Runtime};
 
 use std::collections::hash_map::Keys;
 use std::fmt::Write;
@@ -173,8 +174,9 @@ where
     f(guild_state)
 }
 
-fn play_mixer(mixer: Arc<RwLock<Mixer>>, layer: &str, audio: &str,
-        plugin_guild_config: PluginGuildConfig) -> (bool, Option<String>) {
+fn play_mixer(ctx: &Context, msg: &Message, mixer: Arc<RwLock<Mixer>>,
+        layer: &str, audio: &str, plugin_guild_config: PluginGuildConfig)
+        -> (bool, Option<String>) {
     let mut mixer_guard = mixer.write().unwrap();
 
     if !mixer_guard.contains_layer(layer) {
@@ -182,8 +184,21 @@ fn play_mixer(mixer: Arc<RwLock<Mixer>>, layer: &str, audio: &str,
     }
 
     let active_before = mixer_guard.active();
-    let play_res =
-        mixer_guard.play_on_layer(layer, audio, plugin_guild_config);
+    let ctx_clone = ctx.clone();
+    let msg_clone = msg.clone();
+    let error_callback = move |e| {
+        let future = msg_clone.reply(&ctx_clone, e);
+
+        if let Ok(handle) = Handle::try_current() {
+            handle.block_on(future).unwrap();
+        }
+        else {
+            let runtime = Runtime::new().unwrap();
+            runtime.block_on(future).unwrap();
+        }
+    };
+    let play_res = mixer_guard.play_on_layer(
+        layer, audio, plugin_guild_config, error_callback);
 
     if let Err(e) = play_res {
         (active_before, Some(format!("{}", e)))
@@ -207,8 +222,8 @@ async fn play(ctx: &Context, msg: &Message, layer: String, audio: String)
             (gs.build_plugin_guild_config(), gs.mixer_arc())
         }).await, Ok(Some(format!("No layer of name {}.", &layer))));
     let call = get_songbird_call(ctx, msg).await;
-    let (active_before, err_msg) =
-        play_mixer(Arc::clone(&mixer), &layer, &audio, plugin_guild_config);
+    let (active_before, err_msg) = play_mixer(
+        ctx, msg, Arc::clone(&mixer), &layer, &audio, plugin_guild_config);
 
     if let Some(err_msg) = err_msg {
         return Ok(Some(err_msg));
