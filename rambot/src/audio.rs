@@ -90,6 +90,12 @@ impl AudioSourceList for SingleAudioSourceList {
     }
 }
 
+type ErrorCallback = Box<dyn Fn(String) + Send + Sync>;
+
+fn no_callback() -> ErrorCallback {
+    Box::new(|_| { })
+}
+
 /// A single layer of a [Mixer] which wraps up to one active [AudioSource]. The
 /// public methods of this type only allow access to the general information
 /// about the structure of this layer, not the actual audio played.
@@ -97,6 +103,7 @@ pub struct Layer {
     name: String,
     source: Option<Box<dyn AudioSource + Send + Sync>>,
     list: Option<Box<dyn AudioSourceList + Send + Sync>>,
+    error_callback: ErrorCallback,
     buffer: AudioBuffer,
     effects: Vec<KeyValueDescriptor>,
     adapters: Vec<KeyValueDescriptor>,
@@ -110,6 +117,7 @@ impl Layer {
             name: name.into(),
             source: None,
             list: None,
+            error_callback: no_callback(),
             buffer: AudioBuffer::new(),
             effects: Vec::new(),
             adapters: Vec::new(),
@@ -127,8 +135,15 @@ impl Layer {
     }
 
     fn stop(&mut self) -> bool {
+        self.error_callback = no_callback();
         self.buffer.clear();
         self.list.take().is_some() | self.source.take().is_some()
+    }
+
+    fn deactivate(&mut self) {
+        self.list = None;
+        self.source = None;
+        self.error_callback = no_callback();
     }
 
     /// Gets the name of this layer.
@@ -172,9 +187,14 @@ impl Layer {
 
                         let res = play_on_layer(self, &next, plugin_manager);
 
-                        if res.is_err() {
-                            self.list = None;
-                            self.source = None;
+                        if let Err(e) = res {
+                            let msg = format!("Error on layer `{}`: {}",
+                                self.name(), &e);
+
+                            (self.error_callback)(msg);
+                            self.deactivate();
+
+                            return Err(e);
                         }
 
                         res?;
@@ -182,14 +202,13 @@ impl Layer {
                     else {
                         // Audio source ran out and list is finished
 
-                        self.list = None;
-                        self.source = None;
+                        self.deactivate();
                     }
                 }
                 else {
                     // Audio source ran out and there is no list
 
-                    self.source = None;
+                    self.deactivate();
                 }
             }
             else {
@@ -203,7 +222,7 @@ impl Layer {
 
 struct Layers {
     layers: Vec<Layer>,
-    names: HashMap<String, usize>,
+    names: HashMap<String, usize>
 }
 
 impl Layers {
@@ -593,8 +612,12 @@ impl Mixer {
 
     /// Plays audio given some `descriptor` on the `layer` with the given name.
     /// Panics if the layer does not exist.
-    pub fn play_on_layer(&mut self, layer: &str, descriptor: &str,
-            plugin_guild_config: PluginGuildConfig) -> Result<(), io::Error> {
+    pub fn play_on_layer<E>(&mut self, layer: &str, descriptor: &str,
+        plugin_guild_config: PluginGuildConfig, error_callback: E)
+        -> Result<(), io::Error>
+    where
+        E: Fn(String) + Send + Sync + 'static
+    {
         let layer = self.layers.get_mut(layer);
         let audio = to_io_err(
             self.plugin_manager.resolve_audio_descriptor_list(descriptor,
@@ -602,6 +625,7 @@ impl Mixer {
 
         layer.stop();
         layer.plugin_guild_config = plugin_guild_config;
+        layer.error_callback = Box::new(error_callback);
 
         match audio {
             AudioDescriptorList::Single(source) => {
@@ -1048,18 +1072,24 @@ mod tests {
         Mixer::new(Arc::new(plugin_manager))
     }
 
+    fn play(mixer: &mut Mixer, layer: &str, descriptor: &str)
+            -> Result<(), io::Error> {
+        mixer.play_on_layer(
+            layer, descriptor, Default::default(), no_callback())
+    }
+
     #[test]
     #[should_panic]
     fn play_on_nonexistent_layer() {
         let mut mixer = registered_mixer();
-        let _ = mixer.play_on_layer("l", "1", Default::default());
+        let _ = play(&mut mixer, "l", "1");
     }
 
     #[test]
     fn play_unresolveable_audio_source() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        let res = mixer.play_on_layer("l", "#", Default::default());
+        let res = play(&mut mixer, "l", "#");
 
         assert!(res.is_err());
         assert!(!mixer.active());
@@ -1069,7 +1099,7 @@ mod tests {
     fn play_single_audio_source() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1").unwrap();
 
         assert!(mixer.active());
 
@@ -1083,7 +1113,7 @@ mod tests {
     fn play_playlist() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1,2,1").unwrap();
 
         assert!(mixer.active());
 
@@ -1100,7 +1130,7 @@ mod tests {
     fn skip_during_single_audio_source() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1").unwrap();
 
         assert!(mixer.read(&mut [Sample::ZERO; 10]).unwrap() > 0);
 
@@ -1114,7 +1144,7 @@ mod tests {
     fn skip_during_playlist() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1,2,1").unwrap();
 
         assert!(mixer.read(&mut [Sample::ZERO; 10]).unwrap() > 0);
 
@@ -1134,7 +1164,7 @@ mod tests {
     fn skip_end_of_playlist() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1,2,1").unwrap();
 
         let mut total = 0;
 
@@ -1155,7 +1185,7 @@ mod tests {
     fn stop_layer() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1,2,1").unwrap();
         mixer.stop_layer("l");
 
         assert!(!mixer.active());
@@ -1165,7 +1195,7 @@ mod tests {
     fn stop_all() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,2,1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1,2,1").unwrap();
         mixer.stop_all();
 
         assert!(!mixer.active());
@@ -1175,7 +1205,7 @@ mod tests {
     fn mid_playlist_resolution_fail() {
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,#,1", Default::default()).unwrap();
+        play(&mut mixer, "l", "1,#,1").unwrap();
 
         assert!(mixer.active());
 
