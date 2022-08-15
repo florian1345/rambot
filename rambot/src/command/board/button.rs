@@ -1,6 +1,5 @@
 use crate::command::board::{
     configure_board_manager,
-    with_board_manager,
     Button,
     Board
 };
@@ -10,14 +9,11 @@ use rambot_proc_macro::rambot_command;
 use serenity::client::Context;
 use serenity::framework::standard::CommandResult;
 use serenity::framework::standard::macros::{command, group};
-use serenity::model::channel::ReactionType;
 use serenity::model::prelude::Message;
-
-use std::fmt::Write;
 
 #[group("Button")]
 #[prefix("button")]
-#[commands(add, command, description, get, remove)]
+#[commands(add, command, remove)]
 struct ButtonCmd;
 
 async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
@@ -37,41 +33,40 @@ where
 }
 
 async fn configure_button<F>(ctx: &Context, msg: &Message, board_name: String,
-    button_emote: ReactionType, f: F) -> CommandResult<Option<String>>
+    label: String, f: F) -> CommandResult<Option<String>>
 where
     F: FnOnce(&mut Button) -> Option<String>
 {
     configure_board(ctx, msg, board_name, |board| {
         let button = board.buttons.iter_mut()
-            .find(|btn| btn.emote == button_emote);
+            .find(|btn| btn.label == label);
 
         if let Some(button) = button {
             f(button)
         }
         else {
-            Some(format!("I found no button with the emote {}.", button_emote))
+            Some(format!("I found no button with the label {}.", label))
         }
     }).await
 }
 
 #[rambot_command(
     description = "Adds a button of the board with the given name represented \
-        by the given emote that, when pressed, executes the given command.",
-    usage = "board emote command",
+        by the given label that, when pressed, executes the given command.",
+    usage = "board label command",
     rest,
     confirm
 )]
 async fn add(ctx: &Context, msg: &Message, board_name: String,
-        emote: ReactionType, command: String)
+        label: String, command: String)
         -> CommandResult<Option<String>> {
     configure_board(ctx, msg, board_name, |board| {
-        if board.buttons.iter().any(|btn| btn.emote == emote) {
-            Some(format!("Duplicate button: {}.", emote))
+        if board.buttons.iter().any(|btn| btn.label == label) {
+            Some(format!("Duplicate button: {}.", label))
         }
         else {
             board.buttons.push(Button {
-                emote,
-                description: String::new(),
+                label,
                 command
             });
             None
@@ -80,100 +75,40 @@ async fn add(ctx: &Context, msg: &Message, board_name: String,
 }
 
 #[rambot_command(
-    description = "Assigns the given description to the button represented by \
-        the given emote on the board with the given name. Omit description to \
-        remove it from the button.",
-    usage = "board emote [description]",
-    rest,
-    confirm
-)]
-async fn description(ctx: &Context, msg: &Message, board_name: String,
-        emote: ReactionType, description: String)
-        -> CommandResult<Option<String>> {
-    configure_button(ctx, msg, board_name, emote, |button| {
-        button.description = description;
-        None
-    }).await
-}
-
-#[rambot_command(
     description = "Assigns a new command to the button represented by the \
-        given emote on the board with the given name.",
-    usage = "board emote command",
+        given label on the board with the given name.",
+    usage = "board label command",
     rest,
     confirm
 )]
 async fn command(ctx: &Context, msg: &Message, board_name: String,
-        emote: ReactionType, command: String)
+        label: String, command: String)
         -> CommandResult<Option<String>> {
     if command.is_empty() {
         return Ok(Some("Command may not be empty.".to_owned()));
     }
 
-    configure_button(ctx, msg, board_name, emote, |button| {
+    configure_button(ctx, msg, board_name, label, |button| {
         button.command = command;
         None
     }).await
 }
 
 #[rambot_command(
-    description = "Gets the current command and description of the button \
-        represented by the given emote on the board with the given name.",
-    usage = "board emote"
-)]
-async fn get(ctx: &Context, msg: &Message, board_name: String,
-        emote: ReactionType) -> CommandResult<Option<String>> {
-    let mut response = String::new();
-    let guild_id = msg.guild_id.unwrap();
-    let with_button_res = with_board_manager(ctx, guild_id, |board_mgr| {
-        if let Some(board) = board_mgr.boards.get(&board_name) {
-            let button = board.buttons.iter().find(|b| b.emote == emote);
-
-            if let Some(button) = button {
-                response = format!("Command: `{}`\n", button.command);
-        
-                if button.description.is_empty() {
-                    write!(response, "No description.").unwrap();
-                }
-                else {
-                    write!(response, "Description: {}", button.description).unwrap();
-                }
-        
-                None
-            }
-            else {
-                Some(format!("No button with emote {}.", emote))
-            }
-        }
-        else {
-            Some(format!("No board with name {}.", board_name))
-        }
-    }).await.unwrap_or_else(||
-        Some(format!("No board with name {}.", board_name)));
-
-    if let Some(e) = with_button_res {
-        return Ok(Some(e));
-    }
-
-    msg.reply(ctx, response).await?;
-    Ok(None)
-}
-
-#[rambot_command(
-    description = "Removes the button represented by the given emote from the \
+    description = "Removes the button represented by the given label from the \
         sound board with the given name.",
-    usage = "board emote",
+    usage = "board label",
     confirm
 )]
 async fn remove(ctx: &Context, msg: &Message, board_name: String,
-        emote: ReactionType) -> CommandResult<Option<String>> {
+        label: String) -> CommandResult<Option<String>> {
     configure_board(ctx, msg, board_name, |board| {
         let old_len = board.buttons.len();
 
-        board.buttons.retain(|btn| btn.emote != emote);
+        board.buttons.retain(|btn| btn.label != label);
 
         if board.buttons.len() == old_len {
-            Some(format!("I found no button with the emote {}.", emote))
+            Some(format!("I found no button with the label {}.", label))
         }
         else {
             None

@@ -9,15 +9,19 @@ use crate::command::{
 use rambot_proc_macro::rambot_command;
 
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use serenity::builder::{CreateComponents, CreateActionRow, CreateButton};
 use serenity::client::{Context, EventHandler};
 use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
-use serenity::model::channel::{ReactionType, Reaction, MessageType};
+use serenity::model::application::interaction::{
+    Interaction,
+    InteractionResponseType
+};
+use serenity::model::channel::MessageType;
 use serenity::model::id::{MessageId, GuildId};
 use serenity::model::prelude::Message;
 
@@ -106,24 +110,27 @@ async fn display(ctx: &Context, msg: &Message, name: String)
 
     match board_res {
         Ok(board) => {
-            let mut content = format!("Sound board `{}`:", name);
+            let content = format!("**{}**\n", name);
+            let mut board_msgs = Vec::new();
 
-            for button in &board.buttons {
-                if !button.description.is_empty() {
-                    write!(content, "\n{} : {}", &button.emote,
-                        &button.description).unwrap();
-                }
+            board_msgs.push(msg.channel_id.send_message(ctx, |m| {
+                m.content(content)
+                    .components(|c| board.add_as_components(c, 0))
+            }).await?);
+
+            for page in 1..board.page_count() {
+                board_msgs.push(msg.channel_id.send_message(ctx, |m| {
+                    m.components(|c| board.add_as_components(c, page))
+                }).await?);
             }
 
-            let board_msg = msg.channel_id.say(ctx, content).await?;
+            for board_msg in board_msgs {
+                let name = name.clone();
 
-            for button in &board.buttons {
-                board_msg.react(ctx, button.emote.clone()).await?;
+                with_guild_state_mut_unguarded(ctx, guild_id, |gs| {
+                    gs.board_manager_mut().activate(&name, board_msg.id);
+                }).await;
             }
-
-            with_guild_state_mut_unguarded(ctx, guild_id, |gs| {
-                gs.board_manager_mut().activate(&name, board_msg.id);
-            }).await;
 
             Ok(None)
         },
@@ -161,9 +168,19 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult<Option<String>> {
 /// and executes a single command when pressed.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Button {
-    emote: ReactionType,
-    description: String,
+    label: String,
     command: String
+}
+
+impl Button {
+    fn component_button(&self, index: usize) -> CreateButton {
+        let mut button = CreateButton::default();
+
+        button.label(&self.label)
+            .custom_id(format!("{}", index));
+
+        button
+    }
 }
 
 /// A sound board which constitutes one message when displayed. The message
@@ -174,6 +191,43 @@ pub struct Board {
     buttons: Vec<Button>
 }
 
+const MAX_BUTTONS_PER_ROW: usize = 5;
+const MAX_ROWS_PER_MESSAGE: usize = 5;
+const MAX_BUTTONS_PER_MESSAGE: usize =
+    MAX_ROWS_PER_MESSAGE * MAX_BUTTONS_PER_ROW;
+
+impl Board {
+    fn page_count(&self) -> usize {
+        (self.buttons.len() + MAX_BUTTONS_PER_MESSAGE - 1) / MAX_BUTTONS_PER_MESSAGE
+    }
+
+    fn action_row(&self, button_row: &[Button], base_idx: usize) -> CreateActionRow {
+        let mut action_row = CreateActionRow::default();
+    
+        for (d_idx, button) in button_row.iter().enumerate() {
+            let index = base_idx * MAX_BUTTONS_PER_ROW + d_idx;
+            action_row.add_button(button.component_button(index));
+        }
+    
+        action_row
+    }
+
+    fn add_as_components<'comp>(&self, c: &'comp mut CreateComponents,
+            page: usize) -> &'comp mut CreateComponents {
+        let row_offset = page * MAX_ROWS_PER_MESSAGE;
+        let chunks = self.buttons.chunks(MAX_BUTTONS_PER_ROW)
+            .skip(row_offset)
+            .take(MAX_ROWS_PER_MESSAGE);
+
+        for (row_idx, button_row) in chunks.enumerate() {
+            let base_idx = row_idx + row_offset;
+            c.add_action_row(self.action_row(button_row, base_idx));
+        }
+
+        c
+    }
+}
+
 /// Manages all sound boards of a guild.
 pub struct BoardManager {
     boards: HashMap<String, Board>,
@@ -181,7 +235,7 @@ pub struct BoardManager {
 }
 
 impl Default for BoardManager {
-    fn default() -> BoardManager{
+    fn default() -> BoardManager {
         BoardManager::new()
     }
 }
@@ -249,40 +303,32 @@ pub struct BoardButtonEventHandler;
 
 #[async_trait::async_trait]
 impl EventHandler for BoardButtonEventHandler {
-    async fn reaction_add(&self, ctx: Context, add_reaction: Reaction) {
-        let sender = match add_reaction.user(&ctx).await {
-            Ok(u) => u,
-            Err(e) => {
-                log::error!("Could not find reaction sender: {}", e);
-                return;
-            }
+    async fn interaction_create(&self, ctx: Context,
+            interaction: Interaction) {
+        let interaction = match interaction {
+            Interaction::MessageComponent(c) => c,
+            _ => return
         };
 
-        if sender.id == ctx.cache.current_user_id() {
-            return;
-        }
-
-        if let Some(guild_id) = add_reaction.guild_id {
+        if let Some(guild_id) = interaction.guild_id {
             let command = with_board_manager(&ctx, guild_id, |board_mgr|
-                board_mgr.active_board(add_reaction.message_id)
-                    .and_then(|b| b.buttons.iter()
-                        .find(|btn| btn.emote == add_reaction.emoji)
-                        .map(|btn| &btn.command))
+                board_mgr.active_board(interaction.message.id)
+                    .and_then(|b| {
+                        let id: usize = interaction.data.custom_id.parse()
+                            .unwrap();
+                        b.buttons.get(id)
+                    })
+                    .map(|b| &b.command)
                     .cloned()).await.flatten();
 
             if let Some(command) = command {
-                if let Err(e) = add_reaction.delete(&ctx).await {
-                    log::error!("Could not remove reaction of sound board: {}", e);
-                    return;
-                }
-
-                let channel_id = add_reaction.channel_id.0;
-                let message_id = add_reaction.message_id.0;
+                let channel_id = interaction.channel_id.0;
+                let message_id = interaction.message.id.0;
                 let mut msg = ctx.http.get_message(channel_id, message_id)
                     .await.unwrap();
 
                 msg.content = command;
-                msg.author = sender;
+                msg.author = interaction.user.clone();
                 msg.webhook_id = None;
                 msg.kind = MessageType::Unknown; // Prevents :ok_hand:
 
@@ -295,6 +341,8 @@ impl EventHandler for BoardButtonEventHandler {
                     .get::<FrameworkTypeMapKey>()
                     .unwrap());
 
+                interaction.create_interaction_response(&ctx, |r|
+                    r.kind(InteractionResponseType::DeferredUpdateMessage)).await.unwrap();
                 framework.dispatch(ctx, msg).await;
             }
         }
