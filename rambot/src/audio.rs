@@ -848,6 +848,7 @@ mod tests {
     use rambot_test_util::MockAudioSource;
 
     use std::vec::IntoIter;
+    use std::sync::Mutex;
 
     fn pcm_read_to_end<S>(mut buf: &mut [u8], read: &mut PCMRead<S>) -> usize
     where
@@ -1196,15 +1197,38 @@ mod tests {
 
     #[test]
     fn mid_playlist_resolution_fail() {
+        let error = Arc::new(Mutex::new(false));
+        let error_clone = Arc::clone(&error);
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        play(&mut mixer, "l", "1,#,1").unwrap();
+        mixer.play_on_layer("l", "1,#,1", Default::default(), move |_, _| {
+            *error_clone.lock().unwrap() = true;
+        }).unwrap();
 
         assert!(mixer.active());
 
-        let audio_res = rambot_test_util::read_to_end(&mut mixer);
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
 
-        assert!(audio_res.is_err());
+        rambot_test_util::assert_approximately_equal(test_audio_1(), audio);
         assert!(!mixer.active());
+        assert!(*error.lock().unwrap());
+    }
+
+    #[test]
+    fn non_failed_layers_continue_on_error() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("a");
+        mixer.add_layer("b");
+        play(&mut mixer, "a", "1,2").unwrap();
+        play(&mut mixer, "b", "2,#").unwrap();
+
+        assert!(mixer.active());
+
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+        let mut expected = test_audio_sum();
+        expected.append(&mut test_audio_2());
+
+        assert!(!mixer.active());
+        rambot_test_util::assert_approximately_equal(expected, audio);
     }
 }
