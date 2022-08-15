@@ -90,10 +90,10 @@ impl AudioSourceList for SingleAudioSourceList {
     }
 }
 
-type ErrorCallback = Box<dyn Fn(String) + Send + Sync>;
+type ErrorCallback = Box<dyn Fn(String, io::Error) + Send + Sync>;
 
 fn no_callback() -> ErrorCallback {
-    Box::new(|_| { })
+    Box::new(|_, _| { })
 }
 
 /// A single layer of a [Mixer] which wraps up to one active [AudioSource]. The
@@ -188,16 +188,9 @@ impl Layer {
                         let res = play_on_layer(self, &next, plugin_manager);
 
                         if let Err(e) = res {
-                            let msg = format!("Error on layer `{}`: {}",
-                                self.name(), &e);
-
-                            (self.error_callback)(msg);
+                            (self.error_callback)(self.name.clone(), e);
                             self.deactivate();
-
-                            return Err(e);
                         }
-
-                        res?;
                     }
                     else {
                         // Audio source ran out and list is finished
@@ -616,7 +609,7 @@ impl Mixer {
         plugin_guild_config: PluginGuildConfig, error_callback: E)
         -> Result<(), io::Error>
     where
-        E: Fn(String) + Send + Sync + 'static
+        E: Fn(String, io::Error) + Send + Sync + 'static
     {
         let layer = self.layers.get_mut(layer);
         let audio = to_io_err(
@@ -855,6 +848,7 @@ mod tests {
     use rambot_test_util::MockAudioSource;
 
     use std::vec::IntoIter;
+    use std::sync::Mutex;
 
     fn pcm_read_to_end<S>(mut buf: &mut [u8], read: &mut PCMRead<S>) -> usize
     where
@@ -1203,15 +1197,38 @@ mod tests {
 
     #[test]
     fn mid_playlist_resolution_fail() {
+        let error = Arc::new(Mutex::new(false));
+        let error_clone = Arc::clone(&error);
         let mut mixer = registered_mixer();
         mixer.add_layer("l");
-        play(&mut mixer, "l", "1,#,1").unwrap();
+        mixer.play_on_layer("l", "1,#,1", Default::default(), move |_, _| {
+            *error_clone.lock().unwrap() = true;
+        }).unwrap();
 
         assert!(mixer.active());
 
-        let audio_res = rambot_test_util::read_to_end(&mut mixer);
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
 
-        assert!(audio_res.is_err());
+        rambot_test_util::assert_approximately_equal(test_audio_1(), audio);
         assert!(!mixer.active());
+        assert!(*error.lock().unwrap());
+    }
+
+    #[test]
+    fn non_failed_layers_continue_on_error() {
+        let mut mixer = registered_mixer();
+        mixer.add_layer("a");
+        mixer.add_layer("b");
+        play(&mut mixer, "a", "1,2").unwrap();
+        play(&mut mixer, "b", "2,#").unwrap();
+
+        assert!(mixer.active());
+
+        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+        let mut expected = test_audio_sum();
+        expected.append(&mut test_audio_2());
+
+        assert!(!mixer.active());
+        rambot_test_util::assert_approximately_equal(expected, audio);
     }
 }
