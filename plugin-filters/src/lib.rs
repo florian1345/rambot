@@ -1,8 +1,10 @@
 mod config;
+mod echo;
 mod kernel;
 mod util;
 
 use crate::config::Config;
+use crate::echo::EchoEffect;
 use crate::kernel::KernelFilter;
 
 use rambot_api::{
@@ -17,14 +19,23 @@ use rambot_api::{
     ResolverRegistry
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr, fmt::Display};
 
-fn get_sigma(key_values: &HashMap<String, String>) -> Result<f32, String> {
-    key_values.get("sigma")
-        .ok_or_else(|| "Missing argument \"sigma\".".to_owned())
+fn get_mandatory<T>(key_values: &HashMap<String, String>, key: &str)
+    -> Result<T, String>
+where
+    T: FromStr,
+    T::Err: Display
+{
+    key_values.get(key)
+        .ok_or_else(|| format!("Missing argument \"{}\".", key))
         .and_then(|s|
             s.parse().map_err(
-                |e| format!("Error parsing value for \"sigma\": {}.", e)))
+                |e| format!("Error parsing value for \"{}\": {}.", key, e)))
+}
+
+fn get_sigma(key_values: &HashMap<String, String>) -> Result<f32, String> {
+    get_mandatory(key_values, "sigma")
 }
 
 fn get_kernel_size_sigmas(key_values: &HashMap<String, String>, config: &Config) -> Result<f32, String> {
@@ -141,6 +152,61 @@ impl EffectResolver for InvGaussianEffectResolver {
     }
 }
 
+struct EchoEffectResolver {
+    config: Config
+}
+
+impl EffectResolver for EchoEffectResolver {
+
+    fn name(&self) -> &str {
+        "echo"
+    }
+
+    fn unique(&self) -> bool {
+        false
+    }
+
+    fn documentation(&self) -> ModifierDocumentation {
+        ModifierDocumentationBuilder::new()
+            .with_short_summary("Adds a delayed and scaled copy of the audio \
+                to itself, resulting in an echo effect.")
+            .with_parameter("delay", "The delay of the first echo. Input of \
+                the format `AhBmCsDmsEsam`, representing `A` hours, `B` \
+                minutes, `C` seconds, `D` milliseconds, and `E` samples (at \
+                48 kHz). Omitting and reordering these terms is permitted.")
+            .with_parameter("factor", "The volume applied to each iteration of
+                the echo. Must be less than 1 in order to avoid catastrophe.")
+            .build().unwrap()
+    }
+
+    fn resolve(&self, key_values: &HashMap<String, String>,
+            child: Box<dyn AudioSource + Send + Sync>,
+            _guild_config: PluginGuildConfig)
+            -> Result<Box<dyn AudioSource + Send + Sync>, ResolveEffectError> {
+        let delay = match get_mandatory(key_values, "delay") {
+            Ok(d) => d,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
+
+        if delay > self.config.max_echo_delay() {
+            return Err(ResolveEffectError::new(
+                format!("Delay may be at most `{}`.",
+                    self.config.max_echo_delay()), child));
+        }
+
+        let factor = match get_mandatory(key_values, "factor") {
+            Ok(f) => f,
+            Err(msg) => return Err(ResolveEffectError::new(msg, child))
+        };
+        let effect = EchoEffect::new(child, delay, factor).map_err(|child|
+            ResolveEffectError::new(
+                "Invalid delay. Must be positive and not too large."
+                .to_owned(), child))?;
+
+        Ok(Box::new(effect))
+    }
+}
+
 struct FiltersPlugin;
 
 impl Plugin for FiltersPlugin {
@@ -154,6 +220,10 @@ impl Plugin for FiltersPlugin {
         });
 
         registry.register_effect_resolver(InvGaussianEffectResolver {
+            config: config.clone()
+        });
+
+        registry.register_effect_resolver(EchoEffectResolver {
             config
         });
 

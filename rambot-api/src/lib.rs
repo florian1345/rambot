@@ -56,6 +56,7 @@
 mod audio;
 mod documentation;
 mod resolver;
+mod time;
 
 pub use audio::{
     AudioMetadata,
@@ -77,6 +78,16 @@ pub use resolver::{
     EffectResolver,
     ResolveEffectError,
     ResolverRegistry
+};
+pub use time::{
+    ParseSampleDurationError,
+    SampleDuration,
+    SampleDurationError,
+    SampleDurationResult,
+    SAMPLES_PER_HOUR,
+    SAMPLES_PER_MILLISECOND,
+    SAMPLES_PER_MINUTE,
+    SAMPLES_PER_SECOND
 };
 
 /// Configuration information that is potentially relevant to a specific
