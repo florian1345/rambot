@@ -57,7 +57,13 @@ mod audio;
 mod documentation;
 mod resolver;
 
-pub use audio::{AudioSource, AudioSourceList, Sample};
+pub use audio::{
+    AudioMetadata,
+    AudioMetadataBuilder,
+    AudioSource,
+    AudioSourceList,
+    Sample
+};
 pub use documentation::{
     AudioDocumentation,
     AudioDocumentationBuilder,

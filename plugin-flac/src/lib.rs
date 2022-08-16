@@ -2,11 +2,15 @@ use claxon::FlacReader;
 use claxon::frame::{Block, FrameReader};
 use claxon::input::BufferedReader;
 
+use id3::Timestamp;
+
 use plugin_commons::{FileManager, OpenedFile};
 
 use rambot_api::{
     AudioDocumentation,
     AudioDocumentationBuilder,
+    AudioMetadata,
+    AudioMetadataBuilder,
     AudioSource,
     AudioSourceResolver,
     Plugin,
@@ -31,11 +35,13 @@ struct FlacAudioSource<R: Read + 'static> {
     frames_self_ref: FramesSelfRef<R>,
     block: Block,
     offset: usize,
-    factor: f32
+    factor: f32,
+    metadata: AudioMetadata
 }
 
 impl<R: Read + 'static> FlacAudioSource<R> {
-    fn new(reader: FlacReader<R>) -> FlacAudioSource<R> {
+    fn new(reader: FlacReader<R>, metadata: AudioMetadata)
+            -> FlacAudioSource<R> {
         let bits_per_sample = reader.streaminfo().bits_per_sample;
         let factor = 1.0 / (1 << (bits_per_sample - 1)) as f32;
 
@@ -46,7 +52,8 @@ impl<R: Read + 'static> FlacAudioSource<R> {
             }.build(),
             block: Block::empty(),
             offset: 0,
-            factor
+            factor,
+            metadata
         }
     }
 
@@ -109,6 +116,10 @@ impl<R: Read> AudioSource for FlacAudioSource<R> {
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("flac audio source has no child")
     }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.metadata.clone()
+    }
 }
 
 struct FlacAudioSourceResolver {
@@ -116,17 +127,41 @@ struct FlacAudioSourceResolver {
 }
 
 impl FlacAudioSourceResolver {
-    fn resolve_reader<R>(&self, reader: R)
+    fn resolve_reader<R>(&self, reader: R, descriptor: &str)
         -> Result<Box<dyn AudioSource + Send + Sync>, String>
     where
         R: Read + Send + Sync + 'static
     {
         let reader = FlacReader::new(reader)
             .map_err(|e| format!("{}", e))?;
+        let mut meta_builder = AudioMetadataBuilder::new();
+
+        if let Some(title) = reader.get_tag("TITLE").next() {
+            meta_builder = meta_builder.with_title(title);
+        }
+        else {
+            meta_builder = meta_builder.with_title(descriptor);
+        }
+
+        if let Some(artist) = reader.get_tag("ARTIST").next() {
+            meta_builder = meta_builder.with_artist(artist);
+        }
+
+        if let Some(album) = reader.get_tag("ALBUM").next() {
+            meta_builder = meta_builder.with_album(album);
+        }
+
+        if let Some(date) = reader.get_tag("DATE").next() {
+            if let Ok(date) = date.parse::<Timestamp>() {
+                meta_builder = meta_builder.with_year(date.year);
+            }
+        }
+
+        let metadata = meta_builder.build();
         let sampling_rate = reader.streaminfo().sample_rate;
 
         Ok(plugin_commons::adapt_sampling_rate(
-            FlacAudioSource::new(reader), sampling_rate))
+            FlacAudioSource::new(reader, metadata), sampling_rate))
     }
 }
 
@@ -161,8 +196,9 @@ impl AudioSourceResolver for FlacAudioSourceResolver {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {
-            OpenedFile::Local(reader) => self.resolve_reader(reader),
-            OpenedFile::Web(reader) => self.resolve_reader(reader)
+            OpenedFile::Local(reader) =>
+                self.resolve_reader(reader, descriptor),
+            OpenedFile::Web(reader) => self.resolve_reader(reader, descriptor)
         }
     }
 }

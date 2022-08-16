@@ -1,4 +1,4 @@
-use rambot_api::{AudioSource, Sample};
+use rambot_api::{AudioMetadata, AudioSource, Sample};
 
 use std::io;
 
@@ -45,5 +45,9 @@ impl AudioSource for RightPaddedAudioSource {
 
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.child.take().unwrap()
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.child.as_ref().unwrap().metadata()
     }
 }

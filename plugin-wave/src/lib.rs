@@ -2,11 +2,14 @@
 
 use hound::{SampleFormat, WavIntoSamples, WavReader};
 
-use plugin_commons::{FileManager, OpenedFile};
+use id3::Tag;
+
+use plugin_commons::{FileManager, OpenedFile, SeekWrapper};
 
 use rambot_api::{
     AudioDocumentation,
     AudioDocumentationBuilder,
+    AudioMetadata,
     AudioSource,
     AudioSourceResolver,
     Plugin,
@@ -16,7 +19,7 @@ use rambot_api::{
     Sample
 };
 
-use std::io::{ErrorKind, Read, self};
+use std::io::{ErrorKind, Read, self, Seek};
 
 trait FloatSamples {
     fn next(&mut self);
@@ -81,7 +84,8 @@ where
 struct IntWaveAudioSource<R> {
     samples: WavIntoSamples<R, i32>,
     factor: f32,
-    channels: u16
+    channels: u16,
+    metadata: AudioMetadata
 }
 
 impl<R: Read> FloatSamples for IntWaveAudioSource<R> {
@@ -119,11 +123,16 @@ impl<R: Read> AudioSource for IntWaveAudioSource<R> {
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("wave audio source has no child")
     }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.metadata.clone()
+    }
 }
 
 struct FloatWaveAudioSource<R> {
     samples: WavIntoSamples<R, f32>,
-    channels: u16
+    channels: u16,
+    metadata: AudioMetadata
 }
 
 impl<R: Read> FloatSamples for FloatWaveAudioSource<R> {
@@ -152,39 +161,52 @@ impl<R: Read> AudioSource for FloatWaveAudioSource<R> {
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("wave audio source has no child")
     }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.metadata.clone()
+    }
+}
+
+fn resolve_metadata<R>(reader: R, descriptor: &str)
+    -> Result<AudioMetadata, String>
+where
+    R: Read + Seek
+{
+    let tag = Tag::read_from_wav(reader).map_err(|e| format!("{}", e))?;
+    Ok(plugin_commons::metadata_from_id3_tag(tag, descriptor))
 }
 
 struct WaveAudioSourceResolver {
     file_manager: FileManager
 }
 
-impl WaveAudioSourceResolver {
-    fn resolve_reader<R>(&self, reader: R)
-        -> Result<Box<dyn AudioSource + Send + Sync>, String>
-    where
-        R: Read + Send + Sync + 'static
-    {
-        let wav_reader = WavReader::new(reader).map_err(|e| format!("{}", e))?;
-        let spec = wav_reader.spec();
+fn resolve_reader<R>(reader: R, metadata: AudioMetadata)
+    -> Result<Box<dyn AudioSource + Send + Sync>, String>
+where
+    R: Read + Send + Sync + 'static
+{
+    let wav_reader = WavReader::new(reader).map_err(|e| format!("{}", e))?;
+    let spec = wav_reader.spec();
 
-        match spec.sample_format {
-            SampleFormat::Float => {
-                Ok(plugin_commons::adapt_sampling_rate(FloatWaveAudioSource {
-                    samples: wav_reader.into_samples(),
-                    channels: spec.channels
-                }, spec.sample_rate))
-            },
-            SampleFormat::Int => {
-                let bits = spec.bits_per_sample;
-                let max_value = 1u64 << (bits - 1);
-                let factor = 1.0 / max_value as f32;
+    match spec.sample_format {
+        SampleFormat::Float => {
+            Ok(plugin_commons::adapt_sampling_rate(FloatWaveAudioSource {
+                samples: wav_reader.into_samples(),
+                channels: spec.channels,
+                metadata
+            }, spec.sample_rate))
+        },
+        SampleFormat::Int => {
+            let bits = spec.bits_per_sample;
+            let max_value = 1u64 << (bits - 1);
+            let factor = 1.0 / max_value as f32;
 
-                Ok(plugin_commons::adapt_sampling_rate(IntWaveAudioSource {
-                    samples: wav_reader.into_samples(),
-                    factor,
-                    channels: spec.channels
-                }, spec.sample_rate))
-            }
+            Ok(plugin_commons::adapt_sampling_rate(IntWaveAudioSource {
+                samples: wav_reader.into_samples(),
+                factor,
+                channels: spec.channels,
+                metadata
+            }, spec.sample_rate))
         }
     }
 }
@@ -218,10 +240,16 @@ impl AudioSourceResolver for WaveAudioSourceResolver {
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
+        let metadata = match file {
+            OpenedFile::Local(reader) => resolve_metadata(reader, descriptor),
+            OpenedFile::Web(reader) =>
+                resolve_metadata(SeekWrapper::new(reader), descriptor)
+        }?;
+        let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {
-            OpenedFile::Local(reader) => self.resolve_reader(reader),
-            OpenedFile::Web(reader) => self.resolve_reader(reader)
+            OpenedFile::Local(reader) => resolve_reader(reader, metadata),
+            OpenedFile::Web(reader) => resolve_reader(reader, metadata)
         }
     }
 }

@@ -1,3 +1,5 @@
+use id3::Timestamp;
+
 use lewton::inside_ogg::OggStreamReader;
 
 use plugin_commons::{FileManager, OpenedFile, SeekWrapper};
@@ -5,6 +7,8 @@ use plugin_commons::{FileManager, OpenedFile, SeekWrapper};
 use rambot_api::{
     AudioDocumentation,
     AudioDocumentationBuilder,
+    AudioMetadata,
+    AudioMetadataBuilder,
     AudioSource,
     AudioSourceResolver,
     ResolverRegistry,
@@ -19,7 +23,8 @@ use std::io::{self, ErrorKind, Read, Seek};
 struct OggAudioSource<R: Read + Seek> {
     reader: OggStreamReader<R>,
     remaining: Vec<Sample>,
-    remaining_idx: usize
+    remaining_idx: usize,
+    fallback_title: String
 }
 
 impl<R: Read + Seek> OggAudioSource<R> {
@@ -87,6 +92,27 @@ impl<R: Read + Seek> AudioSource for OggAudioSource<R> {
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("ogg audio source has no child")
     }
+
+    fn metadata(&self) -> AudioMetadata {
+        let mut meta_builder = AudioMetadataBuilder::new()
+            .with_title(&self.fallback_title);
+
+        for (key, value) in self.reader.comment_hdr.comment_list.iter() {
+            match key.as_str() {
+                "TITLE" => meta_builder = meta_builder.with_title(value),
+                "ARTIST" => meta_builder = meta_builder.with_artist(value),
+                "ALBUM" => meta_builder = meta_builder.with_album(value),
+                "DATE" => {
+                    if let Ok(date) = value.parse::<Timestamp>() {
+                        meta_builder = meta_builder.with_year(date.year);
+                    }
+                },
+                _ => { }
+            }
+        }
+
+        meta_builder.build()
+    }
 }
 
 struct OggAudioSourceResolver {
@@ -94,7 +120,7 @@ struct OggAudioSourceResolver {
 }
 
 impl OggAudioSourceResolver {
-    fn resolve_reader<R>(&self, reader: R)
+    fn resolve_reader<R>(&self, reader: R, descriptor: &str)
         -> Result<Box<dyn AudioSource + Send + Sync>, String>
     where
         R: Read + Seek + Send + Sync + 'static
@@ -106,7 +132,8 @@ impl OggAudioSourceResolver {
         Ok(plugin_commons::adapt_sampling_rate(OggAudioSource {
             reader: ogg_reader,
             remaining: Vec::new(),
-            remaining_idx: 0
+            remaining_idx: 0,
+            fallback_title: descriptor.to_owned()
         }, sampling_rate))
     }
 }
@@ -142,9 +169,10 @@ impl AudioSourceResolver for OggAudioSourceResolver {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
     
         match file {
-            OpenedFile::Local(reader) => self.resolve_reader(reader),
+            OpenedFile::Local(reader) =>
+                self.resolve_reader(reader, descriptor),
             OpenedFile::Web(reader) =>
-                self.resolve_reader(SeekWrapper::new(reader))
+                self.resolve_reader(SeekWrapper::new(reader), descriptor)
         }
     }
 }

@@ -49,7 +49,17 @@ macro_rules! unwrap_or_return {
 pub(crate) use unwrap_or_return;
 
 #[group]
-#[commands(audio, connect, directory, disconnect, cmd_do, play, skip, stop)]
+#[commands(
+    audio,
+    connect,
+    directory,
+    disconnect,
+    cmd_do,
+    info,
+    play,
+    skip,
+    stop
+)]
 struct Root;
 
 /// Gets a [CommandGroup] for the root commands (which are not part of any
@@ -382,6 +392,50 @@ async fn audio(ctx: &Context, msg: &Message, audio: String)
         else {
             Ok(Some(format!("I found no audio of name {}.", audio)))
         }
+    }
+}
+
+#[rambot_command(
+    description = "Prints information about the audio currently played on the \
+        layer with the given name.",
+    usage = "layer"
+)]
+async fn info(ctx: &Context, msg: &Message, layer: String) -> CommandResult<Option<String>> {
+    let guild_id = msg.guild_id.unwrap();
+    let metadata = unwrap_or_return!(with_guild_state(ctx, guild_id, |gs| {
+        gs.mixer().layer_metadata(&layer)
+    }).await, Ok(Some(format!("No layer of name `{}`.", layer))));
+
+    match metadata {
+        Ok(metadata) => {
+            let mut message = String::new();
+
+            if let Some(title) = metadata.title() {
+                write!(message, "Title: {}\n", title).unwrap();
+            }
+
+            if let Some(artist) = metadata.artist() {
+                write!(message, "Artist: {}\n", artist).unwrap();
+            }
+
+            if let Some(album) = metadata.album() {
+                write!(message, "Album: {}\n", album).unwrap();
+            }
+
+            if let Some(year) = metadata.year() {
+                write!(message, "Year: {}\n", year).unwrap();
+            }
+
+            let mut message = message.trim_end().to_owned();
+
+            if message.is_empty() {
+                message = "No information available.".to_owned();
+            }
+
+            msg.reply(ctx, message).await?;
+            Ok(None)
+        },
+        Err(e) => Ok(Some(format!("{}", e)))
     }
 }
 

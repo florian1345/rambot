@@ -1,4 +1,4 @@
-use rambot_api::{AudioSource, Sample};
+use rambot_api::{AudioMetadata, AudioSource, Sample};
 
 use std::io;
 use std::mem;
@@ -121,6 +121,10 @@ impl<S: AudioSource> AudioSource for ResamplingAudioSource<S> {
             step: self.step,
             frac_index: self.frac_index
         })
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.base.metadata()
     }
 }
 
