@@ -170,24 +170,24 @@ impl AudioMetadata {
 
     /// Gets the title of the track, if it could be determined.
     pub fn title(&self) -> Option<&str> {
-        self.title.as_ref().map(String::as_str)
+        self.title.as_deref()
     }
 
     /// Gets the name of the artist of the track, if it could be determined.
     pub fn artist(&self) -> Option<&str> {
-        self.artist.as_ref().map(String::as_str)
+        self.artist.as_deref()
     }
 
     /// Gets the name of the album in which the track was released, if one
     /// exists and it could be determined.
     pub fn album(&self) -> Option<&str> {
-        self.album.as_ref().map(String::as_str)
+        self.album.as_deref()
     }
 
     /// Gets the (Gregorian) year in which the track was released, if it could
     /// be determined.
     pub fn year(&self) -> Option<i32> {
-        self.year.clone()
+        self.year
     }
 }
 

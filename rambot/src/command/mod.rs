@@ -411,19 +411,19 @@ async fn info(ctx: &Context, msg: &Message, layer: String) -> CommandResult<Opti
             let mut message = String::new();
 
             if let Some(title) = metadata.title() {
-                write!(message, "Title: {}\n", title).unwrap();
+                writeln!(message, "Title: {}", title).unwrap();
             }
 
             if let Some(artist) = metadata.artist() {
-                write!(message, "Artist: {}\n", artist).unwrap();
+                writeln!(message, "Artist: {}", artist).unwrap();
             }
 
             if let Some(album) = metadata.album() {
-                write!(message, "Album: {}\n", album).unwrap();
+                writeln!(message, "Album: {}", album).unwrap();
             }
 
             if let Some(year) = metadata.year() {
-                write!(message, "Year: {}\n", year).unwrap();
+                writeln!(message, "Year: {}", year).unwrap();
             }
 
             let mut message = message.trim_end().to_owned();
