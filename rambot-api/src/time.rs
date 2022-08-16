@@ -533,7 +533,7 @@ impl Display for SampleDuration {
     }
 }
 
-fn collect_while<'a, F>(chars: &mut Peekable<Chars<'a>>, pred: F) -> String
+fn collect_while<F>(chars: &mut Peekable<Chars<'_>>, pred: F) -> String
 where
     F: Fn(char) -> bool
 {
@@ -563,23 +563,23 @@ impl FromStr for SampleDuration {
                 collect_while(&mut chars, |c| c == '-' || c.is_numeric());
             let unit = collect_while(&mut chars, char::is_alphabetic);
             let amount = number.parse::<i64>()?;
-            let delta = if &unit == HOUR_SUFFIX {
+            let delta = if unit == HOUR_SUFFIX {
                 SampleDuration::from_hours(amount)
                     .map_err(|_| ParseSampleDurationError::Overflow)?
             }
-            else if &unit == MINUTE_SUFFIX {
+            else if unit == MINUTE_SUFFIX {
                 SampleDuration::from_minutes(amount)
                     .map_err(|_| ParseSampleDurationError::Overflow)?
             }
-            else if &unit == SECOND_SUFFIX {
+            else if unit == SECOND_SUFFIX {
                 SampleDuration::from_seconds(amount)
                     .map_err(|_| ParseSampleDurationError::Overflow)?
             }
-            else if &unit == MILLISECOND_SUFFIX {
+            else if unit == MILLISECOND_SUFFIX {
                 SampleDuration::from_milliseconds(amount)
                     .map_err(|_| ParseSampleDurationError::Overflow)?
             }
-            else if &unit == SAMPLE_SUFFIX {
+            else if unit == SAMPLE_SUFFIX {
                 SampleDuration::from_samples(amount)
             }
             else {
