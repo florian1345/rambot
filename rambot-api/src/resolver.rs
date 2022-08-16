@@ -19,6 +19,8 @@ use std::fmt::{self, Display, Formatter};
 /// use rambot_api::{
 ///     AudioDocumentation,
 ///     AudioDocumentationBuilder,
+///     AudioMetadata,
+///     AudioMetadataBuilder,
 ///     AudioSource,
 ///     AudioSourceResolver,
 ///     PluginGuildConfig,
@@ -66,6 +68,15 @@ use std::fmt::{self, Display, Formatter};
 ///     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
 ///         // As discussed above, we have no child => panic.
 ///         panic!("cannot take child from sine audio source")
+///     }
+///
+///     fn metadata(&self) -> AudioMetadata {
+///         // Usually, you would try to obtain the metadata from a file,
+///         // website, or wherever you take your audio from. Here, we just
+///         // give a generic title.
+///         AudioMetadataBuilder::new()
+///             .with_title("Sine Wave")
+///             .build()
 ///     }
 /// }
 /// 
@@ -221,6 +232,7 @@ impl Display for ResolveEffectError {
 ///
 /// ```
 /// use rambot_api::{
+///     AudioMetadata,
 ///     AudioSource,
 ///     EffectResolver,
 ///     ModifierDocumentation,
@@ -268,6 +280,12 @@ impl Display for ResolveEffectError {
 ///         // call made to the effect, so it does not matter that the child
 ///         // will no longer be present after.
 ///         self.child.take().unwrap()
+///     }
+/// 
+///     fn metadata(&self) -> AudioMetadata {
+///         // As an effect, you usually want to just forward your child's
+///         // metadata.
+///         self.child.as_ref().unwrap().metadata()
 ///     }
 /// }
 /// 
