@@ -1,9 +1,16 @@
-use rambot_api::{AudioSource, Sample, AudioSourceList, PluginGuildConfig};
+use rambot_api::{
+    AudioMetadata,
+    AudioSource,
+    AudioSourceList,
+    PluginGuildConfig,
+    Sample
+};
 
 use songbird::input::reader::MediaSource;
 
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, RwLock};
 
@@ -269,6 +276,33 @@ impl Layers {
         self.layers.iter_mut()
     }
 }
+
+/// An enumeration of the different errors that can occur when calling
+/// [Mixer::layer_metadata].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LayerMetadataError {
+
+    /// Metadata about a layer which does not exist was queried. The name of
+    /// the layer is wrapped.
+    LayerDoesNotExist(String),
+
+    /// Metadata about a layer which does exist but currently plays no audio
+    /// was queried. The name of the layer is wrapped.
+    LayerNotActive(String)
+}
+
+impl Display for LayerMetadataError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            LayerMetadataError::LayerDoesNotExist(layer) =>
+                write!(f, "Found no layer with name `{}`.", layer),
+            LayerMetadataError::LayerNotActive(layer) =>
+                write!(f, "No audio is being played on layer `{}`.", layer)
+        }
+    }
+}
+
+impl Error for LayerMetadataError { }
 
 /// A mixer manages multiple [AudioSource]s and adds their outputs.
 pub struct Mixer {
@@ -675,6 +709,38 @@ impl Mixer {
     pub fn layers(&self) -> &[Layer] {
         &self.layers.layers
     }
+
+    /// Gets [AudioMetadata] about the track currently played by the audio
+    /// source on the layer with the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer on which to get the metadata.
+    ///
+    /// # Returns
+    ///
+    /// A new [AudioMetadata] instance containing information about the track
+    /// played on the given layer.
+    ///
+    /// # Errors
+    ///
+    /// Any [LayerMetadataError] according to their respective documentation.
+    pub fn layer_metadata(&self, layer: &str)
+            -> Result<AudioMetadata, LayerMetadataError> {
+        if !self.contains_layer(layer) {
+            return
+                Err(LayerMetadataError::LayerDoesNotExist(layer.to_owned()));
+        }
+
+        let layer = self.layers.get(layer);
+
+        if let Some(source) = &layer.source {
+            Ok(source.metadata())
+        }
+        else {
+            Err(LayerMetadataError::LayerNotActive(layer.name.clone()))
+        }
+    }
 }
 
 impl AudioSource for Mixer {
@@ -730,6 +796,10 @@ impl AudioSource for Mixer {
 
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mixer has no child")
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        panic!("mixer has no metadata")
     }
 }
 
@@ -840,6 +910,7 @@ mod tests {
 
     use rambot_api::{
         AudioDocumentation,
+        AudioMetadataBuilder,
         AudioSourceListResolver,
         AudioSourceResolver,
         PluginGuildConfig
@@ -952,6 +1023,13 @@ mod tests {
         sum
     }
 
+    fn set_audio<S>(mixer: &mut Mixer, layer: &str, audio_source: S)
+    where
+        S: AudioSource + Send + Sync + 'static
+    {
+        mixer.layers.get_mut(layer).source = Some(Box::new(audio_source));
+    }
+
     fn add_layer(mixer: &mut Mixer, name: &str, samples: Vec<Sample>,
             segment_size: Option<usize>) {
         mixer.layers.push(Layer::new(name));
@@ -963,12 +1041,16 @@ mod tests {
             MockAudioSource::new(samples)
         };
 
-        mixer.layers.get_mut(name).source = Some(Box::new(audio));
+        set_audio(mixer, name, audio);
+    }
+
+    fn mock_mixer() -> Mixer {
+        Mixer::new(Arc::new(PluginManager::mock()))
     }
 
     #[test]
     fn mixer_single_audio_source() {
-        let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
+        let mut mixer = mock_mixer();
         add_layer(&mut mixer, "test", test_audio_1(), None);
         let result = rambot_test_util::read_to_end(&mut mixer).unwrap();
 
@@ -977,7 +1059,7 @@ mod tests {
 
     #[test]
     fn mixer_two_audio_sources() {
-        let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
+        let mut mixer = mock_mixer();
         add_layer(&mut mixer, "test1", test_audio_1(), None);
         add_layer(&mut mixer, "test2", test_audio_2(), None);
         let result = rambot_test_util::read_to_end(&mut mixer).unwrap();
@@ -987,7 +1069,7 @@ mod tests {
 
     #[test]
     fn mixer_two_segmented_audio_sources() {
-        let mut mixer = Mixer::new(Arc::new(PluginManager::mock()));
+        let mut mixer = mock_mixer();
         add_layer(&mut mixer, "test1", test_audio_1(), Some(5));
         add_layer(&mut mixer, "test2", test_audio_2(), Some(7));
         let result =
@@ -1230,5 +1312,66 @@ mod tests {
 
         assert!(!mixer.active());
         rambot_test_util::assert_approximately_equal(expected, audio);
+    }
+
+    fn test_metadata_1() -> AudioMetadata {
+        AudioMetadataBuilder::new()
+            .with_title("test title")
+            .with_album("test album")
+            .build()
+    }
+
+    fn test_metadata_2() -> AudioMetadata {
+        AudioMetadataBuilder::new()
+            .with_artist("test artist")
+            .with_year(1337)
+            .build()
+    }
+
+    #[test]
+    fn two_layer_metadata_query() {
+        let mut mixer = mock_mixer();
+        mixer.add_layer("test_1");
+        mixer.add_layer("test_2");
+
+        let test_source_1 =
+            MockAudioSource::with_metadata(test_audio_1(), test_metadata_1());
+        let test_source_2 =
+            MockAudioSource::with_metadata(test_audio_2(), test_metadata_2());
+
+        set_audio(&mut mixer, "test_1", test_source_1);
+        set_audio(&mut mixer, "test_2", test_source_2);
+
+        assert_eq!(test_metadata_1(), mixer.layer_metadata("test_1").unwrap());
+        assert_eq!(test_metadata_2(), mixer.layer_metadata("test_2").unwrap());
+    }
+
+    #[test]
+    fn metadata_query_on_non_existent_layer() {
+        let mut mixer = mock_mixer();
+        mixer.add_layer("test_1");
+
+        let test_source_1 =
+            MockAudioSource::with_metadata(test_audio_1(), test_metadata_1());
+
+        set_audio(&mut mixer, "test_1", test_source_1);
+
+        assert_eq!(LayerMetadataError::LayerDoesNotExist("test_2".to_owned()),
+            mixer.layer_metadata("test_2").unwrap_err());
+    }
+
+    #[test]
+    fn metadata_query_on_inactive_layer() {
+        let mut mixer = mock_mixer();
+        mixer.add_layer("test_1");
+        mixer.add_layer("test_2");
+
+        let test_source_1 =
+            MockAudioSource::with_metadata(test_audio_1(), test_metadata_1());
+
+        set_audio(&mut mixer, "test_1", test_source_1);
+
+        assert_eq!(LayerMetadataError::LayerNotActive("test_2".to_owned()),
+            mixer.layer_metadata("test_2").unwrap_err());
     }
 }

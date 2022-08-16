@@ -10,6 +10,7 @@ crate-type = [ "cdylib" ]
 
 [dependencies]
 claxon = "0.4"
+id3 = "1.3"
 ouroboros = "0.15"
 plugin-commons = { path = "../plugin-commons" }
 rambot-api = { path = "../rambot-api" }

@@ -1,8 +1,12 @@
+use id3::Timestamp;
+
 use plugin_commons::{FileManager, OpenedFile};
 
 use rambot_api::{
     AudioDocumentation,
     AudioDocumentationBuilder,
+    AudioMetadata,
+    AudioMetadataBuilder,
     AudioSource,
     AudioSourceResolver,
     Plugin,
@@ -19,6 +23,7 @@ use symphonia::core::codecs::{self, Decoder, DecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatReader, Track};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
+use symphonia::core::meta::StandardTagKey;
 use symphonia::core::sample::{i24, u24};
 use symphonia::core::sample::Sample as SymphoniaSample;
 use symphonia::default::codecs::{
@@ -145,7 +150,8 @@ struct Mp4AudioSource<D> {
     decoder: Mp4TrackDecoder<D>,
     left_channel_id: usize,
     right_channel_id: usize,
-    frame_idx: usize
+    frame_idx: usize,
+    metadata: AudioMetadata
 }
 
 impl<D> Mp4AudioSource<D> {
@@ -208,6 +214,10 @@ impl<D: Decoder> AudioSource for Mp4AudioSource<D> {
 
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mp4 audio source has no child")
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.metadata.clone()
     }
 }
 
@@ -288,7 +298,41 @@ fn select_channels(channels: Channels) -> (usize, usize) {
     }
 }
 
-fn construct_source<D>(reader: IsoMp4Reader, track: &Track)
+fn construct_metadata<D>(decoder: &mut Mp4TrackDecoder<D>, descriptor: &str) -> AudioMetadata
+where
+    D: Decoder
+{
+    let mut meta_builder = AudioMetadataBuilder::new()
+        .with_title(descriptor);
+
+    if let Some(metadata) = decoder.reader.metadata().current() {
+        for tag in metadata.tags() {
+            if let Some(std_key) = &tag.std_key {
+                let value = format!("{}", tag.value);
+
+                match std_key {
+                    StandardTagKey::Album =>
+                        meta_builder = meta_builder.with_album(value),
+                    StandardTagKey::Artist =>
+                        meta_builder = meta_builder.with_artist(value),
+                    StandardTagKey::Date => {
+                        if let Ok(timestamp) = value.parse::<Timestamp>() {
+                            meta_builder =
+                                meta_builder.with_year(timestamp.year);
+                        }
+                    },
+                    StandardTagKey::TrackTitle =>
+                        meta_builder = meta_builder.with_title(value),
+                    _ => { }
+                }
+            }
+        }
+    }
+
+    meta_builder.build()
+}
+
+fn construct_source<D>(reader: IsoMp4Reader, track: &Track, descriptor: &str)
     -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
     D: Decoder + 'static
@@ -310,16 +354,19 @@ where
     let spec = first_packet.spec();
     let (left_channel_id, right_channel_id) = select_channels(spec.channels);
     let sampling_rate = spec.rate;
+    let metadata = construct_metadata(&mut mp4_decoder, descriptor);
 
     Ok(Box::new(plugin_commons::adapt_sampling_rate(Mp4AudioSource {
         decoder: mp4_decoder,
         left_channel_id,
         right_channel_id,
-        frame_idx: 0
+        frame_idx: 0,
+        metadata
     }, sampling_rate)))
 }
 
-fn resolve_reader<R>(reader: R) -> Result<Box<dyn AudioSource + Send + Sync>, String>
+fn resolve_reader<R>(reader: R, descriptor: &str)
+    -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
     R: Read + Send + Sync + 'static
 {
@@ -341,15 +388,15 @@ where
 
     match track.codec_params.codec {
         codecs::CODEC_TYPE_AAC =>
-            construct_source::<AacDecoder>(reader, &track),
+            construct_source::<AacDecoder>(reader, &track, descriptor),
         codecs::CODEC_TYPE_ALAC =>
-            construct_source::<AlacDecoder>(reader, &track),
+            construct_source::<AlacDecoder>(reader, &track, descriptor),
         codecs::CODEC_TYPE_FLAC =>
-            construct_source::<FlacDecoder>(reader, &track),
+            construct_source::<FlacDecoder>(reader, &track, descriptor),
         codecs::CODEC_TYPE_MP3 =>
-            construct_source::<Mp3Decoder>(reader, &track),
+            construct_source::<Mp3Decoder>(reader, &track, descriptor),
         codecs::CODEC_TYPE_VORBIS =>
-            construct_source::<VorbisDecoder>(reader, &track),
+            construct_source::<VorbisDecoder>(reader, &track, descriptor),
         _ => Err("Unsupported codec.".to_owned())
     }
 }
@@ -397,8 +444,8 @@ impl AudioSourceResolver for Mp4AudioSourceResolver {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {
-            OpenedFile::Local(reader) => resolve_reader(reader),
-            OpenedFile::Web(reader) => resolve_reader(reader)
+            OpenedFile::Local(reader) => resolve_reader(reader, descriptor),
+            OpenedFile::Web(reader) => resolve_reader(reader, descriptor)
         }
     }
 }

@@ -1,6 +1,6 @@
 #![cfg(feature = "testing")]
 
-use rambot_api::{AudioSource, Sample};
+use rambot_api::{AudioMetadata, AudioSource, Sample, AudioMetadataBuilder};
 
 use rand::{Rng, RngCore, SeedableRng};
 use rand::distributions::Distribution;
@@ -91,7 +91,8 @@ pub struct MockAudioSource<D, R> {
     samples: Vec<Sample>,
     index: usize,
     segment_size_distribution: D,
-    rng: R
+    rng: R,
+    metadata: AudioMetadata
 }
 
 impl MockAudioSource<ConstantDistribution, DummyRng> {
@@ -105,6 +106,22 @@ impl MockAudioSource<ConstantDistribution, DummyRng> {
     }
 
     /// Creates a new mock audio source that streams the given list of
+    /// `samples`. At any [AudioSource::read] request, the buffer is fillled up
+    /// as much as possible with the remaining samples. In addition, if
+    /// [AudioSource::metadata] is requested, a clone of the given `metadata`
+    /// is returned.
+    pub fn with_metadata(samples: Vec<Sample>, metadata: AudioMetadata)
+            -> MockAudioSource<ConstantDistribution, DummyRng> {
+        MockAudioSource {
+            samples,
+            index: 0,
+            segment_size_distribution: ConstantDistribution::new(usize::MAX),
+            rng: DummyRng,
+            metadata
+        }
+    }
+
+    /// Creates a new mock audio source that streams the given list of
     /// `samples`. At any [AudioSource::read] request, a segment of the given
     /// `segment_size` is entered into the provided buffer, as long as both the
     /// number of remaining samples and the buffer size allow it.
@@ -114,7 +131,8 @@ impl MockAudioSource<ConstantDistribution, DummyRng> {
             samples,
             index: 0,
             segment_size_distribution: ConstantDistribution::new(segment_size),
-            rng: DummyRng
+            rng: DummyRng,
+            metadata: AudioMetadataBuilder::new().build()
         }
     }
 }
@@ -133,7 +151,8 @@ impl<D> MockAudioSource<D, SmallRng> {
             samples,
             index: 0,
             segment_size_distribution,
-            rng: SmallRng::from_rng(&mut rand::thread_rng()).unwrap()
+            rng: SmallRng::from_rng(&mut rand::thread_rng()).unwrap(),
+            metadata: AudioMetadataBuilder::new().build()
         }
     }
 }
@@ -157,7 +176,8 @@ impl MockAudioSource<RoundedNormalDistribution, SmallRng> {
             segment_size_distribution: RoundedNormalDistribution {
                 normal: Normal::new(mean, std_dev)?
             },
-            rng: SmallRng::from_rng(&mut rand::thread_rng()).unwrap()
+            rng: SmallRng::from_rng(&mut rand::thread_rng()).unwrap(),
+            metadata: AudioMetadataBuilder::new().build()
         })
     }
 }
@@ -180,6 +200,10 @@ impl<D: Distribution<usize>, R: Rng> AudioSource for MockAudioSource<D, R> {
 
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mock audio source asked for child")
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.metadata.clone()
     }
 }
 

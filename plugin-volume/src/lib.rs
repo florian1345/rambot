@@ -1,4 +1,5 @@
 use rambot_api::{
+    AudioMetadata,
     AudioSource,
     EffectResolver,
     ModifierDocumentation,
@@ -35,6 +36,10 @@ impl AudioSource for VolumeEffect {
 
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.child.take().unwrap()
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.child.as_ref().unwrap().metadata()
     }
 }
 

@@ -10,5 +10,6 @@ crate-type = [ "cdylib" ]
 
 [dependencies]
 hound = "3.4"
+id3 = "1.3"
 plugin-commons = { path = "../plugin-commons" }
 rambot-api = { path = "../rambot-api" }

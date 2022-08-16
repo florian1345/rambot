@@ -1,6 +1,6 @@
 use crate::util::RightPaddedAudioSource;
 
-use rambot_api::{AudioSource, Sample};
+use rambot_api::{AudioMetadata, AudioSource, Sample};
 
 use std::f32::consts;
 use std::io;
@@ -127,6 +127,10 @@ impl AudioSource for KernelFilter {
 
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         self.child.take_child()
+    }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.child.metadata()
     }
 }
 

@@ -1,3 +1,5 @@
+use id3::Tag;
+
 use minimp3::{self, Decoder, Frame};
 
 use plugin_commons::{FileManager, OpenedFile};
@@ -5,6 +7,7 @@ use plugin_commons::{FileManager, OpenedFile};
 use rambot_api::{
     AudioDocumentation,
     AudioDocumentationBuilder,
+    AudioMetadata,
     AudioSource,
     AudioSourceResolver,
     Plugin,
@@ -41,7 +44,8 @@ fn to_f32(i: i16) -> f32 {
 struct Mp3AudioSource<R: Read> {
     frames: FrameIterator<R>,
     current_frame: Frame,
-    current_frame_idx: usize
+    current_frame_idx: usize,
+    metadata: AudioMetadata
 }
 
 impl<R: Read> AudioSource for Mp3AudioSource<R> {
@@ -97,13 +101,27 @@ impl<R: Read> AudioSource for Mp3AudioSource<R> {
     fn take_child(&mut self) -> Box<dyn AudioSource + Send + Sync> {
         panic!("mp3 audio source has no child")
     }
+
+    fn metadata(&self) -> AudioMetadata {
+        self.metadata.clone()
+    }
 }
 
 struct Mp3AudioSourceResolver {
     file_manager: FileManager
 }
 
-fn resolve_reader<R>(reader: R) -> Result<Box<dyn AudioSource + Send + Sync>, String>
+fn resolve_metadata<R>(reader: R, descriptor: &str)
+    -> Result<AudioMetadata, String>
+where
+    R: Read
+{
+    let tag = Tag::read_from(reader).map_err(|e| format!("{}", e))?;
+    Ok(plugin_commons::metadata_from_id3_tag(tag, descriptor))
+}
+
+fn resolve_reader<R>(reader: R, metadata: AudioMetadata)
+    -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
     R: Read + Send + Sync + 'static
 {
@@ -118,7 +136,8 @@ where
     Ok(plugin_commons::adapt_sampling_rate(Mp3AudioSource {
         frames,
         current_frame: first_frame,
-        current_frame_idx: 0
+        current_frame_idx: 0,
+        metadata
     }, sampling_rate))
 }
 
@@ -151,10 +170,15 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
-    
+        let metadata = match file {
+            OpenedFile::Local(reader) => resolve_metadata(reader, descriptor),
+            OpenedFile::Web(reader) => resolve_metadata(reader, descriptor)
+        }?;
+        let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
+
         match file {
-            OpenedFile::Local(reader) => resolve_reader(reader),
-            OpenedFile::Web(reader) => resolve_reader(reader)
+            OpenedFile::Local(reader) => resolve_reader(reader, metadata),
+            OpenedFile::Web(reader) => resolve_reader(reader, metadata)
         }
     }
 }
