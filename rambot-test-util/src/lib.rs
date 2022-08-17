@@ -329,7 +329,7 @@ where
 }
 
 /// Collectes all entries in the given audio source `list` into a vector. Any
-/// errors raised in [AudioSourceList::read] will be forwarded. If the list
+/// errors raised in [AudioSourceList::next] will be forwarded. If the list
 /// contains more than `max_len` entries, only the first `max_len` entries are
 /// queried and collected.
 pub fn collect_list(list: &mut Box<dyn AudioSourceList + Send + Sync>,
