@@ -3,7 +3,7 @@ use rambot_api::{
     AudioSource,
     AudioSourceList,
     PluginGuildConfig,
-    Sample
+    Sample, SampleDuration, SeekError
 };
 
 use songbird::input::reader::MediaSource;
@@ -42,7 +42,8 @@ impl AudioBuffer {
             let new_data = DoubleMappedBuffer::new(capacity).unwrap();
             
             unsafe {
-                new_data.slice_mut().copy_from_slice(self.get_slice(self.len));
+                (&mut new_data.slice_mut()[..self.len])
+                    .copy_from_slice(self.get_slice(self.len));
             }
 
             self.data = new_data;
@@ -277,6 +278,9 @@ impl Layers {
     }
 }
 
+// TODO errors for every layer-dependent Mixer method, rely on errors to report
+// missing layers
+
 /// An enumeration of the different errors that can occur when calling
 /// [Mixer::layer_metadata].
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -303,6 +307,38 @@ impl Display for LayerMetadataError {
 }
 
 impl Error for LayerMetadataError { }
+
+/// An enumeration of the different errors that can occur when calling
+/// [Mixer::seek_on_layer].
+#[derive(Debug)]
+pub enum SeekOnLayerError {
+
+    /// The user requested to seek on a layer that is currently not playing any
+    /// audio.
+    LayerNotActive(String),
+
+    /// The audio source that is currently being played on the layer where the
+    /// user attempted to seek raised an error in [AudioSource::seek].
+    SeekError(SeekError)
+}
+
+impl Display for SeekOnLayerError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SeekOnLayerError::LayerNotActive(l) =>
+                write!(f, "No audio is being played on layer `{}`.", l),
+            SeekOnLayerError::SeekError(e) => write!(f, "{}", e)
+        }
+    }
+}
+
+impl Error for SeekOnLayerError { }
+
+impl From<SeekError> for SeekOnLayerError {
+    fn from(e: SeekError) -> SeekOnLayerError {
+        SeekOnLayerError::SeekError(e)
+    }
+}
 
 /// A mixer manages multiple [AudioSource]s and adds their outputs.
 pub struct Mixer {
@@ -687,6 +723,52 @@ impl Mixer {
         }
     }
 
+    /// Seeks in the audio source of the given layer according to
+    /// [AudioSource::seek] with the given duration. Panics if the layer does
+    /// not exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer on which to seek.
+    /// * `delta`: The [SampleDuration] that determines the amount of time by
+    /// which is seeked. This is passed directly to [AudioSource::seek].
+    ///
+    /// # Errors
+    ///
+    /// Any [SeekOnLayerError] according to their respective documentations.
+    pub fn seek_on_layer(&mut self, layer: &str, mut delta: SampleDuration)
+            -> Result<(), SeekOnLayerError> {
+        let layer = self.layers.get_mut(layer);
+
+        if layer.active() {
+            if layer.buffer.len() > 0 {
+                if delta > SampleDuration::ZERO {
+                    let advance = delta.samples()
+                        .min(layer.buffer.len() as i64) as usize;
+    
+                    layer.buffer.advance_head(advance);
+                    delta -= SampleDuration::from_samples(advance as i64);
+                }
+                else {
+                    let retreat = (-delta.samples())
+                        .min(layer.buffer.len() as i64) as usize;
+
+                    layer.buffer.len -= retreat;
+                }
+            }
+
+            if let Some(source) = layer.source.as_mut() {
+                Ok(source.seek(delta)?)
+            }
+            else {
+                Ok(())
+            }
+        }
+        else {
+            Err(SeekOnLayerError::LayerNotActive(layer.name().to_owned()))
+        }
+    }
+
     /// Stops the audio source currently played on the `layer` with the given
     /// name. Returns true if and only if there was something playing on the
     /// layer before. Panics if the layer does not exist.
@@ -970,8 +1052,8 @@ mod tests {
             .all(|(i, b)| (i < 544 && b == 0) || (i >= 544 && b == 1)));
     }
 
-    const TEST_1_LEN: usize = 64;
-    const TEST_2_LEN: usize = 64;
+    const TEST_1_LEN: usize = 48000;
+    const TEST_2_LEN: usize = 48000;
 
     fn test_audio_1() -> Vec<Sample> {
         let mut result = Vec::with_capacity(TEST_1_LEN);
@@ -1373,5 +1455,30 @@ mod tests {
 
         assert_eq!(LayerMetadataError::LayerNotActive("test_2".to_owned()),
             mixer.layer_metadata("test_2").unwrap_err());
+    }
+
+    fn test_seek(samples: i64) {
+        let mut mixer = mock_mixer();
+        add_layer(&mut mixer, "test1", test_audio_1(), None);
+        let mut buf = [Sample::ZERO; TEST_1_LEN / 3];
+        let count = mixer.read(&mut buf).unwrap();
+        mixer.seek_on_layer("test1", SampleDuration::from_samples(samples))
+            .unwrap();
+        let result = rambot_test_util::read_to_end(&mut mixer).unwrap();
+
+        rambot_test_util::assert_approximately_equal(
+            &test_audio_1()[..count], &buf[..count]);
+        rambot_test_util::assert_approximately_equal(
+            &test_audio_1()[((count as i64 + samples) as usize)..], &result)
+    }
+
+    #[test]
+    fn seek_forward_short() {
+        test_seek(10);
+    }
+
+    #[test]
+    fn seek_forward_long() {
+        test_seek((TEST_1_LEN / 3) as i64);
     }
 }

@@ -4,7 +4,12 @@ use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildStateGuard, GuildState};
 
-use rambot_api::{AudioSource, ModifierDocumentation, PluginGuildConfig};
+use rambot_api::{
+    AudioSource,
+    ModifierDocumentation,
+    PluginGuildConfig,
+    SampleDuration
+};
 
 use rambot_proc_macro::rambot_command;
 
@@ -18,12 +23,12 @@ use serenity::model::prelude::Message;
 use songbird::Call;
 use songbird::error::JoinError;
 use songbird::input::{Input, Reader};
-use tokio::runtime::{Handle, Runtime};
 
 use std::collections::hash_map::Keys;
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
+use tokio::runtime::{Handle, Runtime};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::MutexGuard as TokioMutexGuard;
 
@@ -57,6 +62,7 @@ pub(crate) use unwrap_or_return;
     cmd_do,
     info,
     play,
+    seek,
     skip,
     stop
 )]
@@ -256,20 +262,18 @@ async fn play(ctx: &Context, msg: &Message, layer: String, audio: String)
     Ok(None)
 }
 
-#[rambot_command(
-    description = "Plays the next piece of the list currently played on the \
-        given layer. If the last piece of the list is active, this stops \
-        audio on the layer.",
-    usage = "layer"
-)]
-async fn skip(ctx: &Context, msg: &Message, layer: String)
-        -> CommandResult<Option<String>> {
+async fn with_layer_mut<F, E>(ctx: &Context, msg: &Message, layer: &str, f: F)
+    -> CommandResult<Option<String>>
+where
+    F: FnOnce(RwLockWriteGuard<Mixer>, &str) -> Result<(), E>,
+    E: Display
+{
     let result = with_guild_state(ctx, msg.guild_id.unwrap(),
         |gs| {
-            let mut mixer = gs.mixer_mut();
+            let mixer = gs.mixer_mut();
 
-            if mixer.contains_layer(&layer) {
-                Some(mixer.skip_on_layer(&layer))
+            if mixer.contains_layer(layer) {
+                Some(f(mixer, layer))
             }
             else {
                 None
@@ -281,6 +285,18 @@ async fn skip(ctx: &Context, msg: &Message, layer: String)
         Some(Err(e)) => Ok(Some(format!("{}", e))),
         None => Ok(Some(format!("Found no layer with name {}.", layer)))
     }
+}
+
+#[rambot_command(
+    description = "Plays the next piece of the list currently played on the \
+        given layer. If the last piece of the list is active, this stops \
+        audio on the layer.",
+    usage = "layer"
+)]
+async fn skip(ctx: &Context, msg: &Message, layer: String)
+        -> CommandResult<Option<String>> {
+    with_layer_mut(ctx, msg, &layer,
+        |mut mixer, layer| mixer.skip_on_layer(layer)).await
 }
 
 async fn stop_do(ctx: &Context, msg: &Message, layer: &str) -> Option<String> {
@@ -329,6 +345,20 @@ async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
     };
 
     Ok(reply)
+}
+
+#[rambot_command(
+    description = "Moves the current position in the audio of the layer with \
+        the given by the given amount of time. The `delta` is of the format \
+        `AhBmCsDmsEsam`, representing `A` hours, `B` minutes, `C` seconds, \
+        `D` milliseconds, and `E` samples (at 48 kHz). Omitting and \
+        reordering these terms is permitted. Negative deltas are used to seek \
+        backwards in time.",
+    usage = "layer delta"
+)]
+async fn seek(ctx: &Context, msg: &Message, layer: String, delta: SampleDuration) -> CommandResult<Option<String>> {
+    with_layer_mut(ctx, msg, &layer,
+        |mut mixer, layer| mixer.seek_on_layer(layer, delta)).await
 }
 
 #[rambot_command(

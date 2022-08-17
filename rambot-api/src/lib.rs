@@ -63,7 +63,8 @@ pub use audio::{
     AudioMetadataBuilder,
     AudioSource,
     AudioSourceList,
-    Sample
+    Sample,
+    SeekError
 };
 pub use documentation::{
     AudioDocumentation,
