@@ -1,4 +1,4 @@
-<img src="images/logo.png" align="right" width="256" height="256" />
+<img src="images/logo.png" align="right" width="224" height="224" />
 
 # Rambot
 
