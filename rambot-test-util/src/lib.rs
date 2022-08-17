@@ -1,6 +1,12 @@
 #![cfg(feature = "testing")]
 
-use rambot_api::{AudioMetadata, AudioSource, Sample, AudioMetadataBuilder};
+use rambot_api::{
+    AudioMetadata,
+    AudioSource,
+    AudioSourceList,
+    Sample,
+    AudioMetadataBuilder
+};
 
 use rand::{Rng, RngCore, SeedableRng};
 use rand::distributions::Distribution;
@@ -9,6 +15,7 @@ use rand::rngs::SmallRng;
 use rand_distr::{Normal, NormalError};
 
 use std::io;
+use std::vec::IntoIter;
 
 /// An [Rng] implementation that panics any time it is used. This is designed
 /// to be used with a [ConstantDistribution], as that requires no actual RNG
@@ -207,6 +214,38 @@ impl<D: Distribution<usize>, R: Rng> AudioSource for MockAudioSource<D, R> {
     }
 }
 
+/// An [AudioSourceList] that outputs a predefined list of entries, for testing
+/// purposes.
+pub struct MockAudioSourceList {
+    entries: IntoIter<String>
+}
+
+impl MockAudioSourceList {
+
+    /// Creates a new mock audio source list that outputs the entries in the
+    /// given collection in the order they are provided.
+    pub fn new<S, I>(entries: I) -> MockAudioSourceList
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>
+    {
+        let entries = entries.into_iter()
+            .map(|s| s.into())
+            .collect::<Vec<_>>()
+            .into_iter();
+
+        MockAudioSourceList {
+            entries
+        }
+    }
+}
+
+impl AudioSourceList for MockAudioSourceList {
+    fn next(&mut self) -> Result<Option<String>, io::Error> {
+        Ok(self.entries.next())
+    }
+}
+
 /// Reads audio from the given audio source until there is no more. The
 /// returned vector of [Sample]s represents the complete remaining audio output
 /// by the given source.
@@ -279,7 +318,7 @@ where
     let expected = expected.as_ref();
     let actual = actual.as_ref();
 
-    //assert_eq!(expected.len(), actual.len());
+    assert_eq!(expected.len(), actual.len());
 
     let zipped = expected.iter().cloned().zip(actual.iter().cloned());
 
@@ -287,4 +326,24 @@ where
         assert_within_eps(expected.left, actual.left, i);
         assert_within_eps(expected.right, actual.right, i);
     }
+}
+
+/// Collectes all entries in the given audio source `list` into a vector. Any
+/// errors raised in [AudioSourceList::read] will be forwarded. If the list
+/// contains more than `max_len` entries, only the first `max_len` entries are
+/// queried and collected.
+pub fn collect_list(list: &mut Box<dyn AudioSourceList + Send + Sync>,
+        max_len: usize) -> Result<Vec<String>, io::Error> {
+    let mut collected = Vec::new();
+
+    for _ in 0..max_len {
+        if let Some(entry) = list.next()? {
+            collected.push(entry);
+        }
+        else {
+            break;
+        }
+    }
+
+    Ok(collected)
 }
