@@ -10,3 +10,6 @@ crate-type = [ "cdylib" ]
 
 [dependencies]
 rambot-api = { path = "../rambot-api" }
+
+[dev-dependencies]
+rambot-test-util = { path = "../rambot-test-util", features = [ "testing" ] }

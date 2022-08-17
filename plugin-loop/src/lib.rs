@@ -81,3 +81,56 @@ fn make_loop_plugin() -> LoopPlugin {
 }
 
 rambot_api::export_plugin!(make_loop_plugin);
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use rambot_test_util::MockAudioSourceList;
+
+    fn make_loop(child: MockAudioSourceList) -> Box<dyn AudioSourceList + Send + Sync> {
+        let guild_config = PluginGuildConfig::default();
+        let child = Box::new(child);
+
+        LoopAdapterResolver.resolve(&HashMap::new(), child, guild_config)
+            .unwrap()
+    }
+
+    const COLLECT_MAX_LEN: usize = 128;
+
+    fn collect_loop(entries: Vec<&str>) -> Vec<String> {
+        let child = MockAudioSourceList::new(entries);
+        let mut looped = make_loop(child);
+
+        rambot_test_util::collect_list(&mut looped, COLLECT_MAX_LEN).unwrap()
+    }
+
+    #[test]
+    fn empty() {
+        assert!(collect_loop(vec![]).is_empty());
+    }
+
+    #[test]
+    fn singleton() {
+        let collected = collect_loop(vec!["apple"]);
+
+        assert_eq!(COLLECT_MAX_LEN, collected.len());
+
+        for entry in collected {
+            assert_eq!("apple", entry);
+        }
+    }
+
+    #[test]
+    fn three_entries() {
+        let entries = vec!["apple", "banana", "cherry"];
+        let collected = collect_loop(entries.clone());
+
+        assert_eq!(COLLECT_MAX_LEN, collected.len());
+
+        for (i, entry) in collected.iter().enumerate() {
+            assert_eq!(entries[i % entries.len()], entry);
+        }
+    }
+}

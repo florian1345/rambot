@@ -1005,9 +1005,8 @@ mod tests {
         PluginGuildConfig
     };
 
-    use rambot_test_util::MockAudioSource;
+    use rambot_test_util::{MockAudioSource, MockAudioSourceList};
 
-    use std::vec::IntoIter;
     use std::sync::Mutex;
 
     fn pcm_read_to_end<S>(mut buf: &mut [u8], read: &mut PCMRead<S>) -> usize
@@ -1193,16 +1192,6 @@ mod tests {
         }
     }
 
-    struct MockAudioSourceList {
-        entries: IntoIter<String>
-    }
-
-    impl AudioSourceList for MockAudioSourceList {
-        fn next(&mut self) -> Result<Option<String>, io::Error> {
-            Ok(self.entries.next())
-        }
-    }
-
     struct MockAudioSourceListResolver;
 
     impl AudioSourceListResolver for MockAudioSourceListResolver {
@@ -1216,12 +1205,11 @@ mod tests {
 
         fn resolve(&self, descriptor: &str, _: PluginGuildConfig)
                 -> Result<Box<dyn AudioSourceList + Send + Sync>, String> {
-            Ok(Box::new(MockAudioSourceList {
-                entries: descriptor.split(',')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>()
-                    .into_iter()
-            }))
+            let entries = descriptor.split(',')
+                .map(|s| s.to_owned())
+                .collect::<Vec<_>>();
+
+            Ok(Box::new(MockAudioSourceList::new(entries)))
         }
     }
 

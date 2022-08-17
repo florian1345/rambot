@@ -104,3 +104,70 @@ fn make_shuffle_plugin() -> ShufflePlugin {
 }
 
 rambot_api::export_plugin!(make_shuffle_plugin);
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use rambot_test_util::MockAudioSourceList;
+
+    fn make_shuffle(child: MockAudioSourceList) -> Box<dyn AudioSourceList + Send + Sync> {
+        let guild_config = PluginGuildConfig::default();
+        let child = Box::new(child);
+
+        ShuffleAdapterResolver.resolve(&HashMap::new(), child, guild_config)
+            .unwrap()
+    }
+
+    fn collect_shuffle(entries: Vec<&str>) -> Vec<String> {
+        let child = MockAudioSourceList::new(entries);
+        let mut looped = make_shuffle(child);
+
+        rambot_test_util::collect_list(&mut looped, usize::MAX).unwrap()
+    }
+
+    #[test]
+    fn empty() {
+        assert!(collect_shuffle(vec![]).is_empty());
+    }
+
+    #[test]
+    fn singleton() {
+        assert_eq!(vec!["hello".to_owned()], collect_shuffle(vec!["hello"]));
+    }
+
+    #[test]
+    fn three_entries() {
+        // With three entries, there are 3! = 6 configurations. We expect each
+        // one to occur 18000 / 6 = 3000 times. The standard deviation is
+        // sqrt(18000 * 1/6 * 5/6) = 50, so with 10 sigma certainty, the
+        // number of occurrences for each configuration should fall within the
+        // interval [3000 - 500, 3000 + 500] = [2500, 3500].
+
+        const REPETITIONS: usize = 18000;
+        const MIN_EXPECTED: usize = 2500;
+        const MAX_EXPECTED: usize = 3500;
+
+        let mut occurrences: [usize; 6] = [0; 6];
+
+        for _ in 0..REPETITIONS {
+            let s = collect_shuffle(vec!["0", "1", "2"]);
+
+            match (s[0].as_str(), s[1].as_str(), s[2].as_str()) {
+                ("0", "1", "2") => occurrences[0] += 1,
+                ("0", "2", "1") => occurrences[1] += 1,
+                ("1", "0", "2") => occurrences[2] += 1,
+                ("1", "2", "0") => occurrences[3] += 1,
+                ("2", "0", "1") => occurrences[4] += 1,
+                ("2", "1", "0") => occurrences[5] += 1,
+                _ => panic!("Invalid shuffle.")
+            }
+        }
+
+        for occurrences in occurrences {
+            assert!(occurrences >= MIN_EXPECTED);
+            assert!(occurrences <= MAX_EXPECTED);
+        }
+    }
+}
