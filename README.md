@@ -1,5 +1,7 @@
 # Rambot
 
+<img src="images/logo.png" align="right" width="128" height="128" />
+
 The **"Rambot Augmentable Music BOT"** for Discord (Rambot) is a music bot written in Rust with the main design goal of extensibility.
 It achieves this goal by dynamically loading plugins that offer various functionality, on top of the core feature set provided by the bot itself.
 Some default plugins are provided along with the bot in this repository.
