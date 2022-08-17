@@ -1,3 +1,7 @@
+use crate::SampleDuration;
+
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
 use std::io;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
@@ -312,6 +316,44 @@ impl Default for AudioMetadataBuilder {
     }
 }
 
+/// An enumeration of the different errors that can occur when calling
+/// [AudioSource::seek].
+#[derive(Debug)]
+pub enum SeekError {
+
+    /// The audio source does not support seeking by the given duration. As an
+    /// example, some audio sources may only support seeking forward (with
+    /// positive durations) and raise this issue if a seek backward (with
+    /// negative duration) is requested.
+    UnsupportedDelta,
+
+    /// During an IO-based seeking operation, an IO error occurred. The error
+    /// which was raised is wrapped in this variant.
+    IoError(io::Error)
+}
+
+impl From<io::Error> for SeekError {
+    fn from(e: io::Error) -> SeekError {
+        SeekError::IoError(e)
+    }
+}
+
+impl Display for SeekError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SeekError::UnsupportedDelta =>
+                write!(f, "The plugin does not support seeking by the given \
+                    amount."),
+            SeekError::IoError(e) =>
+                write!(f, "An IO error occurred while seeking: {}", e)
+        }
+    }
+}
+
+impl Error for SeekError { }
+
+const SEEK_DEFAULT_IMPL_BUF_SIZE: usize = 1024;
+
 /// A trait for types which can read audio data in the form of [Sample]s. The
 /// interface is similar to that of the IO [Read](std::io::Read) trait.
 /// 
@@ -345,6 +387,55 @@ pub trait AudioSource {
     /// Any IO-[Error](io::Error) that occurs during reading.
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error>;
 
+    /// Moves the reader's current position in the audio by the given amount.
+    /// That is, subsequent calls to [AudioSource::read] will continue from the
+    /// current possition plus the given delta. There is no guarantee that this
+    /// operation is supported. If it is not, then an appropriate error is
+    /// raised.
+    ///
+    /// By default, this is implemented as seeking forward by calling
+    /// [AudioSource::read] multiple times, reading into a buffer that is
+    /// discarded afterwards. This is disadvantageous in two ways: It limits
+    /// seeking to the forward direction, and it is inefficient from a
+    /// performance perspective. Hence, if you want to support seeking in an
+    /// effective manner, you should override this method.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta`: The [SampleDuration] by which the position is moved.
+    /// Positive values mean seeking forward, negative values mean seeking
+    /// backward.
+    ///
+    /// # Errors
+    ///
+    /// Any [SeekError] according to their respective documentations.
+    fn seek(&mut self, delta: SampleDuration) -> Result<(), SeekError> {
+        if delta == SampleDuration::ZERO {
+            return Ok(());
+        }
+
+        if delta < SampleDuration::ZERO {
+            return Err(SeekError::UnsupportedDelta);
+        }
+
+        let mut samples = delta.samples() as u64;
+        let mut buf = [Sample::ZERO; SEEK_DEFAULT_IMPL_BUF_SIZE];
+
+        while samples > 0 {
+            let buf_size =
+                samples.min(SEEK_DEFAULT_IMPL_BUF_SIZE as u64) as usize;
+            let count = self.read(&mut buf[..buf_size])?;
+
+            if count == 0 {
+                return Ok(());
+            }
+
+            samples -= count as u64;
+        }
+
+        Ok(())
+    }
+
     /// Indicates whether this audio source wraps around a child source. This
     /// must be `true` for any audio source constituting an effect, i.e. which
     /// was resolved by an [EffectResolver](crate::resolver::EffectResolver).
@@ -366,9 +457,15 @@ pub trait AudioSource {
     fn metadata(&self) -> AudioMetadata;
 }
 
+// TODO check whether you can get rid of this implementation
+
 impl AudioSource for Box<dyn AudioSource + Send + Sync> {
     fn read(&mut self, buf: &mut [Sample]) -> Result<usize, io::Error> {
         self.as_mut().read(buf)
+    }
+
+    fn seek(&mut self, delta: SampleDuration) -> Result<(), SeekError> {
+        self.as_mut().seek(delta)
     }
 
     fn has_child(&self) -> bool {

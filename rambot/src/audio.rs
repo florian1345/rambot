@@ -3,7 +3,7 @@ use rambot_api::{
     AudioSource,
     AudioSourceList,
     PluginGuildConfig,
-    Sample
+    Sample, SampleDuration, SeekError
 };
 
 use songbird::input::reader::MediaSource;
@@ -42,7 +42,8 @@ impl AudioBuffer {
             let new_data = DoubleMappedBuffer::new(capacity).unwrap();
             
             unsafe {
-                new_data.slice_mut().copy_from_slice(self.get_slice(self.len));
+                (&mut new_data.slice_mut()[..self.len])
+                    .copy_from_slice(self.get_slice(self.len));
             }
 
             self.data = new_data;
@@ -136,8 +137,7 @@ impl Layer {
         self.buffer.len() > 0 || self.source.is_some()
     }
 
-    fn play(&mut self, source: Box<dyn AudioSource + Send + Sync>) {
-        self.buffer.clear();
+    fn set_source(&mut self, source: Box<dyn AudioSource + Send + Sync>) {
         self.source = Some(source);
     }
 
@@ -147,7 +147,8 @@ impl Layer {
         self.list.take().is_some() | self.source.take().is_some()
     }
 
-    fn deactivate(&mut self) {
+    /// Like `stop`, but does not clear the buffer.
+    fn soft_stop(&mut self) {
         self.list = None;
         self.source = None;
         self.error_callback = no_callback();
@@ -192,23 +193,25 @@ impl Layer {
                     if let Some(next) = list.next()? {
                         // Audio source ran out but list continues
 
-                        let res = play_on_layer(self, &next, plugin_manager);
+                        let res = play_on_layer::<false, _>(
+                            self, &next, plugin_manager);
 
                         if let Err(e) = res {
                             (self.error_callback)(self.name.clone(), e);
-                            self.deactivate();
+                            self.soft_stop();
+                            break;
                         }
                     }
                     else {
                         // Audio source ran out and list is finished
 
-                        self.deactivate();
+                        self.soft_stop();
                     }
                 }
                 else {
                     // Audio source ran out and there is no list
 
-                    self.deactivate();
+                    self.soft_stop();
                 }
             }
             else {
@@ -277,6 +280,9 @@ impl Layers {
     }
 }
 
+// TODO errors for every layer-dependent Mixer method, rely on errors to report
+// missing layers
+
 /// An enumeration of the different errors that can occur when calling
 /// [Mixer::layer_metadata].
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -304,6 +310,38 @@ impl Display for LayerMetadataError {
 
 impl Error for LayerMetadataError { }
 
+/// An enumeration of the different errors that can occur when calling
+/// [Mixer::seek_on_layer].
+#[derive(Debug)]
+pub enum SeekOnLayerError {
+
+    /// The user requested to seek on a layer that is currently not playing any
+    /// audio.
+    LayerNotActive(String),
+
+    /// The audio source that is currently being played on the layer where the
+    /// user attempted to seek raised an error in [AudioSource::seek].
+    SeekError(SeekError)
+}
+
+impl Display for SeekOnLayerError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SeekOnLayerError::LayerNotActive(l) =>
+                write!(f, "No audio is being played on layer `{}`.", l),
+            SeekOnLayerError::SeekError(e) => write!(f, "{}", e)
+        }
+    }
+}
+
+impl Error for SeekOnLayerError { }
+
+impl From<SeekError> for SeekOnLayerError {
+    fn from(e: SeekError) -> SeekOnLayerError {
+        SeekOnLayerError::SeekError(e)
+    }
+}
+
 /// A mixer manages multiple [AudioSource]s and adds their outputs.
 pub struct Mixer {
     layers: Layers,
@@ -314,7 +352,7 @@ fn to_io_err<T, E: Display>(r: Result<T, E>) -> Result<T, io::Error> {
     r.map_err(|e| io::Error::new(ErrorKind::Other, format!("{}", e)))
 }
 
-fn play_source_on_layer<P>(layer: &mut Layer,
+fn play_source_on_layer<const CLEAR_BUF: bool, P>(layer: &mut Layer,
     mut source: Box<dyn AudioSource + Send + Sync>, plugin_manager: &P)
     -> Result<(), io::Error>
 where
@@ -327,12 +365,16 @@ where
             .map_err(|(e, _)| e))?;
     }
 
-    layer.play(source);
+    if CLEAR_BUF {
+        layer.buffer.clear();
+    }
+
+    layer.set_source(source);
     Ok(())
 }
 
-fn play_on_layer<P>(layer: &mut Layer, descriptor: &str, plugin_manager: &P)
-    -> Result<(), io::Error>
+fn play_on_layer<const CLEAR_BUF: bool, P>(layer: &mut Layer, descriptor: &str,
+    plugin_manager: &P) -> Result<(), io::Error>
 where
     P: AsRef<PluginManager>
 {
@@ -340,10 +382,10 @@ where
         plugin_manager.as_ref().resolve_audio_source(
             descriptor, &layer.plugin_guild_config))?;
 
-    play_source_on_layer(layer, source, plugin_manager)
+    play_source_on_layer::<CLEAR_BUF, _>(layer, source, plugin_manager)
 }
 
-fn play_list_on_layer<P>(layer: &mut Layer,
+fn play_list_on_layer<const CLEAR_BUF: bool, P>(layer: &mut Layer,
     mut list: Box<dyn AudioSourceList + Send + Sync>, plugin_manager: &P)
     -> Result<(), io::Error>
 where
@@ -356,7 +398,7 @@ where
     }
 
     if let Some(descriptor) = list.next()? {
-        play_on_layer(layer, &descriptor, plugin_manager)?;
+        play_on_layer::<CLEAR_BUF, _>(layer, &descriptor, plugin_manager)?;
         layer.list = Some(list);
     }
 
@@ -656,12 +698,13 @@ impl Mixer {
 
         match audio {
             AudioDescriptorList::Single(source) => {
-                play_list_on_layer(layer,
+                play_list_on_layer::<true, _>(layer,
                     Box::new(SingleAudioSourceList::new(source)),
                     &self.plugin_manager)?
             },
             AudioDescriptorList::List(list) => {
-                play_list_on_layer(layer, list, &self.plugin_manager)?
+                play_list_on_layer::<true, _>(
+                    layer, list, &self.plugin_manager)?
             }
         }
 
@@ -676,7 +719,7 @@ impl Mixer {
 
         match layer.list.as_mut().map(|l| l.next()) {
             Some(Ok(Some(next))) => {
-                play_on_layer(layer, &next, &self.plugin_manager)?;
+                play_on_layer::<true, _>(layer, &next, &self.plugin_manager)?;
                 Ok(())
             },
             Some(Err(e)) => Err(e),
@@ -684,6 +727,52 @@ impl Mixer {
                 layer.stop();
                 Ok(())
             }
+        }
+    }
+
+    /// Seeks in the audio source of the given layer according to
+    /// [AudioSource::seek] with the given duration. Panics if the layer does
+    /// not exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer`: The name of the layer on which to seek.
+    /// * `delta`: The [SampleDuration] that determines the amount of time by
+    /// which is seeked. This is passed directly to [AudioSource::seek].
+    ///
+    /// # Errors
+    ///
+    /// Any [SeekOnLayerError] according to their respective documentations.
+    pub fn seek_on_layer(&mut self, layer: &str, mut delta: SampleDuration)
+            -> Result<(), SeekOnLayerError> {
+        let layer = self.layers.get_mut(layer);
+
+        if layer.active() {
+            if layer.buffer.len() > 0 {
+                if delta > SampleDuration::ZERO {
+                    let advance = delta.samples()
+                        .min(layer.buffer.len() as i64) as usize;
+    
+                    layer.buffer.advance_head(advance);
+                    delta -= SampleDuration::from_samples(advance as i64);
+                }
+                else {
+                    let retreat = (-delta.samples())
+                        .min(layer.buffer.len() as i64) as usize;
+
+                    layer.buffer.len -= retreat;
+                }
+            }
+
+            if let Some(source) = layer.source.as_mut() {
+                Ok(source.seek(delta)?)
+            }
+            else {
+                Ok(())
+            }
+        }
+        else {
+            Err(SeekOnLayerError::LayerNotActive(layer.name().to_owned()))
         }
     }
 
@@ -970,16 +1059,16 @@ mod tests {
             .all(|(i, b)| (i < 544 && b == 0) || (i >= 544 && b == 1)));
     }
 
-    const TEST_1_LEN: usize = 64;
-    const TEST_2_LEN: usize = 64;
+    const TEST_1_LEN: usize = 48000;
+    const TEST_2_LEN: usize = 48000;
 
     fn test_audio_1() -> Vec<Sample> {
         let mut result = Vec::with_capacity(TEST_1_LEN);
 
         for i in 0..TEST_1_LEN {
-            let x = i as f32;
-            let left = x + 1.0;
-            let right = 2.0 * x;
+            let x = i as f64;
+            let left = (x * 0.01).sin() as f32;
+            let right = (x * 0.02).sin() as f32;
 
             result.push(Sample {
                 left,
@@ -994,9 +1083,9 @@ mod tests {
         let mut result = Vec::with_capacity(TEST_2_LEN);
 
         for i in 0..TEST_2_LEN {
-            let x = i as f32;
-            let left = 3.0 * x;
-            let right = x + 2.0;
+            let x = i as f64;
+            let left = (x * 0.03).sin() as f32;
+            let right = (x * 0.04).sin() as f32;
 
             result.push(Sample {
                 left,
@@ -1099,7 +1188,7 @@ mod tests {
 
             Ok(Box::new(
                 MockAudioSource::with_normally_distributed_segment_size(
-                    samples, 32.0, 8.0).unwrap()
+                    samples, 128.0, 32.0).unwrap()
             ))
         }
     }
@@ -1154,6 +1243,8 @@ mod tests {
             layer, descriptor, Default::default(), no_callback())
     }
 
+    const RANDOM_TEST_ITERATORS: usize = 64;
+
     #[test]
     #[should_panic]
     fn play_on_nonexistent_layer() {
@@ -1173,33 +1264,38 @@ mod tests {
 
     #[test]
     fn play_single_audio_source() {
-        let mut mixer = registered_mixer();
-        mixer.add_layer("l");
-        play(&mut mixer, "l", "1").unwrap();
-
-        assert!(mixer.active());
-
-        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
-
-        rambot_test_util::assert_approximately_equal(test_audio_1(), audio);
-        assert!(!mixer.active());
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = registered_mixer();
+            mixer.add_layer("l");
+            play(&mut mixer, "l", "1").unwrap();
+    
+            assert!(mixer.active());
+    
+            let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+    
+            rambot_test_util::assert_approximately_equal(
+                test_audio_1(), audio);
+            assert!(!mixer.active());
+        }
     }
 
     #[test]
     fn play_playlist() {
-        let mut mixer = registered_mixer();
-        mixer.add_layer("l");
-        play(&mut mixer, "l", "1,2,1").unwrap();
+            for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = registered_mixer();
+            mixer.add_layer("l");
+            play(&mut mixer, "l", "1,2,1").unwrap();
 
-        assert!(mixer.active());
+            assert!(mixer.active());
 
-        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
-        let mut expected = test_audio_1();
-        expected.append(&mut test_audio_2());
-        expected.append(&mut test_audio_1());
+            let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+            let mut expected = test_audio_1();
+            expected.append(&mut test_audio_2());
+            expected.append(&mut test_audio_1());
 
-        rambot_test_util::assert_approximately_equal(expected, audio);
-        assert!(!mixer.active());
+            rambot_test_util::assert_approximately_equal(expected, audio);
+            assert!(!mixer.active());
+        }
     }
 
     #[test]
@@ -1218,43 +1314,47 @@ mod tests {
 
     #[test]
     fn skip_during_playlist() {
-        let mut mixer = registered_mixer();
-        mixer.add_layer("l");
-        play(&mut mixer, "l", "1,2,1").unwrap();
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = registered_mixer();
+            mixer.add_layer("l");
+            play(&mut mixer, "l", "1,2,1").unwrap();
 
-        assert!(mixer.read(&mut [Sample::ZERO; 10]).unwrap() > 0);
+            assert!(mixer.read(&mut [Sample::ZERO; 10]).unwrap() > 0);
 
-        mixer.skip_on_layer("l").unwrap();
+            mixer.skip_on_layer("l").unwrap();
 
-        assert!(mixer.active());
+            assert!(mixer.active());
 
-        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
-        let mut expected = test_audio_2();
-        expected.append(&mut test_audio_1());
+            let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+            let mut expected = test_audio_2();
+            expected.append(&mut test_audio_1());
 
-        rambot_test_util::assert_approximately_equal(expected, audio);
-        assert!(!mixer.active());
+            rambot_test_util::assert_approximately_equal(expected, audio);
+            assert!(!mixer.active());
+        }
     }
 
     #[test]
     fn skip_end_of_playlist() {
-        let mut mixer = registered_mixer();
-        mixer.add_layer("l");
-        play(&mut mixer, "l", "1,2,1").unwrap();
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = registered_mixer();
+            mixer.add_layer("l");
+            play(&mut mixer, "l", "1,2,1").unwrap();
 
-        let mut total = 0;
+            let mut total = 0;
 
-        while total <= TEST_1_LEN + TEST_2_LEN {
-            let count = mixer.read(&mut [Sample::ZERO; 10]).unwrap();
-            total += count;
+            while total <= TEST_1_LEN + TEST_2_LEN {
+                let count = mixer.read(&mut [Sample::ZERO; 10]).unwrap();
+                total += count;
 
-            assert!(count > 0);
+                assert!(count > 0);
+            }
+
+            mixer.skip_on_layer("l").unwrap();
+
+            assert!(!mixer.active());
+            assert_eq!(0, mixer.read(&mut [Sample::ZERO; 10]).unwrap());
         }
-
-        mixer.skip_on_layer("l").unwrap();
-
-        assert!(!mixer.active());
-        assert_eq!(0, mixer.read(&mut [Sample::ZERO; 10]).unwrap());
     }
 
     #[test]
@@ -1279,39 +1379,64 @@ mod tests {
 
     #[test]
     fn mid_playlist_resolution_fail() {
-        let error = Arc::new(Mutex::new(false));
-        let error_clone = Arc::clone(&error);
-        let mut mixer = registered_mixer();
-        mixer.add_layer("l");
-        mixer.play_on_layer("l", "1,#,1", Default::default(), move |_, _| {
-            *error_clone.lock().unwrap() = true;
-        }).unwrap();
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let error = Arc::new(Mutex::new(false));
+            let error_clone = Arc::clone(&error);
+            let mut mixer = registered_mixer();
+            mixer.add_layer("l");
+            mixer.play_on_layer("l", "1,#,1", Default::default(), move |_, _| {
+                *error_clone.lock().unwrap() = true;
+            }).unwrap();
 
-        assert!(mixer.active());
+            assert!(mixer.active());
 
-        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+            let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
 
-        rambot_test_util::assert_approximately_equal(test_audio_1(), audio);
-        assert!(!mixer.active());
-        assert!(*error.lock().unwrap());
+            rambot_test_util::assert_approximately_equal(test_audio_1(), audio);
+            assert!(!mixer.active());
+            assert!(*error.lock().unwrap());
+        }
+    }
+
+    #[test]
+    fn two_overlayed_playlists() {
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = registered_mixer();
+            mixer.add_layer("a");
+            mixer.add_layer("b");
+            play(&mut mixer, "a", "1,2").unwrap();
+            play(&mut mixer, "b", "2,2").unwrap();
+
+            let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+            let mut expected = test_audio_sum();
+
+            for sample in test_audio_2() {
+                expected.push(sample + sample);
+            }
+
+            assert!(!mixer.active());
+            rambot_test_util::assert_approximately_equal(expected, audio);
+        }
     }
 
     #[test]
     fn non_failed_layers_continue_on_error() {
-        let mut mixer = registered_mixer();
-        mixer.add_layer("a");
-        mixer.add_layer("b");
-        play(&mut mixer, "a", "1,2").unwrap();
-        play(&mut mixer, "b", "2,#").unwrap();
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = registered_mixer();
+            mixer.add_layer("a");
+            mixer.add_layer("b");
+            play(&mut mixer, "a", "1,2").unwrap();
+            play(&mut mixer, "b", "2,#").unwrap();
 
-        assert!(mixer.active());
+            assert!(mixer.active());
 
-        let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
-        let mut expected = test_audio_sum();
-        expected.append(&mut test_audio_2());
+            let audio = rambot_test_util::read_to_end(&mut mixer).unwrap();
+            let mut expected = test_audio_sum();
+            expected.append(&mut test_audio_2());
 
-        assert!(!mixer.active());
-        rambot_test_util::assert_approximately_equal(expected, audio);
+            assert!(!mixer.active());
+            rambot_test_util::assert_approximately_equal(expected, audio);
+        }
     }
 
     fn test_metadata_1() -> AudioMetadata {
@@ -1373,5 +1498,32 @@ mod tests {
 
         assert_eq!(LayerMetadataError::LayerNotActive("test_2".to_owned()),
             mixer.layer_metadata("test_2").unwrap_err());
+    }
+
+    fn test_seek(samples: i64) {
+        for _ in 0..RANDOM_TEST_ITERATORS {
+            let mut mixer = mock_mixer();
+            add_layer(&mut mixer, "test1", test_audio_1(), None);
+            let mut buf = [Sample::ZERO; TEST_1_LEN / 3];
+            let count = mixer.read(&mut buf).unwrap();
+            mixer.seek_on_layer("test1", SampleDuration::from_samples(samples))
+                .unwrap();
+            let result = rambot_test_util::read_to_end(&mut mixer).unwrap();
+
+            rambot_test_util::assert_approximately_equal(
+                &test_audio_1()[..count], &buf[..count]);
+            rambot_test_util::assert_approximately_equal(
+                &test_audio_1()[((count as i64 + samples) as usize)..], &result)
+        }
+    }
+
+    #[test]
+    fn seek_forward_short() {
+        test_seek(10);
+    }
+
+    #[test]
+    fn seek_forward_long() {
+        test_seek((TEST_1_LEN / 3) as i64);
     }
 }

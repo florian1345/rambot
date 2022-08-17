@@ -104,4 +104,3 @@ fn make_shuffle_plugin() -> ShufflePlugin {
 }
 
 rambot_api::export_plugin!(make_shuffle_plugin);
-

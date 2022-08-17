@@ -267,24 +267,24 @@ where
     S1: AsRef<[Sample]>,
     S2: AsRef<[Sample]>
 {
-    fn assert_within_eps(a: f32, b: f32) {
+    fn assert_within_eps(a: f32, b: f32, i: usize) {
         // 1 / 100000 => less than one unit in 16-bit integer PCM
         const EPS: f32 = 0.00001;
 
         if (a - b).abs() > EPS {
-            panic!("floats not within epsilon: {} and {}", a, b);
+            panic!("floats not within epsilon: {} and {} (index {})", a, b, i);
         }
     }
 
     let expected = expected.as_ref();
     let actual = actual.as_ref();
 
-    assert_eq!(expected.len(), actual.len());
+    //assert_eq!(expected.len(), actual.len());
 
     let zipped = expected.iter().cloned().zip(actual.iter().cloned());
 
-    for (expected, actual) in zipped {
-        assert_within_eps(expected.left, actual.left);
-        assert_within_eps(expected.right, actual.right);
+    for (i, (expected, actual)) in zipped.enumerate() {
+        assert_within_eps(expected.left, actual.left, i);
+        assert_within_eps(expected.right, actual.right, i);
     }
 }
