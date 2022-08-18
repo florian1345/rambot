@@ -1,14 +1,18 @@
 use crate::FrameworkTypeMapKey;
 use crate::command::{
-    configure_guild_state,
-    with_guild_state,
-    with_guild_state_mut_unguarded,
+    get_guild_state,
+    get_guild_state_mut,
+    get_guild_state_mut_unguarded,
+    GuildStateRef,
+    GuildStateMut,
+    GuildStateMutUnguarded,
     unwrap_or_return
 };
 
 use rambot_proc_macro::rambot_command;
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -17,13 +21,14 @@ use serenity::builder::{CreateComponents, CreateActionRow, CreateButton};
 use serenity::client::{Context, EventHandler};
 use serenity::framework::standard::{CommandGroup, CommandResult};
 use serenity::framework::standard::macros::{command, group};
+use serenity::model::application::component::ButtonStyle;
 use serenity::model::application::interaction::{
     Interaction,
     InteractionResponseType
 };
 use serenity::model::channel::MessageType;
 use serenity::model::id::{MessageId, GuildId};
-use serenity::model::prelude::Message;
+use serenity::model::prelude::{Message, ChannelId};
 
 mod button;
 
@@ -50,14 +55,13 @@ pub fn get_board_commands() -> &'static CommandGroup {
 async fn add(ctx: &Context, msg: &Message, name: String)
         -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let added = configure_board_manager(ctx, guild_id, |board_mgr| {
-        board_mgr.add_board(Board {
-            name,
-            buttons: Vec::new()
-        })
-    }).await;
+    let mut board_mgr = get_board_manager_mut(ctx, guild_id).await;
+    let board = Board {
+        name,
+        buttons: Vec::new()
+    };
 
-    if added {
+    if board_mgr.add_board(board) {
         Ok(None)
     }
     else {
@@ -73,17 +77,10 @@ async fn add(ctx: &Context, msg: &Message, name: String)
 async fn remove(ctx: &Context, msg: &Message, name: String)
         -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let found = configure_board_manager(ctx, guild_id, |board_mgr| {
-        if board_mgr.boards.remove(&name).is_some() {
-            board_mgr.active_boards.retain(|_, v| v.name != name);
-            true
-        }
-        else {
-            false
-        }
-    }).await;
+    let mut board_mgr = get_board_manager_mut(ctx, guild_id).await;
+    board_mgr.deactivate_board(ctx, &name).await?;
 
-    if found {
+    if board_mgr.boards.remove(&name).is_some() {
         Ok(None)
     }
     else {
@@ -98,43 +95,19 @@ async fn remove(ctx: &Context, msg: &Message, name: String)
 async fn display(ctx: &Context, msg: &Message, name: String)
         -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let board_res = unwrap_or_return!(with_board_manager(ctx, guild_id,
-        |board_mgr| {
-            if let Some(board) = board_mgr.boards.get(&name) {
-                Ok(board.clone())
-            }
-            else {
-                Err(format!("I found no board with name `{}`.", name))
-            }
-        }).await, Ok(Some(format!("I found no board with name `{}`.", name))));
+    let channel_id = msg.channel_id;
+    let mut board_mgr = unwrap_or_return!(
+        get_board_manager_mut_unguarded(ctx, guild_id).await,
+        Ok(Some(format!("I found no board with name `{}`.", name))));
 
-    match board_res {
-        Ok(board) => {
-            let content = format!("**{}**\n", name);
-            let mut board_msgs = Vec::new();
+    board_mgr.deactivate_board(ctx, &name).await?;
+    let success = board_mgr.activate_board(ctx, &name, channel_id).await?;
 
-            board_msgs.push(msg.channel_id.send_message(ctx, |m| {
-                m.content(content)
-                    .components(|c| board.add_as_components(c, 0))
-            }).await?);
-
-            for page in 1..board.page_count() {
-                board_msgs.push(msg.channel_id.send_message(ctx, |m| {
-                    m.components(|c| board.add_as_components(c, page))
-                }).await?);
-            }
-
-            for board_msg in board_msgs {
-                let name = name.clone();
-
-                with_guild_state_mut_unguarded(ctx, guild_id, |gs| {
-                    gs.board_manager_mut().activate(&name, board_msg.id);
-                }).await;
-            }
-
-            Ok(None)
-        },
-        Err(e) => Ok(Some(e))
+    if success {
+        Ok(None)
+    }
+    else {
+        Ok(Some(format!("I found no board with name `{}`.", name)))
     }
 }
 
@@ -144,13 +117,11 @@ async fn display(ctx: &Context, msg: &Message, name: String)
 )]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult<Option<String>> {
     let guild_id = msg.guild_id.unwrap();
-    let mut names = unwrap_or_return!(with_board_manager(ctx, guild_id,
-        |board_mgr| {
-            board_mgr.boards()
-                .map(|b| b.name.clone())
-                .collect::<Vec<_>>()
-        }).await,
+    let board_mgr = unwrap_or_return!(get_board_manager(ctx, guild_id).await,
         Ok(Some("I found no sound boards in this guild.".to_owned())));
+    let mut names = board_mgr.boards()
+        .map(|b| b.name.clone())
+        .collect::<Vec<_>>();
     names.sort();
     let mut reply = "Sound boards:".to_owned();
 
@@ -169,15 +140,26 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult<Option<String>> {
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Button {
     label: String,
-    command: String
+    command: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deactivate_command: Option<String>,
+    active: bool
 }
 
 impl Button {
     fn component_button(&self, index: usize) -> CreateButton {
         let mut button = CreateButton::default();
+        let style = if self.active {
+            ButtonStyle::Primary
+        }
+        else {
+            ButtonStyle::Secondary
+        };
 
         button.label(&self.label)
-            .custom_id(format!("{}", index));
+            .custom_id(format!("{}", index))
+            .style(style);
 
         button
     }
@@ -228,10 +210,17 @@ impl Board {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct UniqueMessageId {
+    channel_id: ChannelId,
+    message_id: MessageId
+}
+
 /// Manages all sound boards of a guild.
 pub struct BoardManager {
     boards: HashMap<String, Board>,
-    active_boards: HashMap<MessageId, Board>
+    active_board_messages: HashMap<String, Vec<UniqueMessageId>>,
+    active_board_names: HashMap<UniqueMessageId, String>
 }
 
 impl Default for BoardManager {
@@ -246,7 +235,8 @@ impl BoardManager {
     pub fn new() -> BoardManager {
         BoardManager {
             boards: HashMap::new(),
-            active_boards: HashMap::new()
+            active_board_messages: HashMap::new(),
+            active_board_names: HashMap::new()
         }
     }
 
@@ -268,31 +258,167 @@ impl BoardManager {
         }
     }
 
-    fn activate(&mut self, name: &str, message_id: MessageId) {
-        if let Some(board) = self.boards.get(name) {
-            self.active_boards.insert(message_id, board.clone());
+    /// Removes all messages associated with any active instance of the board
+    /// with the given name. Returns `true` if there was an active instance.
+    /// Raises an error if deleting any message failed.
+    async fn deactivate_board(&mut self, ctx: &Context, name: &str)
+            -> CommandResult<bool> {
+        if let Some(pages) = self.active_board_messages.remove(name) {
+            for page in pages {
+                let unique_id = UniqueMessageId {
+                    channel_id: page.channel_id,
+                    message_id: page.message_id
+                };
+                let channel_id = page.channel_id.0;
+                let message_id = page.message_id.0;
+                let message =
+                    ctx.http.get_message(channel_id, message_id).await;
+
+                self.active_board_names.remove(&unique_id);
+
+                if let Ok(message) = message {
+                    message.delete(ctx).await?;
+                }
+            }
+
+            Ok(true)
+        }
+        else {
+            Ok(false)
         }
     }
 
-    fn active_board(&self, message_id: MessageId) -> Option<&Board> {
-        self.active_boards.get(&message_id)
+    /// Posts messages in the channel with the given ID representing the board
+    /// with the given name. Returns `true` if there was a board with that
+    /// name. Raises an error if sending any message failed.
+    async fn activate_board(&mut self, ctx: &Context, name: &str,
+            channel_id: ChannelId) -> CommandResult<bool> {
+        let board = match self.boards.get(name) {
+            Some(b) => b,
+            _ => return Ok(false)
+        };
+        let content = format!("**{}**\n", name);
+        let mut board_msgs = Vec::new();
+
+        board_msgs.push(channel_id.send_message(ctx, |m| {
+            m.content(content)
+                .components(|c| board.add_as_components(c, 0))
+        }).await?);
+
+        for page in 1..board.page_count() {
+            board_msgs.push(channel_id.send_message(ctx, |m| {
+                m.components(|c| board.add_as_components(c, page))
+            }).await?);
+        }
+
+        let mut unique_msg_ids = Vec::new();
+
+        for msg in board_msgs {
+            let unique_id = UniqueMessageId {
+                channel_id,
+                message_id: msg.id
+            };
+
+            self.active_board_names.insert(unique_id, name.to_owned());
+            unique_msg_ids.push(unique_id);
+        }
+
+        self.active_board_messages.insert(name.to_owned(), unique_msg_ids);
+        Ok(true)
+    }
+
+    fn active_board(&self, message_id: MessageId, channel_id: ChannelId)
+            -> Option<&Board> {
+        let unique_id = UniqueMessageId {
+            channel_id,
+            message_id
+        };
+
+        self.active_board_names.get(&unique_id)
+            .and_then(|name| self.boards.get(name))
+    }
+
+    fn active_board_mut(&mut self, message_id: MessageId,
+            channel_id: ChannelId) -> Option<&mut Board> {
+        let unique_id = UniqueMessageId {
+            channel_id,
+            message_id
+        };
+
+        self.active_board_names.get(&unique_id)
+            .and_then(|name| self.boards.get_mut(name))
     }
 }
 
-async fn with_board_manager<T, F>(ctx: &Context, guild_id: GuildId, f: F)
-    -> Option<T>
-where
-    F: FnOnce(&BoardManager) -> T
-{
-    with_guild_state(ctx, guild_id, |gs| f(gs.board_manager())).await
+struct BoardManagerRef<'a> {
+    guild_state: GuildStateRef<'a>
 }
 
-async fn configure_board_manager<T, F>(ctx: &Context, guild_id: GuildId, f: F)
-    -> T
-where
-    F: FnOnce(&mut BoardManager) -> T
-{
-    configure_guild_state(ctx, guild_id, |mut gs| f(gs.board_manager_mut())).await
+impl<'a> Deref for BoardManagerRef<'a> {
+    type Target = BoardManager;
+
+    fn deref(&self) -> &BoardManager {
+        self.guild_state.board_manager()
+    }
+}
+
+struct BoardManagerMutUnguarded<'a> {
+    guild_state: GuildStateMutUnguarded<'a>
+}
+
+impl<'a> Deref for BoardManagerMutUnguarded<'a> {
+    type Target = BoardManager;
+
+    fn deref(&self) -> &BoardManager {
+        self.guild_state.board_manager()
+    }
+}
+
+impl<'a> DerefMut for BoardManagerMutUnguarded<'a> {
+    fn deref_mut(&mut self) -> &mut BoardManager {
+        self.guild_state.board_manager_mut()
+    }
+}
+
+struct BoardManagerMut<'a> {
+    guild_state: GuildStateMut<'a>
+}
+
+impl<'a> Deref for BoardManagerMut<'a> {
+    type Target = BoardManager;
+
+    fn deref(&self) -> &BoardManager {
+        self.guild_state.board_manager()
+    }
+}
+
+impl<'a> DerefMut for BoardManagerMut<'a> {
+    fn deref_mut(&mut self) -> &mut BoardManager {
+        self.guild_state.board_manager_mut()
+    }
+}
+
+async fn get_board_manager(ctx: &Context, guild_id: GuildId)
+        -> Option<BoardManagerRef<'_>> {
+    get_guild_state(ctx, guild_id).await.map(|guild_state|
+        BoardManagerRef {
+            guild_state
+        })
+}
+
+async fn get_board_manager_mut_unguarded(ctx: &Context, guild_id: GuildId)
+        -> Option<BoardManagerMutUnguarded<'_>> {
+    get_guild_state_mut_unguarded(ctx, guild_id).await.map(|guild_state|
+        BoardManagerMutUnguarded {
+            guild_state
+        })
+}
+
+async fn get_board_manager_mut(ctx: &Context, guild_id: GuildId)
+        -> BoardManagerMut<'_> {
+    BoardManagerMut {
+        guild_state: get_guild_state_mut(ctx, guild_id).await
+    }
 }
 
 /// An [EventHandler] which listens for reactions added to sound board messages
@@ -311,40 +437,82 @@ impl EventHandler for BoardButtonEventHandler {
         };
 
         if let Some(guild_id) = interaction.guild_id {
-            let command = with_board_manager(&ctx, guild_id, |board_mgr|
-                board_mgr.active_board(interaction.message.id)
-                    .and_then(|b| {
-                        let id: usize = interaction.data.custom_id.parse()
-                            .unwrap();
-                        b.buttons.get(id)
+            // Find the button
+
+            let channel_id = interaction.channel_id;
+            let message_id = interaction.message.id;
+            let button_id: usize = interaction.data.custom_id.parse().unwrap();
+            let board_manager =
+                unwrap_or_return!(get_board_manager(&ctx, guild_id).await, ());
+            let button = unwrap_or_return!(
+                board_manager.active_board(message_id, channel_id)
+                    .and_then(|b| b.buttons.get(button_id))
+                    .cloned(), ());
+
+            drop(board_manager);
+
+            // Determine the command to execute
+
+            let mut command = button.command;
+            let mut msg = ctx.http.get_message(channel_id.0, message_id.0)
+                .await.unwrap();
+
+            if let Some(deactivate_command) = button.deactivate_command {
+                // The button is a toggle button => if active, run the
+                // deactivate command instead, and switch the toggle state.
+
+                if button.active {
+                    command = deactivate_command;
+                }
+
+                let mut board_manager =
+                    get_board_manager_mut(&ctx, guild_id).await;
+                let board = board_manager
+                    .active_board_mut(message_id, channel_id).unwrap();
+                let button = board.buttons.get_mut(button_id).unwrap();
+
+                button.active = !button.active;
+
+                // Refresh the message to account for new toggle state.
+
+                let page = button_id / MAX_BUTTONS_PER_MESSAGE;
+                let res = msg.edit(&ctx, |edit| {
+                    edit.components(|components| {
+                        board.add_as_components(components, page)
                     })
-                    .map(|b| &b.command)
-                    .cloned()).await.flatten();
+                }).await;
 
-            if let Some(command) = command {
-                let channel_id = interaction.channel_id.0;
-                let message_id = interaction.message.id.0;
-                let mut msg = ctx.http.get_message(channel_id, message_id)
-                    .await.unwrap();
-
-                msg.content = command;
-                msg.author = interaction.user.clone();
-                msg.webhook_id = None;
-                msg.kind = MessageType::Unknown; // Prevents :ok_hand:
-
-                // For some reason, this becomes unset
-                msg.guild_id = Some(guild_id);
-
-                let framework = Arc::clone(ctx.data
-                    .read()
-                    .await
-                    .get::<FrameworkTypeMapKey>()
-                    .unwrap());
-
-                interaction.create_interaction_response(&ctx, |r|
-                    r.kind(InteractionResponseType::DeferredUpdateMessage)).await.unwrap();
-                framework.dispatch(ctx, msg).await;
+                if let Err(e) = res {
+                    log::warn!("Error updating sound board components: {}", e);
+                    return;
+                }
             }
+
+            // Execute the command
+
+            msg.content = command;
+            msg.author = interaction.user.clone();
+            msg.webhook_id = None;
+            msg.kind = MessageType::Unknown; // Prevents :ok_hand:
+
+            // For some reason, this becomes unset
+            msg.guild_id = Some(guild_id);
+
+            let framework = Arc::clone(ctx.data
+                .read()
+                .await
+                .get::<FrameworkTypeMapKey>()
+                .unwrap());
+
+            let res = interaction.create_interaction_response(&ctx, |r|
+                r.kind(InteractionResponseType::DeferredUpdateMessage)).await;
+
+            if let Err(e) = res {
+                log::warn!("Error posting interaction response: {}", e);
+                return;
+            }
+
+            framework.dispatch(ctx, msg).await;
         }
     }
 }

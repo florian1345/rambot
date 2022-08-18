@@ -357,16 +357,15 @@ impl State {
 
     /// Gets a [GuildStateGuard] to the [GuildState] with the given ID. Any
     /// changes in the configuration will be comitted to the hard drive once
-    /// the guard goes out of scope.
+    /// the guard goes out of scope. If no state for the given guild ID exists,
+    /// a new one is created.
     pub fn guild_state_mut(&mut self, id: GuildId,
-            plugin_manager: Arc<PluginManager>) -> GuildStateGuard<'_> {
-        let path = Path::new(&self.directory);
-        let file_path = path.join(format!("{}.json", id.as_u64()));
-        let guild_state = self.guild_states.entry(id)
-            .or_insert_with(|| GuildState::new(plugin_manager));
+            plugin_manager: &Arc<PluginManager>) -> GuildStateGuard<'_> {
+        let (guild_state, path) =
+            self.ensure_guild_state_exists_do(id, plugin_manager);
 
         GuildStateGuard {
-            path: file_path,
+            path,
             guild_state,
             id
         }
@@ -379,6 +378,23 @@ impl State {
     pub fn guild_state_mut_unguarded(&mut self, id: GuildId)
             -> Option<&mut GuildState> {
         self.guild_states.get_mut(&id)
+    }
+
+    fn ensure_guild_state_exists_do(&mut self, id: GuildId,
+            plugin_manager: &Arc<PluginManager>) -> (&mut GuildState, PathBuf) {
+        let path = Path::new(&self.directory);
+        let file_path = path.join(format!("{}.json", id.as_u64()));
+        let guild_state = self.guild_states.entry(id)
+            .or_insert_with(|| GuildState::new(Arc::clone(plugin_manager)));
+
+        (guild_state, file_path)
+    }
+
+    /// Ensures that a guild state for the guild with the given ID exists. That
+    /// is, a new one is created if none exists yet.
+    pub fn ensure_guild_state_exists(&mut self, id: GuildId,
+            plugin_manager: &Arc<PluginManager>) {
+        self.ensure_guild_state_exists_do(id, plugin_manager);
     }
 
     /// Gets the number of guilds for which a state is registered.
