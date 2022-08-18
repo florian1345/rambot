@@ -1,5 +1,5 @@
 use crate::command::board::{
-    configure_board_manager,
+    get_board_manager_mut,
     Button,
     Board
 };
@@ -13,7 +13,7 @@ use serenity::model::prelude::Message;
 
 #[group("Button")]
 #[prefix("button")]
-#[commands(add, command, remove)]
+#[commands(add, command, deactivate, remove)]
 struct ButtonCmd;
 
 async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
@@ -21,15 +21,17 @@ async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
 where
     F: FnOnce(&mut Board) -> Option<String>
 {
-    Ok(configure_board_manager(ctx, msg.guild_id.unwrap(), |board_mgr| {
-        if let Some(board) = board_mgr.boards.get_mut(&board_name) {
-            f(board)
-        }
-        else {
-            Some(format!(
-                "I could not find a board with name `{}`.", board_name))
-        }
-    }).await)
+    let guild_id = msg.guild_id.unwrap();
+    let mut board_mgr = get_board_manager_mut(ctx, guild_id).await;
+    board_mgr.deactivate_board(ctx, &board_name).await?;
+
+    if let Some(board) = board_mgr.boards.get_mut(&board_name) {
+        Ok(f(board))
+    }
+    else {
+        Ok(Some(format!(
+            "I could not find a board with name `{}`.", board_name)))
+    }
 }
 
 async fn configure_button<F>(ctx: &Context, msg: &Message, board_name: String,
@@ -60,6 +62,10 @@ where
 async fn add(ctx: &Context, msg: &Message, board_name: String,
         label: String, command: String)
         -> CommandResult<Option<String>> {
+    if command.is_empty() {
+        return Ok(Some("Command may not be empty.".to_owned()));
+    }
+
     configure_board(ctx, msg, board_name, |board| {
         if board.buttons.iter().any(|btn| btn.label == label) {
             Some(format!("Duplicate button: {}.", label))
@@ -67,7 +73,9 @@ async fn add(ctx: &Context, msg: &Message, board_name: String,
         else {
             board.buttons.push(Button {
                 label,
-                command
+                command,
+                deactivate_command: None,
+                active: false
             });
             None
         }
@@ -90,6 +98,34 @@ async fn command(ctx: &Context, msg: &Message, board_name: String,
 
     configure_button(ctx, msg, board_name, label, |button| {
         button.command = command;
+        None
+    }).await
+}
+
+#[rambot_command(
+    description = "Assigns a new deactivation command to the button \
+        represented by the given label on the board with the given name. If \
+        such a command is assigned to a button, the button will from now on \
+        be either active or inactive, the latter by default. When pressed in \
+        the inactive state, it will execute the regular command and move into \
+        the active state. Otherwise, it will execute the deactivation command \
+        specified here and move into the inactive state. Omit the command to \
+        make the button stateless again.",
+    usage = "board label [command]",
+    rest,
+    confirm
+)]
+async fn deactivate(ctx: &Context, msg: &Message, board_name: String,
+        label: String, command: String) -> CommandResult<Option<String>> {
+    configure_button(ctx, msg, board_name, label, |button| {
+        if command.is_empty() {
+            button.deactivate_command = None;
+            button.active = false;
+        }
+        else {
+            button.deactivate_command = Some(command);
+        }
+
         None
     }).await
 }
