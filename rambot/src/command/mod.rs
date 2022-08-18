@@ -410,7 +410,7 @@ async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
     let guild_id = msg.guild_id.unwrap();
     let guild_state = unwrap_or_return!(
         get_guild_state(ctx, guild_id).await,
-        Some(format!("No audio to stop.")));
+        Some("No audio to stop.".to_owned()));
 
     if guild_state.mixer_mut().stop_all() {
         None

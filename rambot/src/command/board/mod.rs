@@ -443,11 +443,11 @@ impl EventHandler for BoardButtonEventHandler {
             let message_id = interaction.message.id;
             let button_id: usize = interaction.data.custom_id.parse().unwrap();
             let board_manager =
-                unwrap_or_return!(get_board_manager(&ctx, guild_id).await, ());
+                unwrap_or_return!(get_board_manager(&ctx, guild_id).await, {});
             let button = unwrap_or_return!(
                 board_manager.active_board(message_id, channel_id)
                     .and_then(|b| b.buttons.get(button_id))
-                    .cloned(), ());
+                    .cloned(), {});
 
             drop(board_manager);
 
