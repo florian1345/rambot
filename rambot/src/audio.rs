@@ -1269,7 +1269,7 @@ mod tests {
 
     #[test]
     fn play_playlist() {
-            for _ in 0..RANDOM_TEST_ITERATORS {
+        for _ in 0..RANDOM_TEST_ITERATORS {
             let mut mixer = registered_mixer();
             mixer.add_layer("l");
             play(&mut mixer, "l", "1,2,1").unwrap();
