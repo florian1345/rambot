@@ -411,8 +411,8 @@ pub fn sum_audio(audio_1: &[Sample], audio_2: &[Sample]) -> Vec<Sample> {
         sum.push(audio_1[i] + audio_2[i]);
     }
 
-    for i in audio_1.len()..audio_2.len() {
-        sum.push(audio_2[i]);
+    for &sample in audio_2.iter().skip(audio_1.len()) {
+        sum.push(sample);
     }
 
     sum
