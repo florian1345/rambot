@@ -394,6 +394,30 @@ pub fn random_test_data(len: usize) -> Vec<Sample> {
     test_data(len, random_frequency(&mut rng), random_frequency(&mut rng))
 }
 
+/// Returns the element-wise sum of the two given sets of audio data. If one is
+/// longer than the other, the first part where both data sets are defined will
+/// be the sum and the rest of the longer audio data will be appended in the
+/// end.
+pub fn sum_audio(audio_1: &[Sample], audio_2: &[Sample]) -> Vec<Sample> {
+    let (audio_1, audio_2) = if audio_1.len() < audio_2.len() {
+        (audio_1, audio_2)
+    }
+    else {
+        (audio_2, audio_1)
+    };
+    let mut sum = Vec::with_capacity(audio_2.len());
+
+    for i in 0..audio_1.len() {
+        sum.push(audio_1[i] + audio_2[i]);
+    }
+
+    for i in audio_1.len()..audio_2.len() {
+        sum.push(audio_2[i]);
+    }
+
+    sum
+}
+
 #[cfg(test)]
 mod tests {
 
