@@ -54,8 +54,8 @@ fn fold(mut a: &[Sample], mut b: &[f32]) -> Sample {
         for _ in 0..sse_steps {
             let a_1 = _mm_loadu_ps(a_ptr);
             let a_2 = _mm_loadu_ps(a_ptr.add(4));
-            let a_left = _mm_shuffle_ps::<0xdd>(a_1, a_2);
-            let a_right = _mm_shuffle_ps::<0x88>(a_1, a_2);
+            let a_left = _mm_shuffle_ps::<0x88>(a_1, a_2);
+            let a_right = _mm_shuffle_ps::<0xdd>(a_1, a_2);
             let b = _mm_loadu_ps(b_ptr);
 
             left = _mm_add_ps(_mm_mul_ps(a_left, b), left);
@@ -161,4 +161,93 @@ pub(crate) fn inv_gaussian(sigma: f32, kernel_size_sigmas: f32) -> Vec<f32> {
     kernel[mid_point] += 1.0;
 
     kernel
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use rambot_test_util::MockAudioSource;
+
+    const RANDOM_TEST_ITERATIONS: usize = 16;
+    const TEST_DATA_LEN: usize = 48000;
+
+    fn low_frequencies() -> Vec<Sample> {
+        rambot_test_util::test_data(TEST_DATA_LEN, 60.0, 80.0)
+    }
+
+    fn high_frequencies() -> Vec<Sample> {
+        rambot_test_util::test_data(TEST_DATA_LEN, 3000.0, 4000.0)
+    }
+
+    fn audio_source() -> Box<dyn AudioSource + Send + Sync> {
+        let test_data = rambot_test_util::sum_audio(
+            &low_frequencies(), &high_frequencies());
+        Box::new(MockAudioSource::with_normally_distributed_segment_size(
+            test_data, 128.0, 32.0).unwrap())
+    }
+
+    fn difference(a: &[Sample], b: &[Sample]) -> f32 {
+        assert_eq!(a.len(), b.len());
+
+        let mut max_diff = 0.0;
+
+        for (sample_a, sample_b) in a.iter().zip(b.iter()) {
+            let left_diff = (sample_a.left - sample_b.left).abs();
+            let right_diff = (sample_a.right - sample_b.right).abs();
+
+            if left_diff > max_diff {
+                max_diff = left_diff;
+            }
+
+            if right_diff > max_diff {
+                max_diff = right_diff;
+            }
+        }
+
+        max_diff
+    }
+
+    fn sum_test(cons: impl Fn(f32, f32) -> Vec<f32>, target: f32) {
+        for sigma in [5.0, 10.0, 25.0, 50.0] {
+            let sum: f32 = cons(sigma, 8.0).into_iter().sum();
+            assert!(sum >= target - 0.001 && sum <= target + 0.001);
+        }
+    }
+
+    #[test]
+    fn gaussian_sums_to_approximately_1() {
+        sum_test(gaussian, 1.0);
+    }
+
+    #[test]
+    fn inv_gaussian_sums_to_approximately_0() {
+        sum_test(inv_gaussian, 0.0);
+    }
+
+    fn frequency_filter_test<F>(cons: F, rem: Vec<Sample>)
+    where
+        F: Fn(f32, f32) -> Vec<f32>
+    {
+        for _ in 0..RANDOM_TEST_ITERATIONS {
+            let mut lowpass =
+                KernelFilter::new(audio_source(), cons(15.0, 5.0));
+            let result = rambot_test_util::read_to_end(&mut lowpass).unwrap();
+            let difference =
+                difference(&result[75..(TEST_DATA_LEN + 75)], &rem);
+
+            assert!(difference < 0.15);
+        }
+    }
+
+    #[test]
+    fn lowpass_cuts_high_frequencies() {
+        frequency_filter_test(gaussian, low_frequencies());
+    }
+
+    #[test]
+    fn highpass_cuts_low_frequencies() {
+        frequency_filter_test(inv_gaussian, high_frequencies());
+    }
 }

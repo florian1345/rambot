@@ -1070,19 +1070,7 @@ mod tests {
     }
 
     fn test_audio_sum() -> Vec<Sample> {
-        let audio_1 = test_audio_1();
-        let audio_2 = test_audio_2();
-        let mut sum = Vec::with_capacity(TEST_2_LEN);
-
-        for i in 0..TEST_1_LEN {
-            sum.push(audio_1[i] + audio_2[i]);
-        }
-
-        for i in TEST_1_LEN..TEST_2_LEN {
-            sum.push(audio_2[i]);
-        }
-
-        sum
+        rambot_test_util::sum_audio(&test_audio_1(), &test_audio_2())
     }
 
     fn set_audio<S>(mixer: &mut Mixer, layer: &str, audio_source: S)
