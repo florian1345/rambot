@@ -1062,37 +1062,11 @@ mod tests {
     const TEST_2_LEN: usize = 48000;
 
     fn test_audio_1() -> Vec<Sample> {
-        let mut result = Vec::with_capacity(TEST_1_LEN);
-
-        for i in 0..TEST_1_LEN {
-            let x = i as f64;
-            let left = (x * 0.01).sin() as f32;
-            let right = (x * 0.02).sin() as f32;
-
-            result.push(Sample {
-                left,
-                right
-            })
-        }
-
-        result
+        rambot_test_util::test_data(TEST_1_LEN, 60.0, 120.0)
     }
 
     fn test_audio_2() -> Vec<Sample> {
-        let mut result = Vec::with_capacity(TEST_2_LEN);
-
-        for i in 0..TEST_2_LEN {
-            let x = i as f64;
-            let left = (x * 0.03).sin() as f32;
-            let right = (x * 0.04).sin() as f32;
-
-            result.push(Sample {
-                left,
-                right
-            })
-        }
-
-        result
+        rambot_test_util::test_data(TEST_1_LEN, 180.0, 240.0)
     }
 
     fn test_audio_sum() -> Vec<Sample> {

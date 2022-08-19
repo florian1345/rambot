@@ -169,23 +169,6 @@ mod tests {
 
     use rambot_test_util::MockAudioSource;
 
-    fn test_data(len: usize, step: f64) -> Vec<Sample> {
-        let mut result = Vec::with_capacity(len);
-
-        for i in 0..len {
-            let x = step * i as f64;
-            let left = x.sin() as f32;
-            let right = x.cos() as f32;
-
-            result.push(Sample {
-                left,
-                right
-            });
-        }
-
-        result
-    }
-
     const AUDIO_SOURCE_SEGMENT_SIZE_MEAN: f64 = 50.0;
     const AUDIO_SOURCE_SEGMENT_SIZE_STD_DEV: f64 = 10.0;
     const QUERY_SEGMENT_SIZE: usize = 77;
@@ -193,7 +176,7 @@ mod tests {
 
     #[test]
     fn resample_with_identical_sampling_rate_is_noop() {
-        let data = test_data(100, 0.01);
+        let data = rambot_test_util::random_test_data(100);
         let mut resampled = adapt_sampling_rate(
             MockAudioSource::new(data.clone()),
             TARGET_SAMPLING_RATE);
@@ -206,7 +189,8 @@ mod tests {
     #[test]
     fn reduction_of_sampling_rate_works() {
         for _ in 0..RANDOM_TEST_ITERATORS {
-            let to_resample = test_data(120000, 0.002);
+            let to_resample = rambot_test_util::test_data(
+                120000, 120.0, 180.0);
             let mut resampled = adapt_sampling_rate(
                 MockAudioSource::with_normally_distributed_segment_size(
                     to_resample.clone(),
@@ -215,16 +199,18 @@ mod tests {
                 TARGET_SAMPLING_RATE * 3 / 2);
             let result = rambot_test_util::read_to_end_segmented(
                 &mut resampled, QUERY_SEGMENT_SIZE).unwrap();
+            let expected = rambot_test_util::test_data(
+                80000, 180.0, 270.0);
 
-            rambot_test_util::assert_approximately_equal(
-                test_data(80000, 0.003), result);
+            rambot_test_util::assert_approximately_equal(expected, result);
         }
     }
 
     #[test]
     fn increasing_sampling_rate_works() {
         for _ in 0..RANDOM_TEST_ITERATORS {
-            let to_resample = test_data(120000, 0.003);
+            let to_resample = rambot_test_util::test_data(
+                120000, 120.0, 180.0);
             let mut resampled = adapt_sampling_rate(
                 MockAudioSource::with_normally_distributed_segment_size(
                     to_resample.clone(),
@@ -233,9 +219,10 @@ mod tests {
                 TARGET_SAMPLING_RATE * 2 / 3);
             let result = rambot_test_util::read_to_end_segmented(
                 &mut resampled, QUERY_SEGMENT_SIZE).unwrap();
+            let expected = rambot_test_util::test_data(
+                179999, 80.0, 120.0);
 
-            rambot_test_util::assert_approximately_equal(
-                test_data(179999, 0.002), result);
+            rambot_test_util::assert_approximately_equal(expected, result);
         }
     }
 
@@ -246,7 +233,8 @@ mod tests {
             // (44.1 kHz to 48 kHz). It also caused a bug previously. Hence,
             // this test case is included.
 
-            let to_resample = test_data(120000, 0.003);
+            let to_resample = rambot_test_util::test_data(
+                120000, 120.0, 180.0);
             let mut resampled = adapt_sampling_rate(
                 MockAudioSource::with_normally_distributed_segment_size(
                     to_resample.clone(),
@@ -255,9 +243,10 @@ mod tests {
                 44100);
             let result = rambot_test_util::read_to_end_segmented(
                 &mut resampled, QUERY_SEGMENT_SIZE).unwrap();
+            let expected = rambot_test_util::test_data(
+                130612, 110.25, 165.375);
 
-            rambot_test_util::assert_approximately_equal(
-                test_data(130612, 0.00275625), result);
+            rambot_test_util::assert_approximately_equal(expected, result);
         }
     }
 }
