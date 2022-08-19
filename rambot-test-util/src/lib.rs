@@ -14,6 +14,7 @@ use rand::rngs::SmallRng;
 
 use rand_distr::{Normal, NormalError};
 
+use std::f64::consts;
 use std::io;
 use std::vec::IntoIter;
 
@@ -307,8 +308,7 @@ where
     S2: AsRef<[Sample]>
 {
     fn assert_within_eps(a: f32, b: f32, i: usize) {
-        // 1 / 100000 => less than one unit in 16-bit integer PCM
-        const EPS: f32 = 0.00001;
+        const EPS: f32 = 0.0001;
 
         if (a - b).abs() > EPS {
             panic!("floats not within epsilon: {} and {} (index {})", a, b, i);
@@ -346,4 +346,103 @@ pub fn collect_list(list: &mut Box<dyn AudioSourceList + Send + Sync>,
     }
 
     Ok(collected)
+}
+
+/// Generates test audio data consisting of one sine wave on each channel. The
+/// two sine waves can have different frequencies.
+///
+/// # Arguments
+///
+/// * `len`: The number of generated samples, i.e. the length of the returned
+/// data.
+/// * `left_frequency`: The frequency of the sine wave played on the left
+/// channel in Hz (where a sample rate of 48 kHz is assumed for the audio).
+/// * `right_frequency`: The frequency of the sine wave played on the right
+/// channel in Hz (where a sample rate of 48 kHz is assumed for the audio).
+pub fn test_data(len: usize, left_frequency: f64, right_frequency: f64)
+        -> Vec<Sample> {
+    let mut data = Vec::with_capacity(len);
+
+    for i in 0..len {
+        let x = i as f64 / rambot_api::SAMPLES_PER_SECOND as f64;
+        let left = (x * left_frequency * consts::TAU).sin() as f32;
+        let right = (x * right_frequency * consts::TAU).sin() as f32;
+
+        data.push(Sample {
+            left,
+            right
+        })
+    }
+
+    data
+}
+
+fn random_frequency(rng: &mut impl Rng) -> f64 {
+    40.0 * (rng.gen_range(0.0f64..5.0f64)).exp2()
+}
+
+/// Generates [test_data] with independently randomized frequencies on both
+/// channels.
+///
+/// # Arguments
+///
+/// * `len`: The number of generated samples, i.e. the length of the returned
+/// data.
+pub fn random_test_data(len: usize) -> Vec<Sample> {
+    let mut rng = rand::thread_rng();
+
+    test_data(len, random_frequency(&mut rng), random_frequency(&mut rng))
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    const RANDOM_TEST_ITERATIONS: usize = 64;
+    const TEST_DATA_LEN: usize = 48000;
+
+    #[test]
+    fn test_data_continuous() {
+        // At at most 1280 Hz we have one oscillation every 37.5 samples, which
+        // is ~5.97 * 2 * PI. Hence, we expect the slope to be at most
+        // ~1 / 5.97 and add a bit of buffer to be safe.
+
+        const MAX_DIFF: f32 = 1.0 / 5.5;
+
+        for _ in 0..RANDOM_TEST_ITERATIONS {
+            let test_data = random_test_data(TEST_DATA_LEN);
+
+            for (i, &sample) in test_data.iter().skip(1).enumerate() {
+                let previous = test_data[i];
+                let diff = sample - previous;
+
+                assert!(diff.left.abs() < MAX_DIFF);
+                assert!(diff.right.abs() < MAX_DIFF);
+            }
+        }
+    }
+
+    #[test]
+    fn test_data_has_amplitude_1() {
+        for _ in 0..RANDOM_TEST_ITERATIONS {
+            let mut min_left = 0.0f32;
+            let mut min_right = 0.0f32;
+            let mut max_left = 0.0f32;
+            let mut max_right = 0.0f32;
+            let test_data = random_test_data(TEST_DATA_LEN);
+
+            for sample in test_data {
+                min_left = min_left.min(sample.left);
+                min_right = min_right.min(sample.right);
+                max_left = max_left.max(sample.left);
+                max_right = max_right.max(sample.right);
+            }
+
+            assert!(min_left < -0.99);
+            assert!(min_right < -0.99);
+            assert!(max_left > 0.99);
+            assert!(max_right > 0.99);
+        }
+    }
 }
