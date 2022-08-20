@@ -1,5 +1,6 @@
 use crate::command::board::{
     get_board_manager_mut,
+    unwrap_or_return,
     Button,
     Board
 };
@@ -13,7 +14,7 @@ use serenity::model::prelude::Message;
 
 #[group("Button")]
 #[prefix("button")]
-#[commands(add, command, deactivate, remove)]
+#[commands(add, command, deactivate, remove, swap)]
 struct ButtonCmd;
 
 async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
@@ -126,6 +127,35 @@ async fn deactivate(ctx: &Context, msg: &Message, board_name: String,
             button.deactivate_command = Some(command);
         }
 
+        None
+    }).await
+}
+
+fn get_button_idx(board: &Board, label: &str) -> Option<usize> {
+    board.buttons.iter().enumerate()
+        .find(|(_, button)| button.label == label)
+        .map(|(idx, _)| idx)
+}
+
+#[rambot_command(
+    description = "Swaps the position of the button with `label_1` and the \
+        one with `label_2` on the board with the given name.",
+    usage = "board label_1 label_2",
+    confirm
+)]
+async fn swap(ctx: &Context, msg: &Message, board_name: String,
+        label_1: String, label_2: String) -> CommandResult<Option<String>> {
+    if label_1 == label_2 {
+        return Ok(Some("The button labels must not be the same.".to_owned()));
+    }
+
+    configure_board(ctx, msg, board_name, |board| {
+        let idx_1 = unwrap_or_return!(get_button_idx(board, &label_1),
+            Some(format!("I found no button with the label {}.", label_1)));
+        let idx_2 = unwrap_or_return!(get_button_idx(board, &label_2),
+            Some(format!("I found no button with the label {}.", label_2)));
+
+        board.buttons.swap(idx_1, idx_2);
         None
     }).await
 }
