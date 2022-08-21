@@ -34,15 +34,12 @@ trait FloatSamples {
         // this out of the loop.
 
         match self.next_float()? {
-            Ok(sample) => {
+            Ok(value) => {
                 if self.channels() == 1 {
-                    Some(Ok(Sample {
-                        left: sample,
-                        right: sample
-                    }))
+                    Some(Ok(Sample::mono(value)))
                 }
                 else {
-                    let left = sample;
+                    let left = value;
                     let right = match self.next_float().unwrap() {
                         Ok(s) => s,
                         Err(e) => return Some(Err(e))

@@ -3,7 +3,17 @@ use crate::SampleDuration;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::io;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{
+    Add,
+    AddAssign,
+    Div,
+    DivAssign,
+    Mul,
+    MulAssign,
+    Neg,
+    Sub,
+    SubAssign
+};
 
 /// A single stereo audio sample in 32-bit float PCM format. In memory, a
 /// a sample is laid out as the left channel (4 bytes) followed by the right
@@ -28,6 +38,34 @@ impl Sample {
         left: 0.0,
         right: 0.0
     };
+
+    /// Creates a sample with the same momentary amplitude on both channels, as
+    /// it is in mono audio played on a stereo device.
+    ///
+    /// # Arguments
+    ///
+    /// * `value`: The current amplitude on both channels of the created
+    /// sample. Usually on a scale from -1 to 1.
+    ///
+    /// # Returns
+    ///
+    /// A new sample where [Sample::left] and [Sample::right] are both equal to
+    /// the given `value`.
+    pub fn mono(value: f32) -> Sample {
+        Sample {
+            left: value,
+            right: value
+        }
+    }
+
+    /// Computes the absolute amplitude of this sample, that is, the maximum of
+    /// the absolute values of the left and right channels. This can be seen as
+    /// a lower bound of the volume of a piece of audio containing this sample,
+    /// where the exact volume can be determined by taking the maximum of all
+    /// absolute amplitudes of all samples in the audio.
+    pub fn abs_amplitude(self) -> f32 {
+        self.left.abs().max(self.right.abs())
+    }
 }
 
 impl AddAssign for Sample {
@@ -107,6 +145,25 @@ impl Sub for &Sample {
 
     fn sub(self, rhs: &Sample) -> Sample {
         *self - rhs
+    }
+}
+
+impl Neg for Sample {
+    type Output = Sample;
+
+    fn neg(self) -> Sample {
+        Sample {
+            left: -self.left,
+            right: -self.right
+        }
+    }
+}
+
+impl Neg for &Sample {
+    type Output = Sample;
+
+    fn neg(self) -> Sample {
+        -(*self)
     }
 }
 
@@ -488,4 +545,28 @@ pub trait AudioSourceList {
     /// Gets the next descriptor in the list, or `None` if the list is
     /// finished. May return an IO-[Error](io::Error) if the operation fails.
     fn next(&mut self) -> Result<Option<String>, io::Error>;
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn abs_amplitude_zero() {
+        assert_eq!(0.0, Sample::ZERO.abs_amplitude());
+    }
+
+    #[test]
+    fn abs_amplitude_non_zero() {
+        assert_eq!(0.5, Sample {
+            left: -0.5,
+            right: 0.2
+        }.abs_amplitude());
+
+        assert_eq!(0.8, Sample {
+            left: -0.6,
+            right: 0.8
+        }.abs_amplitude());
+    }
 }

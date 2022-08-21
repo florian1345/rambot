@@ -88,12 +88,7 @@ impl<R: Read> AudioSource for FlacAudioSource<R> {
 
         if self.block.channels() == 1 {
             for (i, sample) in buf[..len].iter_mut().enumerate() {
-                let value = self.sample_f32(0, i + self.offset);
-
-                *sample = Sample {
-                    left: value,
-                    right: value
-                }
+                *sample = Sample::mono(self.sample_f32(0, i + self.offset));
             }
         }
         else {
