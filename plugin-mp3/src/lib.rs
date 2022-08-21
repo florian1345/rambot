@@ -69,12 +69,8 @@ impl<R: Read> AudioSource for Mp3AudioSource<R> {
 
         if channels == 1 {
             for sample_idx in 0..sample_count {
-                let amp = to_f32(remaining_data[sample_idx]);
-
-                buf[sample_idx] = Sample {
-                    left: amp,
-                    right: amp
-                };
+                buf[sample_idx] =
+                    Sample::mono(to_f32(remaining_data[sample_idx]));
             }
         }
         else {

@@ -36,10 +36,7 @@ impl<R: Read + Seek> OggAudioSource<R> {
             // Mono
 
             self.remaining.extend(packet[0].iter()
-                .map(|&sample| Sample {
-                    left: sample,
-                    right: sample
-                }));
+                .map(|&value| Sample::mono(value)));
         }
         else {
             // Stereo or more
