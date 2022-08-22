@@ -1,4 +1,4 @@
-use id3::{Content, Tag, Timestamp};
+use id3::{Content, Tag, TagLike, Timestamp};
 
 use rambot_api::{AudioMetadata, AudioMetadataBuilder};
 
@@ -36,20 +36,39 @@ pub fn metadata_from_id3_tag(tag: Tag, descriptor: &str) -> AudioMetadata {
 
         if let Some(content) = to_str(frame.content()) {
             match frame.id() {
+                "TIT1" => { meta_builder.set_super_title(content); },
                 "TIT2" => {
                     set_title = true;
-                    meta_builder = meta_builder.with_title(content);
+                    meta_builder.set_title(content);
                 },
-                "TOPE" => meta_builder = meta_builder.with_artist(content),
-                "TALB" => meta_builder = meta_builder.with_album(content),
+                "TIT3" => { meta_builder.set_sub_title(content); },
+                "TOPE" => { meta_builder.set_artist(content); },
+                "TCOM" => { meta_builder.set_composer(content); },
+                "TPE1" => { meta_builder.set_lead_performer(content); },
+                "TPE2" => { meta_builder.set_group_name(content); },
+                "TPE3" => { meta_builder.set_conductor(content); },
+                "TPE4" => { meta_builder.set_interpreter(content); },
+                "TPUB" => { meta_builder.set_publisher(content); },
+                "TALB" => { meta_builder.set_album(content); },
+                "TRCK" => {
+                    if let Ok(track) = content.parse() {
+                        meta_builder.set_track(track);
+                    }
+                },
                 "TDRL" => {
                     if let Ok(timestamp) = content.parse::<Timestamp>() {
-                        meta_builder = meta_builder.with_year(timestamp.year);
+                        meta_builder.set_year(timestamp.year);
                     }
                 },
                 _ => { }
             }
         }
+    }
+
+    // TODD can everything be done like this?
+
+    if let Some(genre) = tag.genre() {
+        meta_builder.set_genre(genre);
     }
 
     if !set_title {

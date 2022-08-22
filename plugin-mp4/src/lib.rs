@@ -311,18 +311,43 @@ where
                 let value = format!("{}", tag.value);
 
                 match std_key {
-                    StandardTagKey::Album =>
-                        meta_builder = meta_builder.with_album(value),
-                    StandardTagKey::Artist =>
-                        meta_builder = meta_builder.with_artist(value),
+                    StandardTagKey::Album => {
+                        meta_builder.set_album(value);
+                    },
+                    StandardTagKey::Artist => {
+                        meta_builder.set_artist(value);
+                    },
+                    StandardTagKey::Composer => {
+                        meta_builder.set_composer(value);
+                    },
+                    StandardTagKey::Conductor => {
+                        meta_builder.set_conductor(value);
+                    },
+                    StandardTagKey::ContentGroup => {
+                        meta_builder.set_super_title(value);
+                    },
                     StandardTagKey::Date => {
                         if let Ok(timestamp) = value.parse::<Timestamp>() {
-                            meta_builder =
-                                meta_builder.with_year(timestamp.year);
+                            meta_builder.set_year(timestamp.year);
                         }
                     },
-                    StandardTagKey::TrackTitle =>
-                        meta_builder = meta_builder.with_title(value),
+                    StandardTagKey::Performer => {
+                        meta_builder.set_lead_performer(value);
+                    },
+                    StandardTagKey::Remixer => {
+                        meta_builder.set_interpreter(value);
+                    },
+                    StandardTagKey::TrackNumber => {
+                        if let Ok(track) = value.parse() {
+                            meta_builder.set_track(track);
+                        }
+                    },
+                    StandardTagKey::TrackSubtitle => {
+                        meta_builder.set_sub_title(value);
+                    },
+                    StandardTagKey::TrackTitle => {
+                        meta_builder.set_title(value);
+                    },
                     _ => { }
                 }
             }

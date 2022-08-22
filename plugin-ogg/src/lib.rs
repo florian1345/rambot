@@ -96,14 +96,24 @@ impl<R: Read + Seek> AudioSource for OggAudioSource<R> {
 
         for (key, value) in self.reader.comment_hdr.comment_list.iter() {
             match key.as_str() {
-                "TITLE" => meta_builder = meta_builder.with_title(value),
-                "ARTIST" => meta_builder = meta_builder.with_artist(value),
-                "ALBUM" => meta_builder = meta_builder.with_album(value),
-                "DATE" => {
-                    if let Ok(date) = value.parse::<Timestamp>() {
-                        meta_builder = meta_builder.with_year(date.year);
+                "TITLE" => { meta_builder.set_title(value); },
+                "WORK" => { meta_builder.set_super_title(value); },
+                "ARTIST" => { meta_builder.set_artist(value); },
+                "COMPOSER" => { meta_builder.set_composer(value); },
+                "CONDUCTOR" => { meta_builder.set_conductor(value); },
+                "ORGANIZATION" => { meta_builder.set_publisher(value); },
+                "ALBUM" => { meta_builder.set_album(value); },
+                "TRACKNUMBER" => {
+                    if let Ok(track) = value.parse() {
+                        meta_builder.set_track(track);
                     }
                 },
+                "DATE" => {
+                    if let Ok(date) = value.parse::<Timestamp>() {
+                        meta_builder.set_year(date.year);
+                    }
+                },
+                "GENRE" => { meta_builder.set_genre(value); },
                 _ => { }
             }
         }
