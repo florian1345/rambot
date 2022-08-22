@@ -222,9 +222,20 @@ impl Div<f32> for &Sample {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioMetadata {
     title: Option<String>,
+    sub_title: Option<String>,
+    super_title: Option<String>,
     artist: Option<String>,
+    composer: Option<String>,
+    lead_performer: Option<String>,
+    group_name: Option<String>,
+    conductor: Option<String>,
+    lyricist: Option<String>,
+    interpreter: Option<String>,
+    publisher: Option<String>,
     album: Option<String>,
-    year: Option<i32>
+    track: Option<i32>,
+    year: Option<i32>,
+    genre: Option<String>
 }
 
 impl AudioMetadata {
@@ -234,9 +245,62 @@ impl AudioMetadata {
         self.title.as_deref()
     }
 
+    /// Gets the sub-title/description refinement of the track, if it could be
+    /// determined.
+    pub fn sub_title(&self) -> Option<&str> {
+        self.sub_title.as_deref()
+    }
+
+    /// Gets the title of the greater work that the track is a part of, if it
+    /// could be determined.
+    pub fn super_title(&self) -> Option<&str> {
+        self.super_title.as_deref()
+    }
+
     /// Gets the name of the artist of the track, if it could be determined.
     pub fn artist(&self) -> Option<&str> {
         self.artist.as_deref()
+    }
+
+    /// Gets the name of the composer of the track, if it could be determined.
+    pub fn composer(&self) -> Option<&str> {
+        self.composer.as_deref()
+    }
+
+    /// Gets the name of the lead performer or soloist performing in the track,
+    /// if it could be determined.
+    pub fn lead_performer(&self) -> Option<&str> {
+        self.lead_performer.as_deref()
+    }
+
+    /// Gets the name of the musical group/orchestra/band performing the track,
+    /// if it could be determined.
+    pub fn group_name(&self) -> Option<&str> {
+        self.group_name.as_deref()
+    }
+
+    /// Gets the name of the conductor of the orchestra performing the track,
+    /// if it could be determined.
+    pub fn conductor(&self) -> Option<&str> {
+        self.conductor.as_deref()
+    }
+
+    /// Gets the name of the lyricist/text writer who wrote the lyrics of the
+    /// track, if it could be determined.
+    pub fn lyricist(&self) -> Option<&str> {
+        self.lyricist.as_deref()
+    }
+
+    /// If the track constitutes an interpreted/adapted version of an original,
+    /// gets the name of the person who wrote the interpretation, if it could
+    /// be determined.
+    pub fn interpreter(&self) -> Option<&str> {
+        self.interpreter.as_deref()
+    }
+
+    /// Gets the name of the publisher of the track, if it could be determined.
+    pub fn publisher(&self) -> Option<&str> {
+        self.publisher.as_deref()
     }
 
     /// Gets the name of the album in which the track was released, if one
@@ -245,10 +309,21 @@ impl AudioMetadata {
         self.album.as_deref()
     }
 
+    /// Gets the track number of the track within the album, if it could be
+    /// determined.
+    pub fn track(&self) -> Option<i32> {
+        self.track
+    }
+
     /// Gets the (Gregorian) year in which the track was released, if it could
     /// be determined.
     pub fn year(&self) -> Option<i32> {
         self.year
+    }
+
+    /// Gets the genre of this track, if it could be determined.
+    pub fn genre(&self) -> Option<&str> {
+        self.genre.as_deref()
     }
 }
 
@@ -284,11 +359,40 @@ impl AudioMetadataBuilder {
         AudioMetadataBuilder {
             audio_metadata: AudioMetadata {
                 title: None,
+                sub_title: None,
+                super_title: None,
                 artist: None,
+                composer: None,
+                lead_performer: None,
+                group_name: None,
+                conductor: None,
+                lyricist: None,
+                interpreter: None,
+                publisher: None,
                 album: None,
-                year: None
+                track: None,
+                year: None,
+                genre: None
             }
         }
+    }
+
+    /// Specifies the title of the track. That is, the value provided here will
+    /// be returned in [AudioMetadata::title].
+    ///
+    /// # Arguments
+    ///
+    /// * `title`: The title of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_title<S>(&mut self, title: S) -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.title = Some(title.into());
+        self
     }
 
     /// Specifies the title of the track. That is, the value provided here will
@@ -305,7 +409,104 @@ impl AudioMetadataBuilder {
     where
         S: Into<String>
     {
-        self.audio_metadata.title = Some(title.into());
+        self.set_title(title);
+        self
+    }
+
+    /// Specifies the sub-title of the track. That is, the value provided here
+    /// will be returned in [AudioMetadata::sub_title].
+    ///
+    /// # Arguments
+    ///
+    /// * `sub_title`: The sub-title/description refinement of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_sub_title<S>(&mut self, sub_title: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.sub_title = Some(sub_title.into());
+        self
+    }
+
+    /// Specifies the sub-title of the track. That is, the value provided here
+    /// will be returned in [AudioMetadata::sub_title].
+    ///
+    /// # Arguments
+    ///
+    /// * `sub_title`: The sub-title/description refinement of the track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_sub_title<S>(mut self, sub_title: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_sub_title(sub_title);
+        self
+    }
+
+    /// For pieces that are part of a greater work, this method specifies the
+    /// title of this greater work. The value provided here will be returned in
+    /// [AudioMetadata::super_title].
+    ///
+    /// # Arguments
+    ///
+    /// * `super_title`: The title of the greater work that the track is a part
+    /// of.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_super_title<S>(&mut self, super_title: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.super_title = Some(super_title.into());
+        self
+    }
+
+    /// For pieces that are part of a greater work, this method specifies the
+    /// title of this greater work. The value provided here will be returned in
+    /// [AudioMetadata::super_title].
+    ///
+    /// # Arguments
+    ///
+    /// * `super_title`: The title of the greater work that the track is a part
+    /// of.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_super_title<S>(mut self, super_title: S)
+        -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_super_title(super_title);
+        self
+    }
+
+    /// Specifies the name of the artist of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::artist].
+    ///
+    /// # Arguments
+    ///
+    /// * `artist`: The name of the artist of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_artist<S>(&mut self, artist: S) -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.artist = Some(artist.into());
         self
     }
 
@@ -323,7 +524,296 @@ impl AudioMetadataBuilder {
     where
         S: Into<String>
     {
-        self.audio_metadata.artist = Some(artist.into());
+        self.set_artist(artist);
+        self
+    }
+
+    /// Specifies the name of the composer of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::composer].
+    ///
+    /// # Arguments
+    ///
+    /// * `composer`: The name of the composer of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_composer<S>(&mut self, composer: S) -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.composer = Some(composer.into());
+        self
+    }
+
+    /// Specifies the name of the composer of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::composer].
+    ///
+    /// # Arguments
+    ///
+    /// * `composer`: The name of the composer of the track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_composer<S>(mut self, composer: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_composer(composer);
+        self
+    }
+
+    /// Specifies the name of the lead performer or soloist performing in the
+    /// track. That is, the value provided here will be returned in
+    /// [AudioMetadata::lead_performer].
+    ///
+    /// # Arguments
+    ///
+    /// * `lead_performer`: The name of the lead performer or soloist of the
+    /// track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_lead_performer<S>(&mut self, lead_performer: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.lead_performer = Some(lead_performer.into());
+        self
+    }
+
+    /// Specifies the name of the lead performer or soloist performing in the
+    /// track. That is, the value provided here will be returned in
+    /// [AudioMetadata::lead_performer].
+    ///
+    /// # Arguments
+    ///
+    /// * `lead_performer`: The name of the lead performer or soloist of the
+    /// track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_lead_performer<S>(mut self, lead_performer: S)
+        -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_lead_performer(lead_performer);
+        self
+    }
+
+    /// Specifies the name of the musical group/orchestra/band who performed
+    /// the track. That is, the value provided here will be returned in
+    /// [AudioMetadata::group_name].
+    ///
+    /// # Arguments
+    ///
+    /// * `group_name`: The name of the musical group who performed the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_group_name<S>(&mut self, group_name: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.group_name = Some(group_name.into());
+        self
+    }
+
+    /// Specifies the name of the musical group/orchestra/band who performed
+    /// the track. That is, the value provided here will be returned in
+    /// [AudioMetadata::group_name].
+    ///
+    /// # Arguments
+    ///
+    /// * `group_name`: The name of the musical group who performed the track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_group_name<S>(mut self, group_name: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_group_name(group_name);
+        self
+    }
+
+    /// Specifies the name of the conductor of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::conductor].
+    ///
+    /// # Arguments
+    ///
+    /// * `conductor`: The name of the conductor of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_conductor<S>(&mut self, conductor: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.conductor = Some(conductor.into());
+        self
+    }
+
+    /// Specifies the name of the conductor of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::conductor].
+    ///
+    /// # Arguments
+    ///
+    /// * `conductor`: The name of the conductor of the track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_conductor<S>(mut self, conductor: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_conductor(conductor);
+        self
+    }
+
+    /// Specifies the name of the lyricist/text writer who wrote the lyrics of
+    /// the track. That is, the value provided here will be returned in
+    /// [AudioMetadata::lyricist].
+    ///
+    /// # Arguments
+    ///
+    /// * `lyricist`: The name of the lyricist of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_lyricist<S>(&mut self, lyricist: S) -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.lyricist = Some(lyricist.into());
+        self
+    }
+
+    /// Specifies the name of the lyricist/text writer who wrote the lyrics of
+    /// the track. That is, the value provided here will be returned in
+    /// [AudioMetadata::lyricist].
+    ///
+    /// # Arguments
+    ///
+    /// * `lyricist`: The name of the lyricist of the track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_lyricist<S>(mut self, lyricist: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_lyricist(lyricist);
+        self
+    }
+
+    /// Specifies the name of the interpreter who wrote the
+    /// interpretation/adapted version of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::interpreter].
+    ///
+    /// # Arguments
+    ///
+    /// * `interpreter`: The name of the interpreter of this version of the
+    /// track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_interpreter<S>(&mut self, interpreter: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.interpreter = Some(interpreter.into());
+        self
+    }
+
+    /// Specifies the name of the interpreter who wrote the
+    /// interpretation/adapted version of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::interpreter].
+    ///
+    /// # Arguments
+    ///
+    /// * `interpreter`: The name of the interpreter of this version of the
+    /// track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_interpreter<S>(mut self, interpreter: S)
+        -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_interpreter(interpreter);
+        self
+    }
+
+    /// Specifies the name of the publisher of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::publisher].
+    ///
+    /// # Arguments
+    ///
+    /// * `publisher`: The name of the publisher of the track.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_publisher<S>(&mut self, publisher: S)
+        -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.publisher = Some(publisher.into());
+        self
+    }
+
+    /// Specifies the name of the publisher of the track. That is, the value
+    /// provided here will be returned in [AudioMetadata::publisher].
+    ///
+    /// # Arguments
+    ///
+    /// * `publisher`: The name of the publisher of the track.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_publisher<S>(mut self, publisher: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_publisher(publisher);
+        self
+    }
+
+    /// Specifies the name of the album in which the track was released. That
+    /// is, the value provided here will be returned in [AudioMetadata::album].
+    ///
+    /// # Arguments
+    ///
+    /// * `album`: The name of the album in which the track was released.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_album<S>(&mut self, album: S) -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.album = Some(album.into());
         self
     }
 
@@ -341,7 +831,52 @@ impl AudioMetadataBuilder {
     where
         S: Into<String>
     {
-        self.audio_metadata.album = Some(album.into());
+        self.set_album(album);
+        self
+    }
+
+    /// Specifies the track number of the track within its album. That is, the
+    /// number provided here will be returned in [AudioMetadata::track].
+    ///
+    /// # Arguments
+    ///
+    /// * `track`: The track number of the track within its album.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_track(&mut self, track: i32) -> &mut AudioMetadataBuilder {
+        self.audio_metadata.track = Some(track);
+        self
+    }
+
+    /// Specifies the track number of the track within its album. That is, the
+    /// number provided here will be returned in [AudioMetadata::track].
+    ///
+    /// # Arguments
+    ///
+    /// * `track`: The track number of the track within its album.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_track(mut self, track: i32) -> AudioMetadataBuilder {
+        self.set_track(track);
+        self
+    }
+
+    /// Specifies the (Gregorian) year in which the track was released. That
+    /// is, the value provided here will be returned in [AudioMetadata::album].
+    ///
+    /// # Arguments
+    ///
+    /// * `year`: The (Gregorian) year in which the track was released.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_year(&mut self, year: i32) -> &mut AudioMetadataBuilder {
+        self.audio_metadata.year = Some(year);
         self
     }
 
@@ -356,7 +891,43 @@ impl AudioMetadataBuilder {
     ///
     /// This builder for chaining.
     pub fn with_year(mut self, year: i32) -> AudioMetadataBuilder {
-        self.audio_metadata.year = Some(year);
+        self.set_year(year);
+        self
+    }
+
+    /// Specifies the name of the genre to which the track belongs. That is,
+    /// the value provided here will be returned in [AudioMetadata::genre].
+    ///
+    /// # Arguments
+    ///
+    /// * `genre`: The name of the genre to which the track belongs.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder for chaining.
+    pub fn set_genre<S>(&mut self, genre: S) -> &mut AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.audio_metadata.genre = Some(genre.into());
+        self
+    }
+
+    /// Specifies the name of the genre to which the track belongs. That is,
+    /// the value provided here will be returned in [AudioMetadata::genre].
+    ///
+    /// # Arguments
+    ///
+    /// * `genre`: The name of the genre to which the track belongs.
+    ///
+    /// # Returns
+    ///
+    /// This builder for chaining.
+    pub fn with_genre<S>(mut self, genre: S) -> AudioMetadataBuilder
+    where
+        S: Into<String>
+    {
+        self.set_genre(genre);
         self
     }
 

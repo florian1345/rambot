@@ -515,6 +515,12 @@ async fn audio(ctx: &Context, msg: &Message, audio: String)
     }
 }
 
+fn add_line(message: &mut String, name: &str, entry: Option<impl Display>) {
+    if let Some(entry) = entry {
+        writeln!(message, "{}: {}", name, entry).unwrap();
+    }
+}
+
 #[rambot_command(
     description = "Prints information about the audio currently played on the \
         layer with the given name.",
@@ -531,21 +537,28 @@ async fn info(ctx: &Context, msg: &Message, layer: String) -> CommandResult<Opti
         Ok(metadata) => {
             let mut message = String::new();
 
-            if let Some(title) = metadata.title() {
-                writeln!(message, "Title: {}", title).unwrap();
+            if let (Some(title), Some(sub_title)) =
+                    (metadata.title(), metadata.sub_title()) {
+                add_line(&mut message, "Title",
+                    Some(format!("{} - {}", title, sub_title)));
+            }
+            else {
+                add_line(&mut message, "Title", metadata.title());
             }
 
-            if let Some(artist) = metadata.artist() {
-                writeln!(message, "Artist: {}", artist).unwrap();
-            }
-
-            if let Some(album) = metadata.album() {
-                writeln!(message, "Album: {}", album).unwrap();
-            }
-
-            if let Some(year) = metadata.year() {
-                writeln!(message, "Year: {}", year).unwrap();
-            }
+            add_line(&mut message, "From", metadata.super_title());
+            add_line(&mut message, "Artist", metadata.artist());
+            add_line(&mut message, "Composer", metadata.composer());
+            add_line(&mut message, "Lead Performer", metadata.lead_performer());
+            add_line(&mut message, "Band/Orchestra", metadata.group_name());
+            add_line(&mut message, "Conductor", metadata.conductor());
+            add_line(&mut message, "Lyricist", metadata.lyricist());
+            add_line(&mut message, "Interpreter", metadata.interpreter());
+            add_line(&mut message, "Publisher", metadata.publisher());
+            add_line(&mut message, "Album", metadata.album());
+            add_line(&mut message, "Track Number", metadata.track());
+            add_line(&mut message, "Year", metadata.year());
+            add_line(&mut message, "Genre", metadata.genre());
 
             let mut message = message.trim_end().to_owned();
 
