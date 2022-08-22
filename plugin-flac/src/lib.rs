@@ -117,6 +117,16 @@ impl<R: Read> AudioSource for FlacAudioSource<R> {
     }
 }
 
+fn read_tag<'a, R, S>(reader: &FlacReader<R>, tag_name: &str, set: S)
+where
+    R: Read + Send + Sync + 'static,
+    S: FnOnce(&str) -> &'a mut AudioMetadataBuilder
+{
+    if let Some(value) = reader.get_tag(tag_name).next() {
+        set(value);
+    }
+}
+
 struct FlacAudioSourceResolver {
     file_manager: FileManager
 }
@@ -138,17 +148,23 @@ impl FlacAudioSourceResolver {
             meta_builder = meta_builder.with_title(descriptor);
         }
 
-        if let Some(artist) = reader.get_tag("ARTIST").next() {
-            meta_builder = meta_builder.with_artist(artist);
-        }
+        read_tag(&reader, "WORK", |a| meta_builder.set_super_title(a));
+        read_tag(&reader, "ARTIST", |a| meta_builder.set_artist(a));
+        read_tag(&reader, "COMPOSER", |a| meta_builder.set_composer(a));
+        read_tag(&reader, "CONDUCTOR", |a| meta_builder.set_conductor(a));
+        read_tag(&reader, "ORGANISATION", |a| meta_builder.set_publisher(a));
+        read_tag(&reader, "ALBUM", |a| meta_builder.set_album(a));
+        read_tag(&reader, "GENRE", |a| meta_builder.set_genre(a));
 
-        if let Some(album) = reader.get_tag("ALBUM").next() {
-            meta_builder = meta_builder.with_album(album);
+        if let Some(track) = reader.get_tag("TRACKNUMBER").next() {
+            if let Ok(track) = track.parse() {
+                meta_builder.set_track(track);
+            }
         }
 
         if let Some(date) = reader.get_tag("DATE").next() {
             if let Ok(date) = date.parse::<Timestamp>() {
-                meta_builder = meta_builder.with_year(date.year);
+                meta_builder.set_year(date.year);
             }
         }
 
