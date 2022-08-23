@@ -37,7 +37,9 @@ impl Display for AudioDocumentation {
 /// A builder for [AudioDocumentation]s. To construct an audio documentation,
 /// create a new builder using [AudioDocumentationBuilder::new], specify at
 /// least a name and summary using [AudioDocumentationBuilder::with_name] and
-/// [AudioDocumentationBuilder::with_summary] respectively, and then build the
+/// [AudioDocumentationBuilder::with_summary] or
+/// [AudioDocumentationBuilder::set_name] and
+/// [AudioDocumentationBuilder::set_summary] respectively, and then build the
 /// final documentation using [AudioDocumentationBuilder::build]. Further
 /// information can be provided with other methods.
 ///
@@ -70,8 +72,27 @@ impl AudioDocumentationBuilder {
         }
     }
 
-    /// Specify a name for this audio. Calling this function before building is
-    /// mandatory.
+    /// Specify a name for this audio. Calling this function or
+    /// [AudioDocumentationBuilder::with_name] before building is mandatory.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The name of this audio. Markdown is supported.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder after the operation. Useful for
+    /// chaining.
+    pub fn set_name<S>(&mut self, name: S) -> &mut AudioDocumentationBuilder
+    where
+        S: Into<String>
+    {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Specify a name for this audio. Calling this function or
+    /// [AudioDocumentationBuilder::set_name] before building is mandatory.
     ///
     /// # Arguments
     ///
@@ -84,13 +105,39 @@ impl AudioDocumentationBuilder {
     where
         S: Into<String>
     {
-        self.name = Some(name.into());
+        self.set_name(name);
         self
     }
 
     /// Specify a short summary for this audio to be displayed in the overview
     /// page. If no long description has been assigned yet, it will be set to
-    /// that same summary. Calling this function before building is mandatory.
+    /// that same summary. Calling this function or
+    /// [AudioDocumentationBuilder::with_summary] before building is mandatory.
+    ///
+    /// # Arguments
+    ///
+    /// * `summary`: A short summary for this audio. Markdown is supported.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder after the operation. Useful for
+    /// chaining.
+    pub fn set_summary<S>(&mut self, summary: S) ->
+        &mut AudioDocumentationBuilder
+    where
+        S: Into<String>
+    {
+        let summary = summary.into();
+
+        self.description.get_or_insert_with(|| summary.clone());
+        self.summary = Some(summary);
+        self
+    }
+
+    /// Specify a short summary for this audio to be displayed in the overview
+    /// page. If no long description has been assigned yet, it will be set to
+    /// that same summary. Calling this function or
+    /// [AudioDocumentationBuilder::set_summary] before building is mandatory.
     ///
     /// # Arguments
     ///
@@ -103,10 +150,28 @@ impl AudioDocumentationBuilder {
     where
         S: Into<String>
     {
-        let summary = summary.into();
+        self.set_summary(summary);
+        self
+    }
 
-        self.description.get_or_insert_with(|| summary.clone());
-        self.summary = Some(summary);
+    /// Specify a longer description for this audio to be displayed in a
+    /// dedicated documentation page.
+    ///
+    /// # Arguments
+    ///
+    /// * `description`: A longer description for this audio. Markdown is
+    /// supported.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder after the operation. Useful for
+    /// chaining.
+    pub fn set_description<S>(&mut self, description: S) ->
+        &mut AudioDocumentationBuilder
+    where
+        S: Into<String>
+    {
+        self.description = Some(description.into());
         self
     }
 
@@ -126,7 +191,7 @@ impl AudioDocumentationBuilder {
     where
         S: Into<String>
     {
-        self.description = Some(description.into());
+        self.set_description(description);
         self
     }
 
@@ -264,9 +329,10 @@ impl ModifierDocumentationBuilder {
     ///
     /// # Returns
     ///
-    /// This builder after the operation. Useful for chaining.
-    pub fn with_short_summary<S>(mut self, summary: S)
-        -> ModifierDocumentationBuilder
+    /// A mutable reference to this builder after the operation. Useful for
+    /// chaining.
+    pub fn set_short_summary<S>(&mut self, summary: S)
+        -> &mut ModifierDocumentationBuilder
     where
         S: Into<String>
     {
@@ -274,6 +340,48 @@ impl ModifierDocumentationBuilder {
 
         self.long_summary.get_or_insert_with(|| summary.clone());
         self.short_summary = Some(summary);
+        self
+    }
+
+    /// Specify a short summary for this effect/adapter to be displayed in the
+    /// overview. If no long summary has been specified, it will be assigned to
+    /// the given short summary as well.
+    ///
+    /// # Arguments
+    ///
+    /// * `summary`: A short summary for this effect/adapter. Markdown is
+    /// supported.
+    ///
+    /// # Returns
+    ///
+    /// This builder after the operation. Useful for chaining.
+    pub fn with_short_summary<S>(mut self, summary: S)
+        -> ModifierDocumentationBuilder
+    where
+        S: Into<String>
+    {
+        self.set_short_summary(summary);
+        self
+    }
+
+    /// Specify a long summary for this effect/adapter to be displayed in the
+    /// effect/adapter specific help page.
+    ///
+    /// # Arguments
+    ///
+    /// * `summary`: A long summary for this effect/adapter. Markdown is
+    /// supported.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder after the operation. Useful for
+    /// chaining.
+    pub fn set_long_summary<S>(&mut self, summary: S)
+        -> &mut ModifierDocumentationBuilder
+    where
+        S: Into<String>
+    {
+        self.long_summary = Some(summary.into());
         self
     }
 
@@ -293,14 +401,48 @@ impl ModifierDocumentationBuilder {
     where
         S: Into<String>
     {
-        self.long_summary = Some(summary.into());
+        self.set_long_summary(summary);
         self
     }
 
     /// Adds a parameter documentation for a new parameter to the constructed
-    /// modifier documentation. To add multiple parameters, call this method
-    /// multiple times. The parameters will be displayed top-to-bottom in the
-    /// order this method is called.
+    /// modifier documentation. To add multiple parameters, call this method or
+    /// [ModifierDocumentationBuilder::with_parameter] multiple times. The
+    /// parameters will be displayed top-to-bottom in the order these method
+    /// are called.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The name of the documented parameter.
+    /// * `description`: A description to be displayed for the documented
+    /// parameter.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this builder after the operation. Useful for
+    /// chaining.
+    pub fn add_parameter<S1, S2>(&mut self, name: S1, description: S2)
+        -> &mut ModifierDocumentationBuilder
+    where
+        S1: Into<String>,
+        S2: Into<String>
+    {
+        let name = name.into();
+        let description = description.into();
+
+        self.parameters.push(ModifierParameterDocumentation {
+            name,
+            description
+        });
+
+        self
+    }
+
+    /// Adds a parameter documentation for a new parameter to the constructed
+    /// modifier documentation. To add multiple parameters, call this method or
+    /// [ModifierDocumentationBuilder::add_parameter] multiple times. The
+    /// parameters will be displayed top-to-bottom in the order these method
+    /// are called.
     ///
     /// # Arguments
     ///
