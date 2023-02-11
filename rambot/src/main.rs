@@ -30,6 +30,7 @@ use std::sync::Arc;
 pub mod audio;
 pub mod command;
 pub mod config;
+pub mod drivers;
 pub mod event;
 pub mod key_value;
 pub mod logging;

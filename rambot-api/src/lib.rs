@@ -53,11 +53,13 @@
 //! the former, changing the order and/or content. An example would be
 //! shuffling a playlist.
 
+pub mod api;
 mod audio;
 mod documentation;
 mod resolver;
 mod time;
 
+pub use api::{Bot, Guild};
 pub use audio::{
     AudioMetadata,
     AudioMetadataBuilder,
@@ -194,13 +196,16 @@ pub trait Plugin : Send + Sync {
     /// themselves are responsible for respecting this config.
     /// * `registry`: The [ResolverRegistry] to use for registering resolvers
     /// provided by this plugin.
+    /// * `bot`: API access to the [Bot] that the plugin can store and use at
+    /// any time to query information and perform operations on the bot.
     ///
     /// # Errors
     ///
     /// In case initialization fails, an error message may be provided as a
     /// [String].
     fn load_plugin<'registry>(&self, config: PluginConfig,
-        registry: &mut ResolverRegistry<'registry>) -> Result<(), String>;
+        registry: &mut ResolverRegistry<'registry>, bot: Bot)
+        -> Result<(), String>;
 
     /// This function is called when the plugin is unloaded, i.e. the bot's
     /// plugin manager is dropped. Any cleanup of the plugin's operation should
@@ -233,7 +238,8 @@ pub trait Plugin : Send + Sync {
 macro_rules! export_plugin {
     ($constructor:path) => {
         #[no_mangle]
-        pub extern "Rust" fn _create_plugin() -> *mut Box<dyn $crate::Plugin> {
+        pub extern "Rust" fn _create_plugin()
+                -> *mut Box<dyn $crate::Plugin> {
             let plugin = $constructor();
             let boxed: Box<Box<dyn $crate::Plugin>> =
                 Box::new(Box::new(plugin));

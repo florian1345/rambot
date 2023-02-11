@@ -15,7 +15,7 @@ use rambot_api::{
     ResolverRegistry
 };
 
-use serenity::prelude::TypeMapKey;
+use serenity::prelude::{TypeMapKey, Context};
 
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
@@ -26,6 +26,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::drivers::BotDriverImpl;
 
 /// An enumeration of the different errors that can occur when loading plugins.
 #[derive(Debug)]
@@ -217,9 +218,12 @@ where
         .map(|r| r.documentation())
 }
 
+// TODO refactor params
+
 unsafe fn load_plugin(path: PathBuf, config: PluginConfig,
         registry: &mut ResolverRegistry, plugins: &mut Vec<Box<dyn Plugin>>,
-        loaded_libraries: &mut Vec<Library>) -> Result<(), LoadPluginsError> {
+        loaded_libraries: &mut Vec<Library>, ctx: &Context)
+        -> Result<(), LoadPluginsError> {
     type CreatePlugin = unsafe fn() -> *mut Box<dyn Plugin>;
 
     let lib = Library::new(path)?;
@@ -229,8 +233,9 @@ unsafe fn load_plugin(path: PathBuf, config: PluginConfig,
     let raw = create_plugin();
     plugins.push(*Box::from_raw(raw));
     let plugin = plugins.last().unwrap();
+    let bot = BotDriverImpl::new(ctx).into();
 
-    if let Err(msg) = plugin.load_plugin(config, registry) {
+    if let Err(msg) = plugin.load_plugin(config, registry, bot) {
         return Err(LoadPluginsError::InitError(msg));
     }
 
@@ -294,11 +299,13 @@ impl PluginManager {
     /// * `config`: The [Config] which specifies the plugin directory as well
     /// as the [PluginConfig] provided to the individual plugins during
     /// initialization.
+    /// * `ctx`: The bot [Context] which is wrapped to enable plugins to access
+    /// the state of the bot.
     ///
     /// # Errors
     ///
     /// Any [LoadPluginsError] according to their respective documentation.
-    pub fn new(config: &Config) -> Result<PluginManager, LoadPluginsError> {
+    pub fn new(config: &Config, ctx: &Context) -> Result<PluginManager, LoadPluginsError> {
         let mut plugin_manager = PluginManager {
             audio_source_resolvers: Vec::new(),
             audio_source_list_resolvers: Vec::new(),
@@ -325,7 +332,7 @@ impl PluginManager {
 
                 unsafe {
                     load_plugin(dir_entry.path(), plugin_config,
-                        &mut resolver_registry, plugins, loaded_libraries)?;
+                        &mut resolver_registry, plugins, loaded_libraries, ctx)?;
                 }
             }
         }
