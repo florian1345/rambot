@@ -69,8 +69,8 @@ struct LoopPlugin;
 
 impl Plugin for LoopPlugin {
 
-    fn load_plugin<'registry>(&self, _config: PluginConfig,
-            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+    fn load_plugin(&self, _config: PluginConfig,
+            registry: &mut ResolverRegistry<'_>) -> Result<(), String> {
         registry.register_adapter_resolver(LoopAdapterResolver);
         Ok(())
     }

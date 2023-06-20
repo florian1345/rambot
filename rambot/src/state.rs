@@ -243,7 +243,7 @@ impl<'a> Deref for GuildStateGuard<'a> {
 
 impl<'a> DerefMut for GuildStateGuard<'a> {
     fn deref_mut(&mut self) -> &mut GuildState {
-        &mut self.guild_state
+        self.guild_state
     }
 }
 
@@ -319,7 +319,7 @@ impl State {
             Err(StateError::OccupiedByFile)
         }
         else if path.exists() {
-            let matches = fs::read_dir(&path)?
+            let matches = fs::read_dir(path)?
                 .flat_map(|e| e.into_iter())
                 .map(|e| e.path())
                 .filter(|p| is_json(p));
