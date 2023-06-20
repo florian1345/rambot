@@ -9,9 +9,8 @@
 //! struct MyPlugin;
 //!
 //! impl Plugin for MyPlugin {
-//!     fn load_plugin<'registry>(&self, config: PluginConfig,
-//!             registry: &mut ResolverRegistry<'registry>)
-//!             -> Result<(), String> {
+//!     fn load_plugin(&self, config: PluginConfig,
+//!             registry: &mut ResolverRegistry<'_>) -> Result<(), String> {
 //!         // Here we do all registration by calling the appropriate methods
 //!         // on "registry". We can register an arbitrary amount of
 //!         // functionality. The parameter `config` provides some extra

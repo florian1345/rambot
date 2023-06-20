@@ -478,8 +478,8 @@ impl AudioSourceResolver for Mp4AudioSourceResolver {
 struct Mp4Plugin;
 
 impl Plugin for Mp4Plugin {
-    fn load_plugin<'registry>(&self, config: PluginConfig,
-            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+    fn load_plugin(&self, config: PluginConfig,
+            registry: &mut ResolverRegistry<'_>) -> Result<(), String> {
         registry.register_audio_source_resolver(Mp4AudioSourceResolver {
             file_manager: FileManager::new(config)
         });

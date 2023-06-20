@@ -188,8 +188,8 @@ struct OggPlugin;
 
 impl Plugin for OggPlugin {
 
-    fn load_plugin<'registry>(&self, config: PluginConfig,
-            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+    fn load_plugin(&self, config: PluginConfig,
+            registry: &mut ResolverRegistry<'_>) -> Result<(), String> {
         registry.register_audio_source_resolver(OggAudioSourceResolver {
             file_manager: FileManager::new(config)
         });
