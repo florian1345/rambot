@@ -199,8 +199,8 @@ pub trait Plugin : Send + Sync {
     ///
     /// In case initialization fails, an error message may be provided as a
     /// [String].
-    fn load_plugin<'registry>(&self, config: PluginConfig,
-        registry: &mut ResolverRegistry<'registry>) -> Result<(), String>;
+    fn load_plugin(&self, config: PluginConfig,
+        registry: &mut ResolverRegistry<'_>) -> Result<(), String>;
 
     /// This function is called when the plugin is unloaded, i.e. the bot's
     /// plugin manager is dropped. Any cleanup of the plugin's operation should
