@@ -30,7 +30,7 @@ use symphonia::default::codecs::{
     AacDecoder,
     AlacDecoder,
     FlacDecoder,
-    Mp3Decoder,
+    MpaDecoder,
     VorbisDecoder
 };
 use symphonia::default::formats::IsoMp4Reader;
@@ -283,7 +283,7 @@ fn select_best_track(reader: &IsoMp4Reader) -> Option<&Track> {
         Some(track)
     }
     else {
-        reader.tracks().iter().max_by_key(|t| get_track_channel_quality(*t))
+        reader.tracks().iter().max_by_key(|t| get_track_channel_quality(t))
     }
 }
 
@@ -419,7 +419,7 @@ where
         codecs::CODEC_TYPE_FLAC =>
             construct_source::<FlacDecoder>(reader, &track, descriptor),
         codecs::CODEC_TYPE_MP3 =>
-            construct_source::<Mp3Decoder>(reader, &track, descriptor),
+            construct_source::<MpaDecoder>(reader, &track, descriptor),
         codecs::CODEC_TYPE_VORBIS =>
             construct_source::<VorbisDecoder>(reader, &track, descriptor),
         _ => Err("Unsupported codec.".to_owned())
@@ -478,8 +478,8 @@ impl AudioSourceResolver for Mp4AudioSourceResolver {
 struct Mp4Plugin;
 
 impl Plugin for Mp4Plugin {
-    fn load_plugin<'registry>(&self, config: PluginConfig,
-            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+    fn load_plugin(&self, config: PluginConfig,
+            registry: &mut ResolverRegistry<'_>) -> Result<(), String> {
         registry.register_audio_source_resolver(Mp4AudioSourceResolver {
             file_manager: FileManager::new(config)
         });

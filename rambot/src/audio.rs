@@ -42,7 +42,7 @@ impl AudioBuffer {
             let new_data = DoubleMappedBuffer::new(capacity).unwrap();
             
             unsafe {
-                (&mut new_data.slice_mut()[..self.len])
+                new_data.slice_mut()[..self.len]
                     .copy_from_slice(self.get_slice(self.len));
             }
 

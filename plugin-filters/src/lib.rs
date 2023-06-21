@@ -211,8 +211,8 @@ struct FiltersPlugin;
 
 impl Plugin for FiltersPlugin {
 
-    fn load_plugin<'registry>(&self, config: PluginConfig,
-            registry: &mut ResolverRegistry<'registry>) -> Result<(), String> {
+    fn load_plugin(&self, config: PluginConfig,
+            registry: &mut ResolverRegistry<'_>) -> Result<(), String> {
         let config = Config::load(config.config_path())?;
 
         registry.register_effect_resolver(GaussianEffectResolver {
