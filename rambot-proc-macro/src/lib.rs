@@ -429,19 +429,20 @@ fn rambot_command_do(attr: Vec<NestedMeta>, mut item: ItemFn)
 /// are separated by commas, as normal.
 ///
 /// * `name`: Has as value a string which defines the name of the command. If
-/// this is not set, the command name will be equal to the function identifier.
+///   this is not set, the command name will be equal to the function
+///   identifier.
 /// * `description`: Has as value a string which offers a description of the
-/// command to be displayed in the `help` command.
+///   command to be displayed in the `help` command.
 /// * `usage`: Has as value a string which constitutes an example usage sans
-/// command name.
+///   command name.
 /// * `rest`: A flag which indicates that the last function argument should be
-/// parsed from the rest string after parsing all other arguments. Cannot be
-/// used in conjunction with option or vector arguments
+///   parsed from the rest string after parsing all other arguments. Cannot be
+///   used in conjunction with option or vector arguments
 /// * `confirm`: A flag which indicates whether successful execution of the
-/// command should be indicated by an `:ok_hand:` reaction on the message.
+///   command should be indicated by an `:ok_hand:` reaction on the message.
 /// * `owners_only`: If this flag is present, the attribute of the same name
-/// will be added to the command. This restricts the usage of the annotated
-/// command to users who are owners of the bot.
+///   will be added to the command. This restricts the usage of the annotated
+///   command to users who are owners of the bot.
 ///
 /// # Argument parsing
 ///

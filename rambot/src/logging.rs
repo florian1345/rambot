@@ -105,8 +105,8 @@ fn get_file() -> Result<File, LogInitError> {
 /// # Arguments
 ///
 /// * `level_filter`: A verbosity level filter that represents the weakest log
-/// level that is still logged, or [LevelFilter::Off] to disable logging
-/// completely.
+///   level that is still logged, or [LevelFilter::Off] to disable logging
+///   completely.
 pub fn init(level_filter: LevelFilter) -> Result<(), LogInitError> {
     let config = ConfigBuilder::new()
         .add_filter_ignore_str("tracing::span")

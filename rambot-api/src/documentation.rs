@@ -160,7 +160,7 @@ impl AudioDocumentationBuilder {
     /// # Arguments
     ///
     /// * `description`: A longer description for this audio. Markdown is
-    /// supported.
+    ///   supported.
     ///
     /// # Returns
     ///
@@ -181,7 +181,7 @@ impl AudioDocumentationBuilder {
     /// # Arguments
     ///
     /// * `description`: A longer description for this audio. Markdown is
-    /// supported.
+    ///   supported.
     ///
     /// # Returns
     ///
@@ -325,7 +325,7 @@ impl ModifierDocumentationBuilder {
     /// # Arguments
     ///
     /// * `summary`: A short summary for this effect/adapter. Markdown is
-    /// supported.
+    ///   supported.
     ///
     /// # Returns
     ///
@@ -350,7 +350,7 @@ impl ModifierDocumentationBuilder {
     /// # Arguments
     ///
     /// * `summary`: A short summary for this effect/adapter. Markdown is
-    /// supported.
+    ///   supported.
     ///
     /// # Returns
     ///
@@ -370,7 +370,7 @@ impl ModifierDocumentationBuilder {
     /// # Arguments
     ///
     /// * `summary`: A long summary for this effect/adapter. Markdown is
-    /// supported.
+    ///   supported.
     ///
     /// # Returns
     ///
@@ -391,7 +391,7 @@ impl ModifierDocumentationBuilder {
     /// # Arguments
     ///
     /// * `summary`: A long summary for this effect/adapter. Markdown is
-    /// supported.
+    ///   supported.
     ///
     /// # Returns
     ///
@@ -415,7 +415,7 @@ impl ModifierDocumentationBuilder {
     ///
     /// * `name`: The name of the documented parameter.
     /// * `description`: A description to be displayed for the documented
-    /// parameter.
+    ///   parameter.
     ///
     /// # Returns
     ///
@@ -448,7 +448,7 @@ impl ModifierDocumentationBuilder {
     ///
     /// * `name`: The name of the documented parameter.
     /// * `description`: A description to be displayed for the documented
-    /// parameter.
+    ///   parameter.
     ///
     /// # Returns
     ///

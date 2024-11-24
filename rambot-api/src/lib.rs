@@ -41,16 +41,16 @@
 //! information and examples.
 //!
 //! * [AudioSourceResolver]s are the most essential feature, where a plugin
-//! provides a way to play some new kind of audio. An example would be playback
-//! of a certain type of audio file, such as MP3.
+//!   provides a way to play some new kind of audio. An example would be
+//!   playback of a certain type of audio file, such as MP3.
 //! * [AudioSourceListResolver]s offer a way to resolve playlists. An example
-//! would be playback of all audio files in a directory.
+//!   would be playback of all audio files in a directory.
 //! * [EffectResolver]s transform one audio stream into another which depends
-//! on the former, applying some kind of audio effect. An example would be
-//! changing the volume of audio.
+//!   on the former, applying some kind of audio effect. An example would be
+//!   changing the volume of audio.
 //! * [AdapterResolver]s transform one playlist into another which depends on
-//! the former, changing the order and/or content. An example would be
-//! shuffling a playlist.
+//!   the former, changing the order and/or content. An example would be
+//!   shuffling a playlist.
 
 mod audio;
 mod documentation;
@@ -108,11 +108,11 @@ impl PluginConfig {
     /// # Arguments
     ///
     /// * `root_directory`: The path to take as the root for file system
-    /// accesses, such as searching for audio files to play.
+    ///   accesses, such as searching for audio files to play.
     /// * `allow_web_access`: Indicates whether plugins are allowed to access
-    /// the internet.
+    ///   the internet.
     /// * `config_path`: The path of the config file that the plugin receiving
-    /// this config should use, if it needs one.
+    ///   this config should use, if it needs one.
     pub fn new<S1, S2>(root_directory: S1, allow_web_access: bool,
         config_path: S2) -> PluginConfig
     where
@@ -162,7 +162,7 @@ impl PluginGuildConfig {
     /// # Arguments
     ///
     /// * `root_directory`: The guild-specific root directory or `None` if the
-    /// global root directory should be used.
+    ///   global root directory should be used.
     pub fn new<S>(root_directory: Option<S>) -> PluginGuildConfig
     where
         S: Into<String>
@@ -190,9 +190,9 @@ pub trait Plugin : Send + Sync {
     /// # Arguments
     ///
     /// * `config`: The [PluginConfig] for this plugins. Currently, plugins
-    /// themselves are responsible for respecting this config.
+    ///   themselves are responsible for respecting this config.
     /// * `registry`: The [ResolverRegistry] to use for registering resolvers
-    /// provided by this plugin.
+    ///   provided by this plugin.
     ///
     /// # Errors
     ///

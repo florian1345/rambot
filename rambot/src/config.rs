@@ -220,8 +220,8 @@ impl Config {
     /// # Arguments
     ///
     /// * `library`: The file name (without preceding directories, but with
-    /// extension) of the library that contains the plugin for which to
-    /// generate a config.
+    ///   extension) of the library that contains the plugin for which to
+    ///   generate a config.
     pub fn generate_plugin_config(&self, library: &str) -> PluginConfig {
         let config_path =
             format!("{}/{}.config", &self.plugin_config_directory, library);

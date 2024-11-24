@@ -1,6 +1,8 @@
+use std::io::{Read, Seek};
 use id3::{Content, Tag, TagLike, Timestamp};
 
 use rambot_api::{AudioMetadata, AudioMetadataBuilder};
+use crate::{OpenedFile, SeekWrapper};
 
 fn to_str(content: &Content) -> Option<String> {
     match content {
@@ -21,7 +23,7 @@ fn to_str(content: &Content) -> Option<String> {
 ///
 /// * `tag`: The ID3 [Tag] to convert.
 /// * `descriptor`: The descriptor of the audio source, which is used as a
-/// fallback title in case the given `tag` contains none.
+///   fallback title in case the given `tag` contains none.
 ///
 /// # Returns
 ///
@@ -76,6 +78,36 @@ pub fn metadata_from_id3_tag(tag: Tag, descriptor: &str) -> AudioMetadata {
     }
 
     meta_builder.build()
+}
+
+fn resolve_metadata<R>(reader: R, descriptor: &str)
+    -> Result<AudioMetadata, String>
+where
+    R: Read + Seek
+{
+    let tag = Tag::read_from2(reader).map_err(|e| format!("{}", e))?;
+    Ok(metadata_from_id3_tag(tag, descriptor))
+}
+
+/// Loads [AudioMetadata] from an [OpenedFile].
+///
+/// # Arguments
+///
+/// * `opened_file`: The [OpenedFile] from which to load [AudioMetadata].
+/// * `descriptor`: The descriptor of the audio source, which is used as a
+///   fallback title in case the given file contains none.
+///
+/// # Returns
+///
+/// A newly constructed [AudioMetadata] instance filled with information from
+/// the given file.
+pub fn metadata_from_file(opened_file: OpenedFile, descriptor: &str)
+        -> Result<AudioMetadata, String> {
+    match opened_file {
+        OpenedFile::Local(reader) => resolve_metadata(reader, descriptor),
+        OpenedFile::Web(reader) =>
+            resolve_metadata(SeekWrapper::new(reader), descriptor)
+    }
 }
 
 #[cfg(test)]

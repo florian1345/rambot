@@ -138,7 +138,7 @@ pub trait AudioSourceResolver : Send + Sync {
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -162,7 +162,7 @@ pub trait AudioSourceResolver : Send + Sync {
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -195,7 +195,7 @@ impl ResolveEffectError {
     ///
     /// * `message`: The error message to be displayed to the user.
     /// * `child`: The child audio source to which the effect should have been
-    /// applied.
+    ///   applied.
     pub fn new<S>(message: S, child: Box<dyn AudioSource + Send + Sync>)
         -> ResolveEffectError
     where
@@ -371,12 +371,12 @@ pub trait EffectResolver : Send + Sync {
     /// # Arguments
     ///
     /// * `key_values`: A [HashMap] storing arguments for this effect. For each
-    /// supplied argument, the parameter name maps to the string that was given
-    /// as the argument value.
+    ///   supplied argument, the parameter name maps to the string that was
+    ///   given as the argument value.
     /// * `child`: A boxed [AudioSource] to which the effect shall be applied,
-    /// i.e. which should be wrapped in an effect audio source.
+    ///   i.e. which should be wrapped in an effect audio source.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -493,7 +493,7 @@ pub trait AudioSourceListResolver : Send + Sync {
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -517,7 +517,7 @@ pub trait AudioSourceListResolver : Send + Sync {
     ///
     /// * `descriptor`: A textual descriptor of unspecified format.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -651,12 +651,12 @@ pub trait AdapterResolver : Send + Sync {
     /// # Arguments
     ///
     /// * `key_values`: A [HashMap] storing arguments for this adapter. For
-    /// each supplied argument, the parameter name maps to the string that was
-    /// given as the argument value.
+    ///   each supplied argument, the parameter name maps to the string that was
+    ///   given as the argument value.
     /// * `child`: A boxed [AudioSourceList] to which the adapter shall be
-    /// applied, i.e. which should be wrapped in an adapter audio source list.
+    ///   applied, i.e. which should be wrapped in an adapter audio source list.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///
@@ -700,13 +700,13 @@ impl<'registry> ResolverRegistry<'registry> {
     /// # Arguments
     ///
     /// * `register_audio_source_resolver`: A function that receives an
-    /// [AudioSourceResolver] trait object and handles its registration.
+    ///   [AudioSourceResolver] trait object and handles its registration.
     /// * `register_audio_source_list_resolver`: A function that receives an
-    /// [AudioSourceListResolver] trait object and handles its registration.
+    ///   [AudioSourceListResolver] trait object and handles its registration.
     /// * `register_effect_resolver`: A function that receives an
-    /// [EffectResolver] trait object and handles its registration.
+    ///   [EffectResolver] trait object and handles its registration.
     /// * `register_adapter_resolver`: A function that receives an
-    /// [AdapterResolver] trait object and handles its registration.
+    ///   [AdapterResolver] trait object and handles its registration.
     pub fn new<RegAS, RegASL, RegEf, RegAd>(
         register_audio_source_resolver: RegAS,
         register_audio_source_list_resolver: RegASL,
