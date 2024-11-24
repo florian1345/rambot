@@ -291,8 +291,8 @@ impl PluginManager {
     /// # Arguments
     ///
     /// * `config`: The [Config] which specifies the plugin directory as well
-    /// as the [PluginConfig] provided to the individual plugins during
-    /// initialization.
+    ///   as the [PluginConfig] provided to the individual plugins during
+    ///   initialization.
     ///
     /// # Errors
     ///
@@ -340,9 +340,9 @@ impl PluginManager {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of the audio source to resolve.
-    /// The accepted format(s) depends on the installed plugins.
+    ///   The accepted format(s) depends on the installed plugins.
     /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
-    /// which carries guild-specific information for the plugin(s).
+    ///   which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -365,9 +365,9 @@ impl PluginManager {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of the audio source list to
-    /// resolve. The accepted format(s) depends on the installed plugins.
+    ///   resolve. The accepted format(s) depends on the installed plugins.
     /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
-    /// which carries guild-specific information for the plugin(s).
+    ///   which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -392,15 +392,15 @@ impl PluginManager {
     /// # Arguments
     ///
     /// * `descriptor`: A textual descriptor of the audio descriptor list to
-    /// resolve.
+    ///   resolve.
     /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
-    /// which carries guild-specific information for the plugin(s).
+    ///   which carries guild-specific information for the plugin(s).
     ///
     /// # Errors
     ///
     /// * [ResolveError::PluginResolveError] if a plugin claims to be able to
-    /// resolve the descriptor as an audio source list, but fails to do so when
-    /// queried.
+    ///   resolve the descriptor as an audio source list, but fails to do s
+    ///   when queried.
     pub fn resolve_audio_descriptor_list(&self, descriptor: &str,
             plugin_guild_config: &PluginGuildConfig)
             -> Result<AudioDescriptorList, ResolveError> {
@@ -441,12 +441,12 @@ impl PluginManager {
     /// # Arguments
     ///
     /// * `name`: The name of the effect type to resolve. This is the key by
-    /// which the resolver is looked up.
+    ///   which the resolver is looked up.
     /// * `key_values`: A [HashMap] that stores key-value pairs provided as
-    /// arguments for the effect.
+    ///   arguments for the effect.
     /// * `child`: The [AudioSource] to which to apply the resolved effect.
     /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
-    /// which carries guild-specific information for the plugin(s).
+    ///   which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///
@@ -509,12 +509,12 @@ impl PluginManager {
     /// # Arguments
     ///
     /// * `name`: The name of the adapter type to resolve. This is the key by
-    /// which the resolver is looked up.
+    ///   which the resolver is looked up.
     /// * `key_values`: A [HashMap] that stores key-value pairs provided as
-    /// arguments for the adapter.
+    ///   arguments for the adapter.
     /// * `child`: The [AudioSource] to which to apply the resolved adapter.
     /// * `plugin_guild_config`: A reference to the [PluginGuildConfig] in
-    /// which carries guild-specific information for the plugin(s).
+    ///   which carries guild-specific information for the plugin(s).
     ///
     /// # Returns
     ///

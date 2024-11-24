@@ -143,7 +143,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the number of samples within the
-    /// given amount of milliseconds does not fit inside an [i64].
+    ///   given amount of milliseconds does not fit inside an [i64].
     pub fn from_milliseconds(milliseconds: i64) -> SampleDurationResult {
         let samples = milliseconds.checked_mul(SAMPLES_PER_MILLISECOND)
             .ok_or(SampleDurationError::Overflow)?;
@@ -156,7 +156,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the number of samples within the
-    /// given amount of seconds does not fit inside an [i64].
+    ///   given amount of seconds does not fit inside an [i64].
     pub fn from_seconds(seconds: i64) -> SampleDurationResult {
         let samples = seconds.checked_mul(SAMPLES_PER_SECOND)
             .ok_or(SampleDurationError::Overflow)?;
@@ -169,7 +169,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the number of samples within the
-    /// given amount of minutes does not fit inside an [i64].
+    ///   given amount of minutes does not fit inside an [i64].
     pub fn from_minutes(minutes: i64) -> SampleDurationResult {
         let samples = minutes.checked_mul(SAMPLES_PER_MINUTE)
             .ok_or(SampleDurationError::Overflow)?;
@@ -182,7 +182,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the number of samples within the
-    /// given amount of hours does not fit inside an [i64].
+    ///   given amount of hours does not fit inside an [i64].
     pub fn from_hours(hours: i64) -> SampleDurationResult {
         let samples = hours.checked_mul(SAMPLES_PER_HOUR)
             .ok_or(SampleDurationError::Overflow)?;
@@ -264,7 +264,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the sum of the samples represented
-    /// by this duration and the given `rhs` does not fit inside an [i64].
+    ///   by this duration and the given `rhs` does not fit inside an [i64].
     pub fn checked_add(self, rhs: SampleDuration) -> SampleDurationResult {
         let samples = self.0.checked_add(rhs.0)
             .ok_or(SampleDurationError::Overflow)?;
@@ -278,8 +278,8 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the difference between the samples
-    /// represented by this duration and the given `rhs` does not fit inside an
-    /// [i64].
+    ///   represented by this duration and the given `rhs` does not fit inside
+    ///   an [i64].
     pub fn checked_sub(self, rhs: SampleDuration) -> SampleDurationResult {
         let samples = self.0.checked_sub(rhs.0)
             .ok_or(SampleDurationError::Overflow)?;
@@ -293,8 +293,8 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if the amount of the samples
-    /// represented by this duration multiplied by `rhs` does not fit inside an
-    /// [i64].
+    ///   represented by this duration multiplied by `rhs` does not fit inside
+    ///   an [i64].
     pub fn checked_mul(self, rhs: i64) -> SampleDurationResult {
         let samples = self.0.checked_mul(rhs)
             .ok_or(SampleDurationError::Overflow)?;
@@ -323,7 +323,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if this duration is
-    /// [SampleDuration::MIN].
+    ///   [SampleDuration::MIN].
     pub fn checked_neg(self) -> SampleDurationResult {
         let samples = self.0.checked_neg()
             .ok_or(SampleDurationError::Overflow)?;
@@ -339,7 +339,7 @@ impl SampleDuration {
     /// # Errors
     ///
     /// * [SampleDurationError::Overflow] if this duration is
-    /// [SampleDuration::MIN].
+    ///   [SampleDuration::MIN].
     pub fn checked_abs(self) -> SampleDurationResult {
         let samples = self.0.checked_abs()
             .ok_or(SampleDurationError::Overflow)?;

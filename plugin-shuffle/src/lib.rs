@@ -47,7 +47,7 @@ impl<R: Rng> AudioSourceList for ShuffleAudioSourceList<R> {
                 distinct.insert(s);
             }
 
-            self.buf.extend(distinct.into_iter());
+            self.buf.extend(distinct);
             shuffle(&mut self.buf, &mut self.rng);
         }
 

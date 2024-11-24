@@ -573,8 +573,8 @@ impl Mixer {
     ///
     /// * `layer`: The name of the layer from which to remove effects.
     /// * `predicate`: A function which takes as input a reference to a
-    /// [KeyValueDescriptor] representing an effect and decides whether this
-    /// effect should be retained (`true`) or not (`false`).
+    ///   [KeyValueDescriptor] representing an effect and decides whether this
+    ///   effect should be retained (`true`) or not (`false`).
     ///
     /// # Returns
     ///
@@ -663,8 +663,8 @@ impl Mixer {
     ///
     /// * `layer`: The name of the layer from which to remove adapters.
     /// * `predicate`: A function which takes as input a reference to a
-    /// [KeyValueDescriptor] representing an adapter and decides whether this
-    /// adapter should be retained (`true`) or not (`false`).
+    ///   [KeyValueDescriptor] representing an adapter and decides whether this
+    ///   adapter should be retained (`true`) or not (`false`).
     ///
     /// # Returns
     ///
@@ -738,7 +738,7 @@ impl Mixer {
     ///
     /// * `layer`: The name of the layer on which to seek.
     /// * `delta`: The [SampleDuration] that determines the amount of time by
-    /// which is seeked. This is passed directly to [AudioSource::seek].
+    ///   which is seeked. This is passed directly to [AudioSource::seek].
     ///
     /// # Errors
     ///

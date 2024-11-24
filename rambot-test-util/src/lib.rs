@@ -354,11 +354,11 @@ pub fn collect_list(list: &mut Box<dyn AudioSourceList + Send + Sync>,
 /// # Arguments
 ///
 /// * `len`: The number of generated samples, i.e. the length of the returned
-/// data.
+///   data.
 /// * `left_frequency`: The frequency of the sine wave played on the left
-/// channel in Hz (where a sample rate of 48 kHz is assumed for the audio).
+///   channel in Hz (where a sample rate of 48 kHz is assumed for the audio).
 /// * `right_frequency`: The frequency of the sine wave played on the right
-/// channel in Hz (where a sample rate of 48 kHz is assumed for the audio).
+///   channel in Hz (where a sample rate of 48 kHz is assumed for the audio).
 pub fn test_data(len: usize, left_frequency: f64, right_frequency: f64)
         -> Vec<Sample> {
     let mut data = Vec::with_capacity(len);
@@ -387,7 +387,7 @@ fn random_frequency(rng: &mut impl Rng) -> f64 {
 /// # Arguments
 ///
 /// * `len`: The number of generated samples, i.e. the length of the returned
-/// data.
+///   data.
 pub fn random_test_data(len: usize) -> Vec<Sample> {
     let mut rng = rand::thread_rng();
 

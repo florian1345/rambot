@@ -103,9 +103,9 @@ impl FileManager {
     ///
     /// * `descriptor`: The descriptor to check.
     /// * `extension`: The required extension (including the period) in lower
-    /// case.
+    ///   case.
     /// * `guild_config`: A [PluginGuildConfig] containing guild-specific
-    /// information that may be relevant to the resolution.
+    ///   information that may be relevant to the resolution.
     ///
     /// # Returns
     ///

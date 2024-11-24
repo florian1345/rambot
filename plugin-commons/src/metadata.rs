@@ -23,7 +23,7 @@ fn to_str(content: &Content) -> Option<String> {
 ///
 /// * `tag`: The ID3 [Tag] to convert.
 /// * `descriptor`: The descriptor of the audio source, which is used as a
-/// fallback title in case the given `tag` contains none.
+///   fallback title in case the given `tag` contains none.
 ///
 /// # Returns
 ///
@@ -95,7 +95,7 @@ where
 ///
 /// * `opened_file`: The [OpenedFile] from which to load [AudioMetadata].
 /// * `descriptor`: The descriptor of the audio source, which is used as a
-/// fallback title in case the given file contains none.
+///   fallback title in case the given file contains none.
 ///
 /// # Returns
 ///

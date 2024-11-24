@@ -45,7 +45,7 @@ impl Sample {
     /// # Arguments
     ///
     /// * `value`: The current amplitude on both channels of the created
-    /// sample. Usually on a scale from -1 to 1.
+    ///   sample. Usually on a scale from -1 to 1.
     ///
     /// # Returns
     ///
@@ -457,7 +457,7 @@ impl AudioMetadataBuilder {
     /// # Arguments
     ///
     /// * `super_title`: The title of the greater work that the track is a part
-    /// of.
+    ///   of.
     ///
     /// # Returns
     ///
@@ -478,7 +478,7 @@ impl AudioMetadataBuilder {
     /// # Arguments
     ///
     /// * `super_title`: The title of the greater work that the track is a part
-    /// of.
+    ///   of.
     ///
     /// # Returns
     ///
@@ -571,7 +571,7 @@ impl AudioMetadataBuilder {
     /// # Arguments
     ///
     /// * `lead_performer`: The name of the lead performer or soloist of the
-    /// track.
+    ///   track.
     ///
     /// # Returns
     ///
@@ -592,7 +592,7 @@ impl AudioMetadataBuilder {
     /// # Arguments
     ///
     /// * `lead_performer`: The name of the lead performer or soloist of the
-    /// track.
+    ///   track.
     ///
     /// # Returns
     ///
@@ -727,7 +727,7 @@ impl AudioMetadataBuilder {
     /// # Arguments
     ///
     /// * `interpreter`: The name of the interpreter of this version of the
-    /// track.
+    ///   track.
     ///
     /// # Returns
     ///
@@ -748,7 +748,7 @@ impl AudioMetadataBuilder {
     /// # Arguments
     ///
     /// * `interpreter`: The name of the interpreter of this version of the
-    /// track.
+    ///   track.
     ///
     /// # Returns
     ///
@@ -1002,7 +1002,7 @@ pub trait AudioSource {
     /// # Arguments
     ///
     /// * `buf`: A [Sample] buffer to fill with data, starting from index 0.
-    /// May or may not be filled with junk.
+    ///   May or may not be filled with junk.
     ///
     /// # Returns
     ///
@@ -1031,8 +1031,8 @@ pub trait AudioSource {
     /// # Arguments
     ///
     /// * `delta`: The [SampleDuration] by which the position is moved.
-    /// Positive values mean seeking forward, negative values mean seeking
-    /// backward.
+    ///   Positive values mean seeking forward, negative values mean seeking
+    ///   backward.
     ///
     /// # Errors
     ///
