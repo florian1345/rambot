@@ -250,8 +250,7 @@ pub struct PluginManager {
 
 impl PluginManager {
 
-    #[cfg(test)]
-    pub(crate) fn mock() -> PluginManager {
+    pub(crate) fn empty() -> PluginManager {
         PluginManager {
             audio_source_resolvers: Vec::new(),
             audio_source_list_resolvers: Vec::new(),
@@ -299,14 +298,7 @@ impl PluginManager {
     ///
     /// Any [LoadPluginsError] according to their respective documentation.
     pub fn new(config: &Config) -> Result<PluginManager, LoadPluginsError> {
-        let mut plugin_manager = PluginManager {
-            audio_source_resolvers: Vec::new(),
-            audio_source_list_resolvers: Vec::new(),
-            effect_resolvers: HashMap::new(),
-            adapter_resolvers: HashMap::new(),
-            plugins: Vec::new(),
-            loaded_libraries: Vec::new()
-        };
+        let mut plugin_manager = PluginManager::empty();
         let (mut resolver_registry, plugins, loaded_libraries) =
             plugin_manager.registration_parts();
 

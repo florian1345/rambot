@@ -1095,7 +1095,7 @@ mod tests {
     }
 
     fn mock_mixer() -> Mixer {
-        Mixer::new(Arc::new(PluginManager::mock()))
+        Mixer::new(Arc::new(PluginManager::empty()))
     }
 
     #[test]
@@ -1176,7 +1176,7 @@ mod tests {
     }
 
     fn registered_mixer() -> Mixer {
-        let mut plugin_manager = PluginManager::mock();
+        let mut plugin_manager = PluginManager::empty();
         let mut registry = plugin_manager.mock_registry();
 
         registry.register_audio_source_resolver(MockAudioSourceResolver);
