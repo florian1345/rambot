@@ -1,5 +1,3 @@
-use id3::Tag;
-
 use minimp3::{self, Decoder, Frame};
 
 use plugin_commons::{FileManager, OpenedFile};
@@ -107,16 +105,7 @@ struct Mp3AudioSourceResolver {
     file_manager: FileManager
 }
 
-fn resolve_metadata<R>(reader: R, descriptor: &str)
-    -> Result<AudioMetadata, String>
-where
-    R: Read
-{
-    let tag = Tag::read_from(reader).map_err(|e| format!("{}", e))?;
-    Ok(plugin_commons::metadata_from_id3_tag(tag, descriptor))
-}
-
-fn resolve_reader<R>(reader: R, metadata: AudioMetadata)
+fn resolve_mp3_reader<R>(reader: R, metadata: AudioMetadata)
     -> Result<Box<dyn AudioSource + Send + Sync>, String>
 where
     R: Read + Send + Sync + 'static
@@ -166,15 +155,12 @@ impl AudioSourceResolver for Mp3AudioSourceResolver {
     fn resolve(&self, descriptor: &str, guild_config: PluginGuildConfig)
             -> Result<Box<dyn AudioSource + Send + Sync>, String> {
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
-        let metadata = match file {
-            OpenedFile::Local(reader) => resolve_metadata(reader, descriptor),
-            OpenedFile::Web(reader) => resolve_metadata(reader, descriptor)
-        }?;
+        let metadata = plugin_commons::metadata_from_file(file, descriptor)?;
         let file = self.file_manager.open_file_buf(descriptor, &guild_config)?;
 
         match file {
-            OpenedFile::Local(reader) => resolve_reader(reader, metadata),
-            OpenedFile::Web(reader) => resolve_reader(reader, metadata)
+            OpenedFile::Local(reader) => resolve_mp3_reader(reader, metadata),
+            OpenedFile::Web(reader) => resolve_mp3_reader(reader, metadata)
         }
     }
 }
