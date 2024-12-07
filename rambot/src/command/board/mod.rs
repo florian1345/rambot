@@ -422,10 +422,10 @@ async fn get_board_manager_mut(data: &RwLock<CommandData>, guild_id: GuildId)
     }
 }
 
-/// An [EventHandler] which listens for reactions added to sound board messages
-/// and determines whether these constitute button presses. If such events are
-/// detected, the commands associated with the pressed button are executed and
-/// the reaction is removed, making the button pressable again.
+/// A [FrameworkEventHandler] which listens for reactions added to sound board messages and
+/// determines whether these constitute button presses. If such events are detected, the commands
+/// associated with the pressed button are executed and the reaction is removed, making the button
+/// pressable again.
 pub struct BoardButtonEventHandler;
 
 impl FrameworkEventHandler for BoardButtonEventHandler {
