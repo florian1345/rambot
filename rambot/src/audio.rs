@@ -6,8 +6,6 @@ use rambot_api::{
     Sample, SampleDuration, SeekError
 };
 
-use songbird::input::reader::MediaSource;
-
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
@@ -16,7 +14,7 @@ use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "bench")]
 use std::time::{Duration, Instant};
-
+use songbird::input::core::io::MediaSource;
 use vmcircbuffer::double_mapped_buffer::DoubleMappedBuffer;
 
 use crate::key_value::KeyValueDescriptor;

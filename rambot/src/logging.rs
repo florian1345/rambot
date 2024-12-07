@@ -2,8 +2,6 @@ use chrono::offset::Local;
 
 use log::SetLoggerError;
 
-use serde_json::Value;
-
 use serenity::client::{EventHandler, Context};
 use serenity::model::event::ResumedEvent;
 use serenity::model::guild::Guild;
@@ -23,6 +21,11 @@ use std::fmt::{self, Display, Formatter};
 use std::fs::{self, File};
 use std::io;
 use std::path::Path;
+use poise::FrameworkContext;
+use serenity::all::FullEvent;
+use tokio::sync::RwLock;
+use crate::command::{CommandData, CommandError, CommandResult};
+use crate::event::FrameworkEventHandler;
 
 const LOG_DIR: &str = "logs";
 
@@ -137,7 +140,7 @@ pub struct LoggingEventHandler;
 #[async_trait::async_trait]
 impl EventHandler for LoggingEventHandler {
 
-    async fn guild_create(&self, _ctx: Context, guild: Guild, _is_new: bool) {
+    async fn guild_create(&self, _ctx: Context, guild: Guild, _is_new: Option<bool>) {
         log::info!("Guild \"{}\" (ID {}) created.", guild.name, guild.id);
     }
 
@@ -149,8 +152,26 @@ impl EventHandler for LoggingEventHandler {
     async fn resume(&self, _ctx: Context, _resumed_event: ResumedEvent) {
         log::info!("Resumed session.");
     }
+}
 
-    async fn unknown(&self, _ctx: Context, name: String, _raw: Value) {
-        log::warn!("Unknown event of name \"{}\".", name);
+impl FrameworkEventHandler for LoggingEventHandler {
+    async fn handle_event(&self, _serenity_ctx: &Context, event: &FullEvent,
+            _framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>)
+            -> CommandResult {
+        match event {
+            FullEvent::GuildCreate { guild, .. } => {
+                log::info!("Guild \"{}\" (ID {}) created.", guild.name, guild.id);
+            },
+            FullEvent::Ready { data_about_bot } => {
+                log::info!("Started session {}.", data_about_bot.session_id);
+                log::info!("Using API version {}.", data_about_bot.version);
+            },
+            FullEvent::Resume { .. } => {
+                log::info!("Resumed session.");
+            },
+            _ => { }
+        }
+
+        Ok(())
     }
 }

@@ -1,50 +1,48 @@
-use crate::FrameworkTypeMapKey;
 use crate::audio::{PCMRead, Layer, Mixer};
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildState};
 
-use rambot_api::{
-    AudioSource,
-    ModifierDocumentation,
-    PluginGuildConfig,
-    SampleDuration
-};
+use rambot_api::{AudioSource, ModifierDocumentation, PluginGuildConfig, SampleDuration, SAMPLES_PER_SECOND};
 
-use rambot_proc_macro::rambot_command;
-
-use serenity::client::Context;
-use serenity::framework::standard::{CommandGroup, CommandResult};
-use serenity::framework::standard::macros::{command, group};
-use serenity::model::channel::MessageType;
 use serenity::model::id::GuildId;
-use serenity::model::prelude::Message;
-
 use serenity::prelude::TypeMap;
+use serenity::prelude::Context as SerenityContext;
+use serenity::model::channel::Message as SerenityMessage;
+
 use songbird::Call;
 use songbird::error::JoinError;
-use songbird::input::{Input, Reader};
+use songbird::input::{Input, RawAdapter};
 
+use poise::{builtins, Command, FrameworkContext, MessageDispatchTrigger};
+
+use std::any::Any;
+use std::clone::Clone;
 use std::collections::hash_map::Keys;
 use std::fmt::{Display, Write};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
-
+use poise::builtins::HelpConfiguration;
+use serenity::all::{CreateInteractionResponse, CreateInteractionResponseMessage};
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{Mutex as TokioMutex, Mutex};
 use tokio::sync::MutexGuard as TokioMutexGuard;
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::RwLockReadGuard as TokioRwLockReadGuard;
 use tokio::sync::RwLockWriteGuard as TokioRwLockWriteGuard;
 
-pub mod adapter;
+mod adapter;
 pub mod board;
-pub mod effect;
-pub mod layer;
+mod effect;
+mod layer;
 
-pub use adapter::get_adapter_commands;
-pub use board::get_board_commands;
-pub use effect::get_effect_commands;
-pub use layer::get_layer_commands;
+pub use board::BoardButtonEventHandler;
+
+// TODO TypeMap is no longer necessary
+pub type CommandData = TypeMap;
+pub type CommandError = Box<dyn std::error::Error + Send + Sync>;
+pub type CommandResult<T = ()> = Result<T, CommandError>;
+type Context<'a> = poise::Context<'a, TokioRwLock<CommandData>, CommandError>;
 
 macro_rules! unwrap_or_return {
     ($e:expr, $r:expr) => {
@@ -57,44 +55,59 @@ macro_rules! unwrap_or_return {
 
 pub(crate) use unwrap_or_return;
 
-#[group]
-#[commands(
-    audio,
-    connect,
-    directory,
-    disconnect,
-    cmd_do,
-    info,
-    play,
-    seek,
-    skip,
-    stop
-)]
-struct Root;
-
-/// Gets a [CommandGroup] for the root commands (which are not part of any
-/// sub-group).
-pub fn get_root_commands() -> &'static CommandGroup {
-    &ROOT_GROUP
+/// Gets a vector of the root commands. Sub-commands are not included, but their parent is.
+pub fn commands() -> Vec<Command<TokioRwLock<CommandData>, CommandError>> {
+    vec![
+        adapter::adapter(),
+        audio(),
+        board::board(),
+        connect(),
+        directory(),
+        disconnect(),
+        cmd_do(),
+        effect::effect(),
+        help(),
+        info(),
+        layer::layer(),
+        play(),
+        seek(),
+        skip(),
+        stop()
+    ]
 }
 
-async fn connect_do<'a>(ctx: &Context, msg: &Message,
-        call: TokioMutexGuard<'a, Call>)
-        -> CommandResult<Option<String>> {
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-    let channel_id_opt = guild.voice_states
-        .get(&msg.author.id)
-        .and_then(|v| v.channel_id);
-    let channel_id = unwrap_or_return!(channel_id_opt,
-        Ok(Some("I cannot see your voice channel. Are you connected?"
-            .to_owned())));
+macro_rules! unwrap_or_reply {
+    ($matched_expression:expr, $ctx:expr, $reply:expr) => {
+        match $matched_expression {
+            Some(v) => v,
+            None => {
+                $ctx.reply($reply).await?;
+                return Ok(());
+            }
+        }
+    }
+}
+
+pub(crate) use unwrap_or_reply;
+
+/// Connects to the channel of the command author. Returns `true` if and only if the bot is
+/// connected afterward.
+async fn connect_do(ctx: Context<'_>, call: TokioMutexGuard<'_, Call>) -> (bool, CommandResponse) {
+    let guild_id = ctx.guild_id().unwrap();
+    let channel_id_opt = ctx.guild().unwrap().voice_states
+        .get(&ctx.author().id)
+        .and_then(|v| v.channel_id)
+        .clone();
+    let channel_id = match channel_id_opt{
+        Some(id) => id,
+        None => {
+            return (false, "I cannot see your voice channel. Are you connected?".into());
+        }
+    };
 
     if let Some(channel) = call.current_channel() {
-        if channel.0 == channel_id.0 {
-            return Ok(Some(
-                "I am already connected to your voice channel."
-                .to_owned()));
+        if channel.0.get() == channel_id.get() {
+            return (true, "I am already connected to your voice channel.".into());
         }
     }
 
@@ -102,55 +115,53 @@ async fn connect_do<'a>(ctx: &Context, msg: &Message,
 
     log::debug!("Joining channel {} on guild {}.", channel_id, guild_id);
 
-    let songbird = songbird::get(ctx).await.unwrap();
-    songbird.join(guild_id, channel_id).await.1.unwrap();
+    let songbird = songbird::get(ctx.serenity_context()).await.unwrap();
+    songbird.join(guild_id, channel_id).await.unwrap();
 
-    Ok(None)
+    (true, CommandResponse::Confirm)
 }
 
-#[rambot_command(
-    description = "Connects the bot to the voice channel to which the sender \
-        of the command is currently connected.",
-    usage = ""
-)]
-async fn connect(ctx: &Context, msg: &Message)
-        -> CommandResult<Option<String>> {
-    let call = get_songbird_call(ctx, msg).await;
-    connect_do(ctx, msg, call.lock().await).await
+/// Connects the bot to the voice channel to which the sender of the command is currently connected.
+///
+/// Usage: `connect`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn connect(ctx: Context<'_>) -> CommandResult {
+    let call = get_songbird_call(ctx).await;
+    let (_, response) = connect_do(ctx, call.lock().await).await;
+    respond(ctx, response).await
 }
 
-async fn get_songbird_call(ctx: &Context, msg: &Message)
-        -> Arc<TokioMutex<Call>> {
-    let guild_id = msg.guild_id.unwrap();
-    songbird::get(ctx).await.unwrap().get_or_insert(guild_id)
+async fn get_songbird_call(ctx: Context<'_>) -> Arc<TokioMutex<Call>> {
+    let guild_id = ctx.guild_id().unwrap();
+    songbird::get(ctx.serenity_context()).await.unwrap().get_or_insert(guild_id)
 }
 
 const NOT_CONNECTED: &str = "I am not connected to a voice channel";
 
-#[rambot_command(
-    description = "Disconnects the bot from the voice channel to which it is \
-        currently connected.",
-    usage = ""
-)]
-async fn disconnect(ctx: &Context, msg: &Message)
-        -> CommandResult<Option<String>> {
-    if let Some(songbird) = songbird::get(ctx).await {
-        let guild_id = msg.guild_id.unwrap();
+/// Disconnects the bot from the voice channel to which it is currently connected.
+///
+/// Usage: `disconnect`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn disconnect(ctx: Context<'_>) -> CommandResult {
+    let response = if let Some(songbird) = songbird::get(ctx.serenity_context()).await {
+        let guild_id = ctx.guild_id().unwrap();
 
         match songbird.remove(guild_id).await {
             Ok(_) => {
-                stop_all_do(ctx, msg).await; // drop audio sources
+                stop_all(ctx).await; // drop audio sources
                 log::debug!("Left voice on guild {}.", guild_id);
-                Ok(None)
+                CommandResponse::Confirm
             },
-            Err(JoinError::NoCall) => Ok(Some(NOT_CONNECTED.to_owned())),
-            Err(e) => Err(e.into())
+            Err(JoinError::NoCall) => CommandResponse::Reply(NOT_CONNECTED),
+            Err(e) => return Err(e.into())
         }
     }
     else {
         log::error!("No songbird instance found.");
-        Ok(Some("Internal error: No songbird instance found.".to_owned()))
-    }
+        CommandResponse::Reply("Internal error: No songbird instance found.")
+    };
+
+    respond(ctx, response).await
 }
 
 fn to_input<S>(source: Arc<RwLock<S>>) -> Input
@@ -158,11 +169,11 @@ where
     S: AudioSource + Send + Sync + 'static
 {
     let read = PCMRead::new(source);
-    Input::float_pcm(true, Reader::Extension(Box::new(read)))
+    RawAdapter::new(read, SAMPLES_PER_SECOND as u32, 2).into()
 }
 
 struct GuildStateRef<'a> {
-    data_guard: TokioRwLockReadGuard<'a, TypeMap>,
+    data: TokioRwLockReadGuard<'a, CommandData>,
     guild_id: GuildId
 }
 
@@ -170,7 +181,7 @@ impl<'a> Deref for GuildStateRef<'a> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
-        let state = self.data_guard.get::<State>().unwrap();
+        let state = self.data.get::<State>().unwrap();
         state.guild_state(self.guild_id).unwrap()
     }
 }
@@ -214,7 +225,7 @@ impl<'a> Deref for GuildStateMut<'a> {
 impl<'a> DerefMut for GuildStateMut<'a> {
     fn deref_mut(&mut self) -> &mut GuildState {
         // Sadly, we cannot use a GuildStateGuard here for two reasons.
-        // 1. We would need to deref it to obtain an actual &mut refernce,
+        // 1. We would need to deref it to obtain an actual &mut reference,
         //    which would mean we return a reference to a temporary variable.
         // 2. Multiple mutable accesses would result in saving the state file
         //    each time, which is inefficient.
@@ -223,8 +234,6 @@ impl<'a> DerefMut for GuildStateMut<'a> {
         // to the state file.
 
         let state_mut = self.data_guard.get_mut::<State>().unwrap();
-        state_mut.ensure_guild_state_exists(
-            self.guild_id, &self.plugin_manager);
         state_mut.guild_state_mut_unguarded(self.guild_id).unwrap()
     }
 }
@@ -238,13 +247,13 @@ impl<'a> Drop for GuildStateMut<'a> {
     }
 }
 
-async fn get_guild_state(ctx: &Context, guild_id: GuildId)
+async fn get_guild_state(data: &TokioRwLock<CommandData>, guild_id: GuildId)
         -> Option<GuildStateRef<'_>> {
-    let data_guard = ctx.data.read().await;
+    let data = data.read().await;
 
-    if data_guard.get::<State>().unwrap().guild_state(guild_id).is_some() {
+    if data.get::<State>()?.guild_state(guild_id).is_some() {
         Some(GuildStateRef {
-            data_guard,
+            data,
             guild_id
         })
     }
@@ -253,10 +262,11 @@ async fn get_guild_state(ctx: &Context, guild_id: GuildId)
     }
 }
 
-async fn get_guild_state_mut_unguarded(ctx: &Context, guild_id: GuildId) -> Option<GuildStateMutUnguarded<'_>> {
-    let data_guard = ctx.data.write().await;
+async fn get_guild_state_mut_unguarded(data: &TokioRwLock<CommandData>, guild_id: GuildId)
+        -> Option<GuildStateMutUnguarded<'_>> {
+    let data_guard = data.write().await;
 
-    if data_guard.get::<State>().unwrap().guild_state(guild_id).is_some() {
+    if data_guard.get::<State>()?.guild_state(guild_id).is_some() {
         Some(GuildStateMutUnguarded {
             data_guard,
             guild_id
@@ -267,10 +277,12 @@ async fn get_guild_state_mut_unguarded(ctx: &Context, guild_id: GuildId) -> Opti
     }
 }
 
-async fn get_guild_state_mut(ctx: &Context, guild_id: GuildId) -> GuildStateMut<'_> {
-    let data_guard = ctx.data.write().await;
-    let plugin_manager =
-        Arc::clone(data_guard.get::<PluginManager>().unwrap());
+async fn get_guild_state_mut(data: &TokioRwLock<CommandData>, guild_id: GuildId)
+        -> GuildStateMut<'_> {
+    let mut data_guard = data.write().await;
+    let plugin_manager = Arc::clone(data_guard.get::<PluginManager>().unwrap());
+    let state = data_guard.get_mut::<State>().unwrap();
+    state.ensure_guild_state_exists(guild_id, &plugin_manager);
 
     GuildStateMut {
         data_guard,
@@ -279,23 +291,27 @@ async fn get_guild_state_mut(ctx: &Context, guild_id: GuildId) -> GuildStateMut<
     }
 }
 
-fn play_mixer(ctx: &Context, msg: &Message, mixer: Arc<RwLock<Mixer>>,
-        layer: &str, audio: &str, plugin_guild_config: PluginGuildConfig)
-        -> (bool, Option<String>) {
+fn play_mixer(
+    ctx: Context<'_>,
+    mixer: Arc<RwLock<Mixer>>,
+    layer: &str,
+    audio: &str,
+    plugin_guild_config: PluginGuildConfig
+) -> Result<bool, String> {
     let mut mixer_guard = mixer.write().unwrap();
 
     if !mixer_guard.contains_layer(layer) {
-        return (false, Some(format!("No layer of name {}.", &layer)));
+        return Err(format!("No layer of name {}.", &layer));
     }
 
     let active_before = mixer_guard.active();
-    let ctx_clone = ctx.clone();
-    let msg_clone = msg.clone();
+    let serenity_ctx = ctx.serenity_context().clone();
+    let channel_id = ctx.channel_id();
     let error_callback = move |layer, e| {
         // TODO this is just asking for trouble.
 
         let content = format!("Error on layer {}: {}", layer, e);
-        let future = msg_clone.reply(&ctx_clone, content);
+        let future = channel_id.say(&serenity_ctx, content);
 
         if let Ok(handle) = Handle::try_current() {
             handle.block_on(future).unwrap();
@@ -305,186 +321,204 @@ fn play_mixer(ctx: &Context, msg: &Message, mixer: Arc<RwLock<Mixer>>,
             runtime.block_on(future).unwrap();
         }
     };
-    let play_res = mixer_guard.play_on_layer(
-        layer, audio, plugin_guild_config, error_callback);
+    let play_res = mixer_guard.play_on_layer(layer, audio, plugin_guild_config, error_callback);
 
     if let Err(e) = play_res {
-        (active_before, Some(format!("{}", e)))
+        Err(format!("{}", e))
     }
     else {
-        (active_before, None)
+        Ok(active_before)
     }
 }
 
-#[rambot_command(
-    description = "Plays the given audio on the given layer. Possible formats \
-        for the input depend on the installed plugins.",
-    usage = "layer audio",
-    rest
-)]
-async fn play(ctx: &Context, msg: &Message, layer: String, audio: String)
-        -> CommandResult<Option<String>> {
-    let guild_id = msg.guild_id.unwrap();
-    let guild_state = unwrap_or_return!(
-        get_guild_state(ctx, guild_id).await,
-        Ok(Some(format!("No layer of name {}.", &layer))));
+async fn play_do(ctx: Context<'_>, layer: String, audio: String) -> CommandResult<CommandResponse> {
+    let guild_id = ctx.guild_id().unwrap();
+    let guild_state = unwrap_or_return!(get_guild_state(ctx.data(), guild_id).await,
+        Ok(CommandResponse::Reply(format!("No layer of name {}.", &layer))));
     let plugin_guild_config = guild_state.build_plugin_guild_config();
     let mixer = guild_state.mixer_arc();
-    let call = get_songbird_call(ctx, msg).await;
-    let (active_before, err_msg) = play_mixer(
-        ctx, msg, Arc::clone(&mixer), &layer, &audio, plugin_guild_config);
-
-    if let Some(err_msg) = err_msg {
-        return Ok(Some(err_msg));
-    }
-
+    let play_res = play_mixer(ctx, Arc::clone(&mixer), &layer, &audio, plugin_guild_config);
+    let active_before = match play_res {
+        Ok(active_before) => active_before,
+        Err(message) => return Ok(CommandResponse::Reply(message))
+    };
+    let call = get_songbird_call(ctx).await;
     let mut call_guard = call.lock().await;
 
     if !active_before {
-        call_guard.play_only_source(to_input(Arc::clone(&mixer)));
+        call_guard.play_input(to_input(Arc::clone(&mixer)));
     }
 
     if call_guard.current_channel().is_none() {
-        if let Some(err_msg) = connect_do(ctx, msg, call_guard).await? {
-            mixer.write().unwrap().stop_all();
-            return Ok(Some(err_msg));
-        }
-    }
+        let (connected, response) = connect_do(ctx, call_guard).await;
 
-    Ok(None)
+        if !connected {
+            mixer.write().unwrap().stop_all();
+        }
+
+        Ok(response)
+    }
+    else {
+        Ok(CommandResponse::Confirm)
+    }
 }
 
-async fn with_layer_mut<F, E>(ctx: &Context, msg: &Message, layer: &str, f: F)
-    -> CommandResult<Option<String>>
+/// Plays the given audio on the given layer.
+/// 
+/// Possible formats for the input depend on the installed plugins.
+///
+/// Usage: `play <layer> <audio>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn play(ctx: Context<'_>, layer: String, #[rest] audio: String) -> CommandResult {
+    let response = play_do(ctx, layer, audio).await?;
+    respond(ctx, response).await
+}
+
+async fn with_layer_mut<F, E>(ctx: Context<'_>, layer: &str, f: F) -> CommandResponse
 where
     F: FnOnce(RwLockWriteGuard<Mixer>, &str) -> Result<(), E>,
     E: Display
 {
-    let guild_id = msg.guild_id.unwrap();
-    let guild_state = unwrap_or_return!(get_guild_state(ctx, guild_id).await,
-        Ok(Some(format!("Found no layer with name {}.", layer))));
+    let guild_id = ctx.guild_id().unwrap();
+    let guild_state = unwrap_or_return!(get_guild_state(ctx.data(), guild_id).await,
+        format!("Found no layer with name {}.", layer).into());
     let mixer = guild_state.mixer_mut();
 
     if mixer.contains_layer(layer) {
-        match f(mixer, layer) {
-            Ok(()) => Ok(None),
-            Err(e) => Ok(Some(format!("{}", e)))
+        if let Err(e) = f(mixer, layer) {
+            CommandResponse::Reply(format!("{}", e))
+        }
+        else {
+            CommandResponse::Confirm
         }
     }
     else {
-        Ok(Some(format!("Found no layer with name {}.", layer)))
+        CommandResponse::Reply(format!("Found no layer with name {}.", layer))
     }
 }
 
-#[rambot_command(
-    description = "Plays the next piece of the list currently played on the \
-        given layer. If the last piece of the list is active, this stops \
-        audio on the layer.",
-    usage = "layer"
-)]
-async fn skip(ctx: &Context, msg: &Message, layer: String)
-        -> CommandResult<Option<String>> {
-    with_layer_mut(ctx, msg, &layer,
-        |mut mixer, layer| mixer.skip_on_layer(layer)).await
+/// Plays the next piece of the list currently played on the given layer.
+///
+/// If the last piece of the list is active, this stops audio on the layer.
+///
+/// Usage: `skip <layer>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn skip(ctx: Context<'_>, layer: String)
+        -> CommandResult<()> {
+    let response = with_layer_mut(ctx, &layer, |mut mixer, layer| mixer.skip_on_layer(layer)).await;
+
+    respond(ctx, response).await
 }
 
-async fn stop_do(ctx: &Context, msg: &Message, layer: &str) -> Option<String> {
-    let guild_id = msg.guild_id.unwrap();
-    let guild_state = unwrap_or_return!(
-        get_guild_state(ctx, guild_id).await,
-        Some(format!("No layer of name {}.", &layer)));
+async fn stop_layer(ctx: Context<'_>, layer: &str) -> CommandResponse {
+    let guild_id = ctx.guild_id().unwrap();
+    let guild_state = unwrap_or_return!(get_guild_state(ctx.data(), guild_id).await,
+        format!("No layer of name {}.", &layer).into());
     let mut mixer = guild_state.mixer_mut();
 
     if !mixer.contains_layer(layer) {
-        Some(format!("No layer of name {}.", layer))
+        format!("No layer of name {}.", layer).into()
     }
     else if !mixer.stop_layer(layer) {
-        Some("No audio to stop.".to_owned())
+        "No audio to stop.".into()
     }
     else {
-        None
+        CommandResponse::Confirm
     }
 }
 
-async fn stop_all_do(ctx: &Context, msg: &Message) -> Option<String> {
-    let guild_id = msg.guild_id.unwrap();
-    let guild_state = unwrap_or_return!(
-        get_guild_state(ctx, guild_id).await,
-        Some("No audio to stop.".to_owned()));
+async fn stop_all(ctx: Context<'_>) -> CommandResponse {
+    let guild_id = ctx.guild_id().unwrap();
+    let guild_state =
+        unwrap_or_return!(get_guild_state(ctx.data(), guild_id).await, "No audio to stop.".into());
 
     if guild_state.mixer_mut().stop_all() {
-        None
+        CommandResponse::Confirm
     }
     else {
-        Some("No audio to stop.".to_owned())
+        "No audio to stop.".into()
     }
 }
 
-#[rambot_command(
-    description = "Stops the audio currently playing on the given layer. If \
-        no layer is given, all audio is stopped.",
-    usage = "[layer]"
-)]
-async fn stop(ctx: &Context, msg: &Message, layer: Option<String>)
-        -> CommandResult<Option<String>> {
-    let reply = if let Some(layer) = layer {
-        stop_do(ctx, msg, &layer).await
+/// Stops the audio currently playing on the given layer or all layers.
+///
+/// If no layer is given, all audio is stopped.
+///
+/// Usage: `stop [layer]`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn stop(ctx: Context<'_>, layer: Option<String>) -> CommandResult {
+    let response = if let Some(layer) = layer {
+        stop_layer(ctx, &layer).await
     }
     else {
-        stop_all_do(ctx, msg).await
+        stop_all(ctx).await
     };
 
-    Ok(reply)
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    description = "Moves the current position in the audio of the layer with \
-        the given by the given amount of time. The `delta` is of the format \
-        `AhBmCsDmsEsam`, representing `A` hours, `B` minutes, `C` seconds, \
-        `D` milliseconds, and `E` samples (at 48 kHz). Omitting and \
-        reordering these terms is permitted. Negative deltas are used to seek \
-        backwards in time.",
-    usage = "layer delta"
-)]
-async fn seek(ctx: &Context, msg: &Message, layer: String, delta: SampleDuration) -> CommandResult<Option<String>> {
-    with_layer_mut(ctx, msg, &layer,
-        |mut mixer, layer| mixer.seek_on_layer(layer, delta)).await
+/// Moves the current position in the audio of the layer with the given by the given amount of time.
+///
+/// The `delta` is of the format `AhBmCsDmsEsam`, representing `A` hours, `B` minutes, `C` seconds,
+/// `D` milliseconds, and `E` samples (at 48 kHz). Omitting and reordering these terms is permitted.
+/// Negative deltas are used to seek backwards in time.
+///
+/// Usage: `seek <layer> <delta>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn seek(ctx: Context<'_>, layer: String, delta: SampleDuration) -> CommandResult {
+    let response = with_layer_mut(ctx, &layer,
+        |mut mixer, layer| mixer.seek_on_layer(layer, delta)).await;
+
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    name = "do",
-    description = "Takes as input a list of quoted strings separated by spaces. \
-        These are then executed as commands in order.",
-    usage = "[command] [command] ..."
-)]
-async fn cmd_do(ctx: &Context, msg: &Message, commands: Vec<String>)
-        -> CommandResult<Option<String>> {
-    let framework = Arc::clone(
-        ctx.data.read().await.get::<FrameworkTypeMapKey>().unwrap());
-
+/// Executes commands provided as quoted strings.
+///
+/// Takes as input a list of quoted strings separated by spaces. These are then executed as commands
+/// in order.
+///
+/// Usage: `do [command] [command] ...`
+#[poise::command(prefix_command, guild_only, rename = "do")]
+async fn cmd_do(ctx: Context<'_>, commands: Vec<String>) -> CommandResult {
     for command in commands {
-        let mut msg = msg.clone();
-        msg.content = command.to_owned();
-        msg.kind = MessageType::Unknown; // Prevents :ok_hand:
-        framework.dispatch(ctx.clone(), msg).await;
+        match ctx {
+            Context::Application(_) => {
+                // TODO figure out how to do in a slash command
+            },
+            Context::Prefix(ctx) => {
+                let mut msg = ctx.msg.clone();
+                msg.content = command.to_owned();
+                dispatch_command_as_message(ctx.framework(), ctx.serenity_context(), &msg).await?;
+            }
+        }
     }
 
-    Ok(None)
+    Ok(())
 }
 
-#[rambot_command(
-    description = "Lists all plugin-provided types of audio with a short \
-        summary. If an audio name is provided, a more detailed documentation \
-        page for that audio is displayed.",
-    usage = "[audio]",
-    rest
-)]
-async fn audio(ctx: &Context, msg: &Message, audio: String)
-        -> CommandResult<Option<String>> {
-    let data_guard = ctx.data.read().await;
+/// Lists all plugin-provided types of audio with a short summary.
+///
+/// If an audio name is provided, a more detailed documentation page for that audio is displayed.
+///
+/// Usage: `audio [audio]`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn audio(ctx: Context<'_>, audio: Option<String>) -> CommandResult {
+    let data_guard = ctx.data().read().await;
     let plugin_manager = data_guard.get::<PluginManager>().unwrap();
 
-    if audio.is_empty() {
+    let reply = if let Some(audio) = audio {
+        let audio_lower = audio.to_lowercase();
+        let doc = plugin_manager.get_audio_documentations()
+            .find(|d| d.name().to_lowercase() == audio_lower);
+
+        if let Some(doc) = doc {
+            format!("{}", doc)
+        }
+        else {
+            format!("I found no audio of name {}.", audio)
+        }
+    }
+    else {
         let mut message = "Audio types:".to_owned();
         let mut first = true;
 
@@ -497,22 +531,10 @@ async fn audio(ctx: &Context, msg: &Message, audio: String)
             write!(message, "\n- {}", doc.overview_entry()).unwrap();
         }
 
-        msg.reply(ctx, message).await?;
-        Ok(None)
-    }
-    else {
-        let audio_lower = audio.to_lowercase();
-        let doc = plugin_manager.get_audio_documentations()
-            .find(|d| d.name().to_lowercase() == audio_lower);
+        message
+    };
 
-        if let Some(doc) = doc {
-            msg.reply(ctx, doc).await?;
-            Ok(None)
-        }
-        else {
-            Ok(Some(format!("I found no audio of name {}.", audio)))
-        }
-    }
+    respond(ctx, reply.into()).await
 }
 
 fn add_line(message: &mut String, name: &str, entry: Option<impl Display>) {
@@ -521,19 +543,17 @@ fn add_line(message: &mut String, name: &str, entry: Option<impl Display>) {
     }
 }
 
-#[rambot_command(
-    description = "Prints information about the audio currently played on the \
-        layer with the given name.",
-    usage = "layer"
-)]
-async fn info(ctx: &Context, msg: &Message, layer: String) -> CommandResult<Option<String>> {
-    let guild_id = msg.guild_id.unwrap();
-    let guild_state = unwrap_or_return!(
-        get_guild_state(ctx, guild_id).await,
-        Ok(Some(format!("No layer of name `{}`.", layer))));
-    let metadata = guild_state.mixer().layer_metadata(&layer);
+/// Prints information about the audio currently played on the layer with the given name.
+///
+/// Usage: `info <layer>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn info(ctx: Context<'_>, layer: String) -> CommandResult {
+    let guild_id = ctx.guild_id().unwrap();
+    let guild_state = unwrap_or_reply!(get_guild_state(ctx.data(), guild_id).await, ctx,
+        format!("No layer of name `{}`.", layer));
+    let metadata = guild_state.mixer_blocking().layer_metadata(&layer);
 
-    match metadata {
+    let reply = match metadata {
         Ok(metadata) => {
             let mut message = String::new();
 
@@ -566,28 +586,25 @@ async fn info(ctx: &Context, msg: &Message, layer: String) -> CommandResult<Opti
                 message = "No information available.".to_owned();
             }
 
-            msg.reply(ctx, message).await?;
-            Ok(None)
+            message
         },
-        Err(e) => Ok(Some(format!("{}", e)))
-    }
+        Err(e) => format!("{}", e)
+    };
+
+    respond(ctx, reply.into()).await
 }
 
-#[rambot_command(
-    description = "Specify a guild-specific root directory for file system \
-        based plugins. Omit directory argument to reset to the default root \
-        directory specified in the config. Any pieces in playlists that are \
-        currently active will continue to be resolved according to the old \
-        root directrory.",
-    usage = "[directory]",
-    rest,
-    confirm,
-    owners_only
-)]
-async fn directory(ctx: &Context, msg: &Message, directory: String)
-        -> CommandResult<Option<String>> {
-    let guild_id = msg.guild_id.unwrap();
-    let mut guild_state = get_guild_state_mut(ctx, guild_id).await;
+/// Specify or reset a guild-specific root directory for file system based plugins.
+///
+/// Omit directory argument to reset to the default root directory specified in the config. Any
+/// pieces in playlists that are currently active will continue to be resolved according to the old
+/// root directory.
+///
+/// Usage: `directory [directory]`
+#[poise::command(slash_command, prefix_command, guild_only, owners_only)]
+async fn directory(ctx: Context<'_>, #[rest] directory: String) -> CommandResult {
+    let guild_id = ctx.guild_id().unwrap();
+    let mut guild_state = get_guild_state_mut(ctx.data(), guild_id).await;
 
     if directory.is_empty() {
         guild_state.unset_root_directory()
@@ -596,15 +613,29 @@ async fn directory(ctx: &Context, msg: &Message, directory: String)
         guild_state.set_root_directory(directory)
     }
 
-    Ok(None)
+    confirm(ctx).await
 }
 
-async fn configure_layer<F, T>(ctx: &Context, guild_id: GuildId, layer: &str,
+/// Display help about all or a specific command.
+#[poise::command(prefix_command, slash_command)]
+pub async fn help(ctx: Context<'_>,
+        #[description = "Specific command to show help about"] command: Option<String>)
+        -> CommandResult {
+    display_help(ctx, command.as_deref()).await
+}
+
+async fn display_help(ctx: Context<'_>, command: Option<&str>) -> CommandResult {
+    let config = HelpConfiguration::default();
+    builtins::help(ctx, command, config).await?;
+    Ok(())
+}
+
+async fn configure_layer<F, T>(ctx: Context<'_>, guild_id: GuildId, layer: &str,
     f: F) -> Option<T>
 where
     F: FnOnce(RwLockWriteGuard<Mixer>) -> T
 {
-    let guild_state = get_guild_state_mut(ctx, guild_id).await;
+    let guild_state = get_guild_state_mut(ctx.data(), guild_id).await;
     let mixer = guild_state.mixer_mut();
 
     if mixer.contains_layer(layer) {
@@ -615,16 +646,15 @@ where
     }
 }
 
-async fn list_layer_key_value_descriptors<F>(ctx: &Context, msg: &Message,
-    layer: String, name_plural_capital: &str, get: F)
-    -> CommandResult<Option<String>>
+async fn list_layer_key_value_descriptors<F>(ctx: Context<'_>,
+    layer: String, name_plural_capital: &str, get: F) -> CommandResult
 where
     F: FnOnce(&Layer) -> &[KeyValueDescriptor]
 {
-    let guild_id = msg.guild_id.unwrap();
-    let descriptors = get_guild_state(ctx, guild_id).await
+    let guild_id = ctx.guild_id().unwrap();
+    let descriptors = get_guild_state(ctx.data(), guild_id).await
         .and_then(|gs| {
-            let mixer = gs.mixer();
+            let mixer = gs.mixer_blocking();
     
             if mixer.contains_layer(&layer) {
                 Some(get(mixer.layer(&layer)).iter()
@@ -644,35 +674,33 @@ where
             write!(reply, "\n{}. {}", i + 1, descriptor).unwrap();
         }
 
-        msg.reply(ctx, reply).await?;
-        Ok(None)
+        ctx.reply(reply).await?;
     }
     else {
-        Ok(Some("Layer not found.".to_owned()))
+        ctx.reply("Layer not found.").await?;
     }
+
+    Ok(())
 }
 
-async fn help_modifiers<D, N, R>(ctx: &Context, msg: &Message,
-    modifier: Option<String>, name_plural_upper: &str,
-    name_singular_lower: &str, mut get_documentation: D, get_names: N)
-    -> CommandResult<Option<String>>
+async fn help_modifiers<D, N, R>(ctx: Context<'_>, modifier: Option<String>,
+    name_plural_upper: &str, name_singular_lower: &str, mut get_documentation: D, get_names: N)
+    -> CommandResult
 where
     D: FnMut(&PluginManager, &str) -> Option<ModifierDocumentation>,
     N: FnOnce(&PluginManager) -> Keys<'_, String, R>
 {
-    let data_guard = ctx.data.read().await;
+    let data_guard = ctx.data().read().await;
     let plugin_manager =
         Arc::clone(data_guard.get::<PluginManager>().unwrap());
 
     if let Some(name) = modifier {
         if let Some(documentation) =
                 get_documentation(plugin_manager.as_ref(), &name) {
-            msg.reply(ctx, format!("**{}**\n\n{}", name, documentation))
-                .await?;
-            Ok(None)
+            ctx.reply(format!("**{}**\n\n{}", name, documentation)).await?;
         }
         else {
-            Ok(Some(format!("No {} of name {}.", name_singular_lower, name)))
+            ctx.reply(format!("No {} of name {}.", name_singular_lower, name)).await?;
         }
     }
     else {
@@ -687,7 +715,89 @@ where
                 .unwrap();
         }
 
-        msg.reply(ctx, response).await?;
-        Ok(None)
+        ctx.reply(response).await?;
     }
+
+    Ok(())
+}
+
+/// Indicates that the message which caused a command to be executed is not a real message but
+/// synthetically created as part of some bot-internal command dispatch (sound board or do-command).
+/// This will be supplied as `invocation_data`.
+struct SyntheticMessageMarker;
+
+async fn dispatch_command_as_message(
+        framework_ctx: FrameworkContext<'_, TokioRwLock<CommandData>, CommandError>,
+        serenity_ctx: &SerenityContext,
+        msg: &SerenityMessage) -> CommandResult {
+    let trigger = MessageDispatchTrigger::MessageCreate;
+    let invocation_data: Mutex<Box<dyn Any + Send + Sync>> =
+        Mutex::new(Box::new(SyntheticMessageMarker));
+    poise::dispatch_message(
+        framework_ctx,
+        serenity_ctx,
+        &msg,
+        trigger,
+        &invocation_data,
+        &mut vec![]).await.map_err(|err| format!("{}", err).into())
+}
+
+async fn confirm(ctx: Context<'_>) -> CommandResult {
+    match ctx {
+        Context::Application(ctx) => {
+            let response = CreateInteractionResponse::Message(
+                CreateInteractionResponseMessage::new().ephemeral(true).content("\u{1f44c}")
+            );
+
+            ctx.interaction.create_response(ctx, response).await?;
+        },
+        Context::Prefix(ctx) => {
+            let invocation_data = ctx.invocation_data.lock().await;
+
+            if !invocation_data.is::<SyntheticMessageMarker>() {
+                ctx.msg.react(ctx, '\u{1f44c}').await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+enum CommandResponse<R: Into<String> = String> {
+    Confirm,
+    Reply(R)
+}
+
+impl<V, E: Into<String>> From<Result<V, E>> for CommandResponse<E> {
+    fn from(result: Result<V, E>) -> CommandResponse<E> {
+        match result {
+            Ok(_) => CommandResponse::Confirm,
+            Err(e) => CommandResponse::Reply(e)
+        }
+    }
+}
+
+impl<R: Into<String>> From<R> for CommandResponse<R> {
+    fn from(value: R) -> Self {
+        CommandResponse::Reply(value)
+    }
+}
+
+impl<'s> From<&'s str> for CommandResponse<String> {
+    fn from(value: &'s str) -> Self {
+        CommandResponse::Reply(value.to_owned())
+    }
+}
+
+async fn respond<R: Into<String>>(ctx: Context<'_>, response: CommandResponse<R>) -> CommandResult {
+    match response {
+        CommandResponse::Confirm => {
+            confirm(ctx).await?;
+        },
+        CommandResponse::Reply(reply) => {
+            ctx.reply(reply).await?;
+        }
+    }
+
+    Ok(())
 }
