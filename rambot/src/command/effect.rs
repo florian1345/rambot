@@ -1,63 +1,62 @@
 use crate::audio::Layer;
 use crate::command::{
     configure_layer,
+    display_help,
     help_modifiers,
-    list_layer_key_value_descriptors
+    list_layer_key_value_descriptors,
+    respond,
+    CommandResponse,
+    CommandResult,
+    Context
 };
 use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 
-use rambot_proc_macro::rambot_command;
-
-use serenity::client::Context;
-use serenity::framework::standard::{CommandGroup, CommandResult};
-use serenity::framework::standard::macros::{command, group};
-use serenity::model::prelude::Message;
-
-#[group]
-#[prefix("effect")]
-#[commands(add, clear, help, list)]
-struct Effect;
-
-/// Gets a [CommandGroup] for the commands with prefix `effect`.
-pub fn get_effect_commands() -> &'static CommandGroup {
-    &EFFECT_GROUP
+/// Collection of commands related to effects.
+///
+/// Effects are modifiers put on layers that alter the audio in some way, such as volume or filters.
+#[poise::command(slash_command, prefix_command, subcommands("add", "clear", "list", "help"))]
+pub async fn effect(ctx: Context<'_>) -> CommandResult {
+    display_help(ctx, Some("effect")).await
 }
 
-#[rambot_command(
-    description = "Adds an effect to the layer with the given name. Effects \
-        are given in the format `name(key1=value1,key2=value2,...)`, where \
-        the set of available names and their associated required keys and \
-        value formats depends on the installed plugins. You can use the \
-        shortcuts `name` for `name()` and `name=value` for \
-        `name(name=value)`.",
-    usage = "layer effect",
-    rest,
-    confirm
-)]
-async fn add(ctx: &Context, msg: &Message, layer: String,
-        effect: KeyValueDescriptor) -> CommandResult<Option<String>> {
-    let guild_id = msg.guild_id.unwrap();
+/// Adds an effect to the layer with the given name.
+///
+/// Effects are given in the format `name(key1=value1,key2=value2,...)`, where the set of available
+/// names and their associated required keys and value formats depends on the installed plugins. You
+/// can use the shortcuts `name` for `name()` and `name=value` for `name(name=value)`.
+///
+/// Usage: `effect add <layer> <effect>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn add(ctx: Context<'_>, layer: String, #[rest] effect: KeyValueDescriptor) -> CommandResult {
+    let guild_id = ctx.guild_id().unwrap();
     let res = configure_layer(ctx, guild_id, &layer,
         |mut mixer| mixer.add_effect(&layer, effect)).await;
 
-    match res {
-        Some(Ok(())) => Ok(None),
-        Some(Err(e)) => Ok(Some(format!("{}", e))),
-        None => Ok(Some("Layer not found.".to_owned()))
-    }
+    let response = match res {
+        Some(Ok(())) => {
+            CommandResponse::Confirm
+        },
+        Some(Err(e)) => {
+            format!("{}", e).into()
+        },
+        None => {
+            "Layer not found.".into()
+        }
+    };
+
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    description = "Clears all effects from the layer with the given name. As \
-        an optional second argument, this command takes an effect name. If \
-        that is provided, only effects of that name are removed.",
-    usage = "layer [effect-type]",
-    confirm
-)]
-async fn clear(ctx: &Context, msg: &Message, layer: String,
-        name: Option<String>) -> CommandResult<Option<String>> {
-    let guild_id = msg.guild_id.unwrap();
+/// Clears all effects from the layer with the given name.
+/// 
+/// As an optional second argument, this command takes an effect name. If that is provided, only
+/// effects of that name are removed.
+/// 
+/// Usage: `effect clear <layer> [effect-type]`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn clear(ctx: Context<'_>, layer: String, name: Option<String>) -> CommandResult {
+    let guild_id = ctx.guild_id().unwrap();
     let res = configure_layer(ctx, guild_id, &layer, |mut mixer|
         if let Some(name) = &name {
             mixer.retain_effects(&layer,
@@ -67,48 +66,47 @@ async fn clear(ctx: &Context, msg: &Message, layer: String,
             Ok(mixer.clear_effects(&layer))
         }).await;
 
-    match res {
+    let response = match res {
         Some(Ok(count)) => {
             if count == 0 {
-                let message = if let Some(name) = name {
-                    format!("Found no effect with name {} on layer {}.", name,
-                        layer)
+                if let Some(name) = name {
+                    format!("Found no effect with name {} on layer {}.", name, layer).into()
                 }
                 else {
-                    format!("Found no effect on layer {}.", layer)
-                };
-
-                Ok(Some(message))
+                    format!("Found no effect on layer {}.", layer).into()
+                }
             }
             else {
-                Ok(None)
+                CommandResponse::Confirm
             }
         },
-        Some(Err(e)) => Ok(Some(format!("{}", e))),
-        None => Ok(Some("Layer not found.".to_owned()))
-    }
+        Some(Err(e)) => {
+            format!("{}", e).into()
+        },
+        None => {
+            "Layer not found.".into()
+        }
+    };
+
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    description = "Prints a list of all effects on the layer with the given \
-        name.",
-    usage = "layer"
-)]
-async fn list(ctx: &Context, msg: &Message, layer: String)
-        -> CommandResult<Option<String>> {
-    list_layer_key_value_descriptors(
-        ctx, msg, layer, "Effects", Layer::effects).await
+/// Prints a list of all effects on the layer with the given name.
+/// 
+/// Usage: `effect list <layer>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn list(ctx: Context<'_>, layer: String) -> CommandResult {
+    list_layer_key_value_descriptors(ctx, layer, "Effects", Layer::effects).await
 }
 
-#[rambot_command(
-    description = "Lists all available effects with a short description. If \
-        an effect name is provided, a detailled description of the effect and \
-        its parameters is given.",
-    usage = "[effect]"
-)]
-async fn help(ctx: &Context, msg: &Message, effect: Option<String>)
-        -> CommandResult<Option<String>> {
-    help_modifiers(ctx, msg, effect, "Effects", "effect",
+/// Lists all available effects with a short description.
+/// 
+/// If an effect name is provided, a detailed description of the effect and its parameters is given.
+/// 
+/// Usage: `effect help [effect]`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn help(ctx: Context<'_>, effect: Option<String>) -> CommandResult {
+    help_modifiers(ctx, effect, "Effects", "effect",
         PluginManager::get_effect_documentation, PluginManager::effect_names)
         .await
 }

@@ -5,42 +5,38 @@ use crate::command::board::{
     Board
 };
 
-use rambot_proc_macro::rambot_command;
+use crate::command::{display_help, respond, CommandResponse, CommandResult, Context};
 
-use serenity::client::Context;
-use serenity::framework::standard::CommandResult;
-use serenity::framework::standard::macros::{command, group};
-use serenity::model::prelude::Message;
+/// Collection of commands for managing buttons on a sound board.
+#[poise::command(slash_command, prefix_command,
+    subcommands("add", "command", "deactivate", "remove", "swap"))]
+pub async fn button(ctx: Context<'_>) -> CommandResult {
+    display_help(ctx, Some("board button")).await
+}
 
-#[group("Button")]
-#[prefix("button")]
-#[commands(add, command, deactivate, remove, swap)]
-struct ButtonCmd;
-
-async fn configure_board<F>(ctx: &Context, msg: &Message, board_name: String,
-    f: F) -> CommandResult<Option<String>>
+async fn configure_board<F>(ctx: Context<'_>, board_name: String, f: F)
+    -> CommandResult<CommandResponse>
 where
-    F: FnOnce(&mut Board) -> Option<String>
+    F: FnOnce(&mut Board) -> CommandResponse
 {
-    let guild_id = msg.guild_id.unwrap();
-    let mut board_mgr = get_board_manager_mut(ctx, guild_id).await;
+    let guild_id = ctx.guild_id().unwrap();
+    let mut board_mgr = get_board_manager_mut(ctx.data(), guild_id).await;
     board_mgr.deactivate_board(ctx, &board_name).await?;
 
     if let Some(board) = board_mgr.boards.get_mut(&board_name) {
         Ok(f(board))
     }
     else {
-        Ok(Some(format!(
-            "I could not find a board with name `{}`.", board_name)))
+        Ok(format!("I could not find a board with name `{}`.", board_name).into())
     }
 }
 
-async fn configure_button<F>(ctx: &Context, msg: &Message, board_name: String,
-    label: String, f: F) -> CommandResult<Option<String>>
+async fn configure_button<F>(ctx: Context<'_>, board_name: String, label: String, f: F)
+    -> CommandResult<CommandResponse>
 where
-    F: FnOnce(&mut Button) -> Option<String>
+    F: FnOnce(&mut Button) -> CommandResponse
 {
-    configure_board(ctx, msg, board_name, |board| {
+    configure_board(ctx, board_name, |board| {
         let button = board.buttons.iter_mut()
             .find(|btn| btn.label == label);
 
@@ -48,28 +44,27 @@ where
             f(button)
         }
         else {
-            Some(format!("I found no button with the label {}.", label))
+            format!("I found no button with the label {}.", label).into()
         }
     }).await
 }
 
-#[rambot_command(
-    description = "Adds a button of the board with the given name represented \
-        by the given label that, when pressed, executes the given command.",
-    usage = "board label command",
-    rest,
-    confirm
-)]
-async fn add(ctx: &Context, msg: &Message, board_name: String,
-        label: String, command: String)
-        -> CommandResult<Option<String>> {
+/// Adds a button of the board with the given name that, when pressed, executes the given command.
+///
+/// The button is represented by the given label.
+///
+/// Usage: `board button add <board> <label> <command>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn add(ctx: Context<'_>, board_name: String, label: String, #[rest] command: String)
+        -> CommandResult {
     if command.is_empty() {
-        return Ok(Some("Command may not be empty.".to_owned()));
+        ctx.reply("Command may not be empty.").await?;
+        return Ok(());
     }
 
-    configure_board(ctx, msg, board_name, |board| {
+    let response = configure_board(ctx, board_name, |board| {
         if board.buttons.iter().any(|btn| btn.label == label) {
-            Some(format!("Duplicate button: {}.", label))
+            format!("Duplicate button: {}.", label).into()
         }
         else {
             board.buttons.push(Button {
@@ -78,47 +73,46 @@ async fn add(ctx: &Context, msg: &Message, board_name: String,
                 deactivate_command: None,
                 active: false
             });
-            None
+
+            CommandResponse::Confirm
         }
-    }).await
+    }).await?;
+
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    description = "Assigns a new command to the button represented by the \
-        given label on the board with the given name.",
-    usage = "board label command",
-    rest,
-    confirm
-)]
-async fn command(ctx: &Context, msg: &Message, board_name: String,
-        label: String, command: String)
-        -> CommandResult<Option<String>> {
+/// Assigns a new command to the given button on the board with the given name.
+///
+/// Usage: `board button command <board> <label> <command>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn command(ctx: Context<'_>, board_name: String, label: String, #[rest] command: String)
+        -> CommandResult {
     if command.is_empty() {
-        return Ok(Some("Command may not be empty.".to_owned()));
+        ctx.reply("Command may not be empty.").await?;
+        return Ok(());
     }
 
-    configure_button(ctx, msg, board_name, label, |button| {
+    let response = configure_button(ctx, board_name, label, |button| {
         button.command = command;
-        None
-    }).await
+        CommandResponse::Confirm
+    }).await?;
+
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    description = "Assigns a new deactivation command to the button \
-        represented by the given label on the board with the given name. If \
-        such a command is assigned to a button, the button will from now on \
-        be either active or inactive, the latter by default. When pressed in \
-        the inactive state, it will execute the regular command and move into \
-        the active state. Otherwise, it will execute the deactivation command \
-        specified here and move into the inactive state. Omit the command to \
-        make the button stateless again.",
-    usage = "board label [command]",
-    rest,
-    confirm
-)]
-async fn deactivate(ctx: &Context, msg: &Message, board_name: String,
-        label: String, command: String) -> CommandResult<Option<String>> {
-    configure_button(ctx, msg, board_name, label, |button| {
+/// Assigns a new deactivation command to the given button on the board with the given name.
+///
+/// If such a command is assigned to a button, the button will from now on be either active or
+/// inactive, the latter by default. When pressed in the inactive state, it will execute the regular
+/// command and move into the active state. Otherwise, it will execute the deactivation command
+/// specified here and move into the inactive state. Omit the command to make the button stateless
+/// again.
+///
+/// Usage: `board button deactivate <board> <label> [command]`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn deactivate(ctx: Context<'_>, board_name: String, label: String, #[rest] command: String)
+        -> CommandResult {
+    let response = configure_button(ctx, board_name, label, |button| {
         if command.is_empty() {
             button.deactivate_command = None;
             button.active = false;
@@ -127,8 +121,10 @@ async fn deactivate(ctx: &Context, msg: &Message, board_name: String,
             button.deactivate_command = Some(command);
         }
 
-        None
-    }).await
+        CommandResponse::Confirm
+    }).await?;
+
+    respond(ctx, response).await
 }
 
 fn get_button_idx(board: &Board, label: &str) -> Option<usize> {
@@ -137,47 +133,48 @@ fn get_button_idx(board: &Board, label: &str) -> Option<usize> {
         .map(|(idx, _)| idx)
 }
 
-#[rambot_command(
-    description = "Swaps the position of the button with `label_1` and the \
-        one with `label_2` on the board with the given name.",
-    usage = "board label_1 label_2",
-    confirm
-)]
-async fn swap(ctx: &Context, msg: &Message, board_name: String,
-        label_1: String, label_2: String) -> CommandResult<Option<String>> {
+/// Swaps the position of the buttons with `label_1` and `label_2` on the board with the given name.
+///
+/// Usage: `board button swap <board> <label_1>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn swap(ctx: Context<'_>, board_name: String, label_1: String, label_2: String)
+        -> CommandResult {
     if label_1 == label_2 {
-        return Ok(Some("The button labels must not be the same.".to_owned()));
+        ctx.reply("The button labels must not be the same.").await?;
+        return Ok(());
     }
 
-    configure_board(ctx, msg, board_name, |board| {
+    let response = configure_board(ctx, board_name, |board| {
         let idx_1 = unwrap_or_return!(get_button_idx(board, &label_1),
-            Some(format!("I found no button with the label {}.", label_1)));
+            format!("I found no button with the label {}.", label_1).into());
         let idx_2 = unwrap_or_return!(get_button_idx(board, &label_2),
-            Some(format!("I found no button with the label {}.", label_2)));
+            format!("I found no button with the label {}.", label_2).into());
 
         board.buttons.swap(idx_1, idx_2);
-        None
-    }).await
+
+        CommandResponse::Confirm
+    }).await?;
+
+    respond(ctx, response).await
 }
 
-#[rambot_command(
-    description = "Removes the button represented by the given label from the \
-        sound board with the given name.",
-    usage = "board label",
-    confirm
-)]
-async fn remove(ctx: &Context, msg: &Message, board_name: String,
-        label: String) -> CommandResult<Option<String>> {
-    configure_board(ctx, msg, board_name, |board| {
+/// Removes the button represented by the given label from the sound board with the given name.
+///
+/// Usage: `board button remove <board> <label>`
+#[poise::command(slash_command, prefix_command, guild_only)]
+async fn remove(ctx: Context<'_>, board_name: String, label: String) -> CommandResult {
+    let response = configure_board(ctx, board_name, |board| {
         let old_len = board.buttons.len();
 
         board.buttons.retain(|btn| btn.label != label);
 
         if board.buttons.len() == old_len {
-            Some(format!("I found no button with the label {}.", label))
+            format!("I found no button with the label {}.", label).into()
         }
         else {
-            None
+            CommandResponse::Confirm
         }
-    }).await
+    }).await?;
+
+    respond(ctx, response).await
 }

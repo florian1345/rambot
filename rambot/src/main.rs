@@ -1,31 +1,21 @@
-use crate::command::board::BoardButtonEventHandler;
+use crate::command::{BoardButtonEventHandler, CommandData, CommandError, CommandResult};
 use crate::config::Config;
-use crate::event::EventHandlerComposer;
+use crate::event::FrameworkEventHandler;
 use crate::logging::LoggingEventHandler;
 use crate::plugin::PluginManager;
 use crate::state::State;
 
 use serenity::client::{Client, Context};
-use serenity::framework::Framework;
-use serenity::framework::standard::{
-    Args,
-    CommandError,
-    CommandGroup,
-    CommandResult,
-    help_commands,
-    HelpOptions,
-    StandardFramework
-};
-use serenity::framework::standard::macros::{help, hook};
-use serenity::model::prelude::{Message, UserId};
-use serenity::prelude::{TypeMapKey, GatewayIntents};
+use serenity::prelude::GatewayIntents;
 
 use simplelog::LevelFilter;
 
 use songbird::SerenityInit;
 
-use std::collections::HashSet;
 use std::sync::Arc;
+use poise::{FrameworkContext, FrameworkError, PrefixFrameworkOptions};
+use serenity::all::FullEvent;
+use tokio::sync::RwLock;
 
 pub mod audio;
 pub mod command;
@@ -36,33 +26,23 @@ pub mod logging;
 pub mod plugin;
 pub mod state;
 
-pub type FrameworkArc = Arc<Box<dyn Framework + Send + Sync + 'static>>;
-
-pub struct FrameworkTypeMapKey;
-
-impl TypeMapKey for FrameworkTypeMapKey {
-    type Value = FrameworkArc;
-}
-
-#[help]
-async fn print_help(ctx: &Context, msg: &Message, args: Args,
-        help_options: &'static HelpOptions, groups: &[&'static CommandGroup],
-        owners: HashSet<UserId>) -> CommandResult {
-    help_commands::with_embeds(ctx, msg, args, help_options, groups, owners)
-        .await?;
-    Ok(())
-}
-
-#[hook]
-async fn after_hook(ctx: &Context, msg: &Message, _: &str,
-        error: Result<(), CommandError>) {
-    if let Err(e) = error {
-        let message = format!("{}", e);
-
-        if let Err(e) = msg.reply(ctx, message).await {
-            log::error!("Error replying to message: {}", e);
+async fn handle_error(err: FrameworkError<'_, RwLock<CommandData>, CommandError>) {
+    match err.ctx() {
+        Some(ctx) => {
+            if let Err(reply_err) = ctx.reply(format!("{}", err)).await {
+                log::error!("Error replying to message: {}", reply_err);
+            }
+        },
+        None => {
+            log::error!("Error without loaded context: {}", err);
         }
     }
+}
+
+async fn handle_event(serenity_ctx: &Context, event: &FullEvent,
+        framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>) -> CommandResult {
+    BoardButtonEventHandler.handle_event(serenity_ctx, event, framework_ctx).await?;
+    LoggingEventHandler.handle_event(serenity_ctx, event, framework_ctx).await
 }
 
 #[tokio::main]
@@ -108,35 +88,39 @@ async fn main() {
         }
     };
 
-    log::info!("Successfully loaded state for {} guilds.",
-        state.guild_count());
+    log::info!("Successfully loaded state for {} guilds.", state.guild_count());
 
-    // We need to keep the framework, as sound boards need to be able to submit
-    // commands programatically.
-
-    let framework: FrameworkArc =
-        Arc::new(Box::new(StandardFramework::new()
-            .configure(|c| c
-                .prefix(config.prefix())
-                .owners(config.owners().iter().cloned().collect()))
-            .group(command::get_root_commands())
-            .group(command::get_adapter_commands())
-            .group(command::get_board_commands())
-            .group(command::get_effect_commands())
-            .group(command::get_layer_commands())
-            .after(after_hook)
-            .help(&PRINT_HELP)));
+    let prefix = config.prefix().to_owned();
+    let owners = config.owners().iter().cloned().collect();
+    let token = config.token().to_owned();
+    let mut command_data = CommandData::new();
+    command_data.insert::<PluginManager>(plugin_mgr);
+    command_data.insert::<Config>(config);
+    command_data.insert::<State>(state);
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: command::commands(),
+            prefix_options: PrefixFrameworkOptions {
+                prefix: Some(prefix),
+                ..Default::default()
+            },
+            owners,
+            on_error: |err| Box::pin(handle_error(err)),
+            event_handler: |serenity_ctx, event, framework_ctx, _|
+                Box::pin(handle_event(serenity_ctx, event, framework_ctx)),
+            ..Default::default()
+        })
+        .setup(|ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(RwLock::new(command_data))
+            })
+        })
+        .build();
     let intents = GatewayIntents::non_privileged() |
         GatewayIntents::MESSAGE_CONTENT;
-    let client_res = Client::builder(config.token(), intents)
-        .framework_arc(Arc::clone(&framework))
-        .event_handler(EventHandlerComposer::new(BoardButtonEventHandler)
-            .push(LoggingEventHandler)
-            .build())
-        .type_map_insert::<PluginManager>(plugin_mgr)
-        .type_map_insert::<Config>(config)
-        .type_map_insert::<State>(state)
-        .type_map_insert::<FrameworkTypeMapKey>(framework)
+    let client_res = Client::builder(token, intents)
+        .framework(framework)
         .register_songbird()
         .await;
     let mut client = match client_res {

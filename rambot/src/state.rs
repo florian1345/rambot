@@ -67,7 +67,7 @@ impl GuildState {
     }
 
     /// Read-locks the [Mixer] for this guild and returns an appropriate guard.
-    pub fn mixer(&self) -> RwLockReadGuard<Mixer> {
+    pub fn mixer_blocking(&self) -> RwLockReadGuard<Mixer> {
         self.mixer.read().unwrap()
     }
 
@@ -233,7 +233,7 @@ pub struct GuildStateGuard<'a> {
     id: GuildId
 }
 
-impl<'a> Deref for GuildStateGuard<'a> {
+impl Deref for GuildStateGuard<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
@@ -241,13 +241,13 @@ impl<'a> Deref for GuildStateGuard<'a> {
     }
 }
 
-impl<'a> DerefMut for GuildStateGuard<'a> {
+impl DerefMut for GuildStateGuard<'_> {
     fn deref_mut(&mut self) -> &mut GuildState {
         self.guild_state
     }
 }
 
-impl<'a> Drop for GuildStateGuard<'a> {
+impl Drop for GuildStateGuard<'_> {
     fn drop(&mut self) {
         let file_res = if self.path.exists() {
             OpenOptions::new().write(true).truncate(true).open(&self.path)
@@ -334,8 +334,7 @@ impl State {
                     let topology =
                         serde_json::from_reader(File::open(json_path)?)?;
                     let guild_state =
-                        GuildState::from_serde(Arc::clone(&plugin_manager),
-                            topology);
+                        GuildState::from_serde(Arc::clone(&plugin_manager), topology);
                     state.guild_states.insert(guild_id, guild_state);
                 }
             }
@@ -383,7 +382,7 @@ impl State {
     fn ensure_guild_state_exists_do(&mut self, id: GuildId,
             plugin_manager: &Arc<PluginManager>) -> (&mut GuildState, PathBuf) {
         let path = Path::new(&self.directory);
-        let file_path = path.join(format!("{}.json", id.as_u64()));
+        let file_path = path.join(format!("{}.json", id));
         let guild_state = self.guild_states.entry(id)
             .or_insert_with(|| GuildState::new(Arc::clone(plugin_manager)));
 
