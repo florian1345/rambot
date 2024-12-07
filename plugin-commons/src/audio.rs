@@ -31,23 +31,20 @@ impl<S> ResamplingAudioSource<S> {
 impl<S: AudioSource> ResamplingAudioSource<S> {
     fn read_maybe_zero(&mut self, buf: &mut [Sample])
             -> Result<Option<usize>, io::Error> {
-        // < self.fraction_numerator + (buf.len() - 1) * self.step > is the
-        // required fraction index space. We divide that by
-        // TARGET_SAMPLING_RATE_USIZE (rounding up) to obtain the required base
-        // index space and add 1 to convert from index to length.
+        // last_base_frac_index is the required fraction index space. We divide that by
+        // TARGET_SAMPLING_RATE_USIZE (rounding up) to obtain the required self index space and add
+        // 1 to convert from index to length.
 
-        let required_base_buf_len =
-            (self.frac_index + (buf.len() - 1) * self.step +
-                TARGET_SAMPLING_RATE_USIZE - 1) /
-                TARGET_SAMPLING_RATE_USIZE + 1;
+        let last_base_frac_index = self.frac_index + (buf.len() - 1) * self.step;
+        let required_self_buf_len = last_base_frac_index.div_ceil(TARGET_SAMPLING_RATE_USIZE) + 1;
 
-        if required_base_buf_len > self.buf.len() {
-            for _ in 0..(required_base_buf_len - self.buf.len()) {
+        if required_self_buf_len > self.buf.len() {
+            for _ in 0..(required_self_buf_len - self.buf.len()) {
                 self.buf.push(Sample::ZERO);
             }
         }
 
-        if required_base_buf_len > self.base_buf_len {
+        if required_self_buf_len > self.base_buf_len {
             // If the audio source is non-empty, we need to output at least one
             // sample at the current fractional index.
 
@@ -56,7 +53,7 @@ impl<S: AudioSource> ResamplingAudioSource<S> {
 
             loop {
                 let base_sample_count = self.base.read(
-                    &mut self.buf[self.base_buf_len..required_base_buf_len])?;
+                    &mut self.buf[self.base_buf_len..required_self_buf_len])?;
 
                 if base_sample_count == 0 {
                     return Ok(None);

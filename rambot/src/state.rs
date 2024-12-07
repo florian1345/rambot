@@ -233,7 +233,7 @@ pub struct GuildStateGuard<'a> {
     id: GuildId
 }
 
-impl<'a> Deref for GuildStateGuard<'a> {
+impl Deref for GuildStateGuard<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
@@ -241,13 +241,13 @@ impl<'a> Deref for GuildStateGuard<'a> {
     }
 }
 
-impl<'a> DerefMut for GuildStateGuard<'a> {
+impl DerefMut for GuildStateGuard<'_> {
     fn deref_mut(&mut self) -> &mut GuildState {
         self.guild_state
     }
 }
 
-impl<'a> Drop for GuildStateGuard<'a> {
+impl Drop for GuildStateGuard<'_> {
     fn drop(&mut self) {
         let file_res = if self.path.exists() {
             OpenOptions::new().write(true).truncate(true).open(&self.path)

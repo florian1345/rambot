@@ -96,8 +96,7 @@ async fn connect_do(ctx: Context<'_>, call: TokioMutexGuard<'_, Call>) -> (bool,
     let guild_id = ctx.guild_id().unwrap();
     let channel_id_opt = ctx.guild().unwrap().voice_states
         .get(&ctx.author().id)
-        .and_then(|v| v.channel_id)
-        .clone();
+        .and_then(|v| v.channel_id);
     let channel_id = match channel_id_opt{
         Some(id) => id,
         None => {
@@ -177,7 +176,7 @@ struct GuildStateRef<'a> {
     guild_id: GuildId
 }
 
-impl<'a> Deref for GuildStateRef<'a> {
+impl Deref for GuildStateRef<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
@@ -191,7 +190,7 @@ struct GuildStateMutUnguarded<'a> {
     guild_id: GuildId
 }
 
-impl<'a> Deref for GuildStateMutUnguarded<'a> {
+impl Deref for GuildStateMutUnguarded<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
@@ -200,7 +199,7 @@ impl<'a> Deref for GuildStateMutUnguarded<'a> {
     }
 }
 
-impl<'a> DerefMut for GuildStateMutUnguarded<'a> {
+impl DerefMut for GuildStateMutUnguarded<'_> {
     fn deref_mut(&mut self) -> &mut GuildState {
         let state_mut = self.data_guard.get_mut::<State>().unwrap();
         state_mut.guild_state_mut_unguarded(self.guild_id).unwrap()
@@ -213,7 +212,7 @@ struct GuildStateMut<'a> {
     plugin_manager: Arc<PluginManager>
 }
 
-impl<'a> Deref for GuildStateMut<'a> {
+impl Deref for GuildStateMut<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
@@ -222,7 +221,7 @@ impl<'a> Deref for GuildStateMut<'a> {
     }
 }
 
-impl<'a> DerefMut for GuildStateMut<'a> {
+impl DerefMut for GuildStateMut<'_> {
     fn deref_mut(&mut self) -> &mut GuildState {
         // Sadly, we cannot use a GuildStateGuard here for two reasons.
         // 1. We would need to deref it to obtain an actual &mut reference,
@@ -238,7 +237,7 @@ impl<'a> DerefMut for GuildStateMut<'a> {
     }
 }
 
-impl<'a> Drop for GuildStateMut<'a> {
+impl Drop for GuildStateMut<'_> {
     fn drop(&mut self) {
         let state_mut = self.data_guard.get_mut::<State>().unwrap();
         let g = state_mut.guild_state_mut(self.guild_id, &self.plugin_manager);
@@ -736,7 +735,7 @@ async fn dispatch_command_as_message(
     poise::dispatch_message(
         framework_ctx,
         serenity_ctx,
-        &msg,
+        msg,
         trigger,
         &invocation_data,
         &mut vec![]).await.map_err(|err| format!("{}", err).into())

@@ -184,7 +184,7 @@ const MAX_BUTTONS_PER_MESSAGE: usize =
 
 impl Board {
     fn page_count(&self) -> usize {
-        (self.buttons.len() + MAX_BUTTONS_PER_MESSAGE - 1) / MAX_BUTTONS_PER_MESSAGE
+        self.buttons.len().div_ceil(MAX_BUTTONS_PER_MESSAGE)
     }
 
     fn action_row(&self, button_row: &[Button], base_idx: usize) -> CreateActionRow {
@@ -355,7 +355,7 @@ struct BoardManagerRef<'a> {
     guild_state: GuildStateRef<'a>
 }
 
-impl<'a> Deref for BoardManagerRef<'a> {
+impl Deref for BoardManagerRef<'_> {
     type Target = BoardManager;
 
     fn deref(&self) -> &BoardManager {
@@ -367,7 +367,7 @@ struct BoardManagerMutUnguarded<'a> {
     guild_state: GuildStateMutUnguarded<'a>
 }
 
-impl<'a> Deref for BoardManagerMutUnguarded<'a> {
+impl Deref for BoardManagerMutUnguarded<'_> {
     type Target = BoardManager;
 
     fn deref(&self) -> &BoardManager {
@@ -375,7 +375,7 @@ impl<'a> Deref for BoardManagerMutUnguarded<'a> {
     }
 }
 
-impl<'a> DerefMut for BoardManagerMutUnguarded<'a> {
+impl DerefMut for BoardManagerMutUnguarded<'_> {
     fn deref_mut(&mut self) -> &mut BoardManager {
         self.guild_state.board_manager_mut()
     }
@@ -385,7 +385,7 @@ struct BoardManagerMut<'a> {
     guild_state: GuildStateMut<'a>
 }
 
-impl<'a> Deref for BoardManagerMut<'a> {
+impl Deref for BoardManagerMut<'_> {
     type Target = BoardManager;
 
     fn deref(&self) -> &BoardManager {
@@ -393,7 +393,7 @@ impl<'a> Deref for BoardManagerMut<'a> {
     }
 }
 
-impl<'a> DerefMut for BoardManagerMut<'a> {
+impl DerefMut for BoardManagerMut<'_> {
     fn deref_mut(&mut self) -> &mut BoardManager {
         self.guild_state.board_manager_mut()
     }
