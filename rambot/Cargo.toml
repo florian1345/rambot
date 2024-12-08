@@ -25,6 +25,7 @@ version = "0.5"
 features = ["pcm"]
 
 [dev-dependencies]
+kernal = "0.3"
 rambot-test-util = { path = "../rambot-test-util", features = [ "testing" ] }
 
 [features]

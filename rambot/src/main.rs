@@ -13,7 +13,7 @@ use simplelog::LevelFilter;
 use songbird::SerenityInit;
 
 use std::sync::Arc;
-use poise::{FrameworkContext, FrameworkError, PrefixFrameworkOptions};
+use poise::{Command, FrameworkContext, FrameworkError, FrameworkOptions, PrefixFrameworkOptions};
 use serenity::all::FullEvent;
 use tokio::sync::RwLock;
 
@@ -43,6 +43,28 @@ async fn handle_event(serenity_ctx: &Context, event: &FullEvent,
         framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>) -> CommandResult {
     BoardButtonEventHandler.handle_event(serenity_ctx, event, framework_ctx).await?;
     LoggingEventHandler.handle_event(serenity_ctx, event, framework_ctx).await
+}
+
+fn get_framework_options(
+    config: &Config,
+    mut commands: Vec<Command<RwLock<CommandData>, CommandError>>
+) -> FrameworkOptions<RwLock<CommandData>, CommandError> {
+    if !config.allow_slash_commands() {
+        commands.iter_mut().for_each(|command| command.slash_action = None);
+    }
+
+    FrameworkOptions {
+        commands,
+        prefix_options: PrefixFrameworkOptions {
+            prefix: Some(config.prefix().to_owned()),
+            ..Default::default()
+        },
+        owners: config.owners().iter().cloned().collect(),
+        on_error: |err| Box::pin(handle_error(err)),
+        event_handler: |serenity_ctx, event, framework_ctx, _|
+            Box::pin(handle_event(serenity_ctx, event, framework_ctx)),
+        ..Default::default()
+    }
 }
 
 #[tokio::main]
@@ -90,26 +112,14 @@ async fn main() {
 
     log::info!("Successfully loaded state for {} guilds.", state.guild_count());
 
-    let prefix = config.prefix().to_owned();
-    let owners = config.owners().iter().cloned().collect();
     let token = config.token().to_owned();
+    let framework_options = get_framework_options(&config, command::commands());
     let mut command_data = CommandData::new();
     command_data.insert::<PluginManager>(plugin_mgr);
     command_data.insert::<Config>(config);
     command_data.insert::<State>(state);
     let framework = poise::Framework::builder()
-        .options(poise::FrameworkOptions {
-            commands: command::commands(),
-            prefix_options: PrefixFrameworkOptions {
-                prefix: Some(prefix),
-                ..Default::default()
-            },
-            owners,
-            on_error: |err| Box::pin(handle_error(err)),
-            event_handler: |serenity_ctx, event, framework_ctx, _|
-                Box::pin(handle_event(serenity_ctx, event, framework_ctx)),
-            ..Default::default()
-        })
+        .options(framework_options)
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
@@ -133,5 +143,63 @@ async fn main() {
 
     if let Err(e) = client.start().await {
         log::error!("{}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use kernal::prelude::*;
+    use serenity::all::UserId;
+    use super::*;
+
+    /// Just a test command - no further purpose.
+    #[poise::command(slash_command, prefix_command)]
+    async fn test(_: command::Context<'_>) -> CommandResult {
+        Ok(())
+    }
+
+    fn get_config(prefix: &str, allow_slash_commands: bool, owners: &[&str]) -> Config {
+        serde_json::from_str(&format!("
+            {{
+                \"prefix\": \"{}\",
+                \"allow_slash_commands\": {},
+                \"token\": \"testToken\",
+                \"owners\": [{}],
+                \"plugin_directory\": \"test/plugin/directory\",
+                \"plugin_config_directory\": \"test/plugin/config/directory\",
+                \"state_directory\": \"test/state/directory\",
+                \"root_directory\": \"test/root/directory\",
+                \"allow_web_access\": true,
+                \"log_level_filter\": \"info\"
+            }}
+        ", prefix, allow_slash_commands, owners.join(","))).unwrap()
+    }
+
+    #[test]
+    fn get_framework_options_works_with_slash_commands() {
+        let config: Config = get_config("!", true, &["123"]);
+
+        let framework_options = get_framework_options(&config, vec![test()]);
+
+        let expected_user_id = UserId::from_str("123").unwrap();
+        assert_that!(&framework_options.commands).has_length(1);
+        assert_that!(&framework_options.commands[0].slash_action).is_some();
+        assert_that!(&framework_options.prefix_options.prefix).contains("!".to_owned());
+        assert_that!(&framework_options.owners).contains_exactly_in_any_order(&[expected_user_id]);
+    }
+    
+    #[test]
+    fn get_framework_options_works_without_slash_commands() {
+        let config: Config = get_config("!", false, &["123", "456"]);
+
+        let framework_options = get_framework_options(&config, vec![test()]);
+
+        let expected_user_id_1 = UserId::from_str("123").unwrap();
+        let expected_user_id_2 = UserId::from_str("456").unwrap();
+        assert_that!(&framework_options.commands).has_length(1);
+        assert_that!(&framework_options.commands[0].slash_action).is_none();
+        assert_that!(&framework_options.owners)
+            .contains_exactly_in_any_order(&[expected_user_id_1, expected_user_id_2]);
     }
 }
