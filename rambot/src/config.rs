@@ -15,6 +15,7 @@ use std::path::Path;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const DEFAULT_PREFIX: &str = "!";
+const DEFAULT_ALLOW_SLASH_COMMANDS: bool = true;
 const DEFAULT_PLUGIN_DIRECTORY: &str = "plugins";
 const DEFAULT_PLUGIN_CONFIG_DIRECTORY: &str = "plugins/config";
 const DEFAULT_STATE_DIRECTORY: &str = "state";
@@ -121,6 +122,7 @@ where
 #[derive(Deserialize, Serialize)]
 pub struct Config {
     prefix: String,
+    allow_slash_commands: bool,
     token: String,
     owners: Vec<UserId>,
     plugin_directory: String,
@@ -161,6 +163,7 @@ impl Config {
                 .to_owned();
             let config = Config {
                 prefix: DEFAULT_PREFIX.to_owned(),
+                allow_slash_commands: DEFAULT_ALLOW_SLASH_COMMANDS,
                 token,
                 owners: Vec::new(),
                 plugin_directory: DEFAULT_PLUGIN_DIRECTORY.to_owned(),
@@ -185,6 +188,11 @@ impl Config {
     /// The prefix for commands to be recognized by the bot.
     pub fn prefix(&self) -> &str {
         &self.prefix
+    }
+
+    /// Indicates whether slash-commands should be registered and accepted.
+    pub fn allow_slash_commands(&self) -> bool {
+        self.allow_slash_commands
     }
 
     /// The Discord API token that the bot uses to connect to Discord.

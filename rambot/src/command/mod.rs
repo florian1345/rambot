@@ -42,7 +42,7 @@ pub use board::BoardButtonEventHandler;
 pub type CommandData = TypeMap;
 pub type CommandError = Box<dyn std::error::Error + Send + Sync>;
 pub type CommandResult<T = ()> = Result<T, CommandError>;
-type Context<'a> = poise::Context<'a, TokioRwLock<CommandData>, CommandError>;
+pub type Context<'a> = poise::Context<'a, TokioRwLock<CommandData>, CommandError>;
 
 macro_rules! unwrap_or_return {
     ($e:expr, $r:expr) => {
