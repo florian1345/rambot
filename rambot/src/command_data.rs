@@ -20,7 +20,7 @@ impl CommandData {
     /// * `config`: The bot's configuration to be read by commands.
     /// * `plugin_mgr`: An arc of the global plugin manager to be used by commands.
     /// * `state`: The initial mutable state shared by commands. Will be wrapped in a lock to manage
-    /// access.
+    ///   access.
     pub fn new(config: Config, plugin_mgr: Arc<PluginManager>, state: State) -> CommandData {
         CommandData {
             config,
