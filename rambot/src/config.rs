@@ -3,7 +3,6 @@ use rambot_api::PluginConfig;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use serenity::model::prelude::UserId;
-use serenity::prelude::TypeMapKey;
 
 use simplelog::LevelFilter;
 
@@ -242,8 +241,4 @@ impl Config {
     pub fn log_level_filter(&self) -> LevelFilter {
         self.log_level_filter
     }
-}
-
-impl TypeMapKey for Config {
-    type Value = Config;
 }

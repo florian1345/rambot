@@ -1,4 +1,5 @@
-use crate::command::{BoardButtonEventHandler, CommandData, CommandError, CommandResult};
+use crate::command::{BoardButtonEventHandler, CommandError, CommandResult};
+use crate::command_data::CommandData;
 use crate::config::Config;
 use crate::event::FrameworkEventHandler;
 use crate::logging::LoggingEventHandler;
@@ -15,9 +16,9 @@ use songbird::SerenityInit;
 use std::sync::Arc;
 use poise::{Command, FrameworkContext, FrameworkError, FrameworkOptions, PrefixFrameworkOptions};
 use serenity::all::FullEvent;
-use tokio::sync::RwLock;
 
 pub mod audio;
+pub mod command_data;
 pub mod command;
 pub mod config;
 pub mod event;
@@ -26,7 +27,7 @@ pub mod logging;
 pub mod plugin;
 pub mod state;
 
-async fn handle_error(err: FrameworkError<'_, RwLock<CommandData>, CommandError>) {
+async fn handle_error(err: FrameworkError<'_, CommandData, CommandError>) {
     match err.ctx() {
         Some(ctx) => {
             if let Err(reply_err) = ctx.reply(format!("{}", err)).await {
@@ -40,15 +41,15 @@ async fn handle_error(err: FrameworkError<'_, RwLock<CommandData>, CommandError>
 }
 
 async fn handle_event(serenity_ctx: &Context, event: &FullEvent,
-        framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>) -> CommandResult {
+        framework_ctx: FrameworkContext<'_, CommandData, CommandError>) -> CommandResult {
     BoardButtonEventHandler.handle_event(serenity_ctx, event, framework_ctx).await?;
     LoggingEventHandler.handle_event(serenity_ctx, event, framework_ctx).await
 }
 
 fn get_framework_options(
     config: &Config,
-    mut commands: Vec<Command<RwLock<CommandData>, CommandError>>
-) -> FrameworkOptions<RwLock<CommandData>, CommandError> {
+    mut commands: Vec<Command<CommandData, CommandError>>
+) -> FrameworkOptions<CommandData, CommandError> {
     if !config.allow_slash_commands() {
         commands.iter_mut().for_each(|command| command.slash_action = None);
     }
@@ -114,16 +115,13 @@ async fn main() {
 
     let token = config.token().to_owned();
     let framework_options = get_framework_options(&config, command::commands());
-    let mut command_data = CommandData::new();
-    command_data.insert::<PluginManager>(plugin_mgr);
-    command_data.insert::<Config>(config);
-    command_data.insert::<State>(state);
+    let command_data = CommandData::new(config, plugin_mgr, state);
     let framework = poise::Framework::builder()
         .options(framework_options)
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(RwLock::new(command_data))
+                Ok(command_data)
             })
         })
         .build();

@@ -15,15 +15,12 @@ use rambot_api::{
     ResolverRegistry
 };
 
-use serenity::prelude::TypeMapKey;
-
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::config::Config;
 
@@ -567,10 +564,6 @@ impl PluginManager {
 
         log::debug!("Unloaded {} plugins.", count);
     }
-}
-
-impl TypeMapKey for PluginManager {
-    type Value = Arc<PluginManager>;
 }
 
 impl Drop for PluginManager {

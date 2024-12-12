@@ -3,9 +3,8 @@ use poise::FrameworkContext;
 use serenity::all::FullEvent;
 use serenity::client::Context;
 
-use tokio::sync::RwLock;
-
-use crate::command::{CommandData, CommandError, CommandResult};
+use crate::command::{CommandError, CommandResult};
+use crate::command_data::CommandData;
 
 /// A trait for structs which can handle any Discord events.
 pub(crate) trait FrameworkEventHandler {
@@ -22,5 +21,5 @@ pub(crate) trait FrameworkEventHandler {
     ///
     /// A [CommandResult].
     async fn handle_event(&self, serenity_ctx: &Context, event: &FullEvent,
-        framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>) -> CommandResult;
+        framework_ctx: FrameworkContext<'_, CommandData, CommandError>) -> CommandResult;
 }

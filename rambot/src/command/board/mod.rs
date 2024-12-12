@@ -28,8 +28,6 @@ use serenity::model::id::{MessageId, GuildId};
 use serenity::model::prelude::ChannelId;
 use serenity::prelude::Context as SerenityContext;
 
-use tokio::sync::RwLock;
-
 mod button;
 
 use button::button;
@@ -399,7 +397,7 @@ impl DerefMut for BoardManagerMut<'_> {
     }
 }
 
-async fn get_board_manager(data: &RwLock<CommandData>, guild_id: GuildId)
+async fn get_board_manager(data: &CommandData, guild_id: GuildId)
         -> Option<BoardManagerRef<'_>> {
     get_guild_state(data, guild_id).await.map(|guild_state|
         BoardManagerRef {
@@ -407,7 +405,7 @@ async fn get_board_manager(data: &RwLock<CommandData>, guild_id: GuildId)
         })
 }
 
-async fn get_board_manager_mut_unguarded(data: &RwLock<CommandData>, guild_id: GuildId)
+async fn get_board_manager_mut_unguarded(data: &CommandData, guild_id: GuildId)
         -> Option<BoardManagerMutUnguarded<'_>> {
     get_guild_state_mut_unguarded(data, guild_id).await.map(|guild_state|
         BoardManagerMutUnguarded {
@@ -415,7 +413,7 @@ async fn get_board_manager_mut_unguarded(data: &RwLock<CommandData>, guild_id: G
         })
 }
 
-async fn get_board_manager_mut(data: &RwLock<CommandData>, guild_id: GuildId)
+async fn get_board_manager_mut(data: &CommandData, guild_id: GuildId)
         -> BoardManagerMut<'_> {
     BoardManagerMut {
         guild_state: get_guild_state_mut(data, guild_id).await
@@ -430,7 +428,7 @@ pub struct BoardButtonEventHandler;
 
 impl FrameworkEventHandler for BoardButtonEventHandler {
     async fn handle_event(&self, serenity_ctx: &SerenityContext, event: &FullEvent,
-            framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>)
+            framework_ctx: FrameworkContext<'_, CommandData, CommandError>)
             -> CommandResult {
         if let FullEvent::InteractionCreate {
                     interaction: interaction @ Interaction::Component(ComponentInteraction {
