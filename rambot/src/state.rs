@@ -8,7 +8,6 @@ use rambot_api::PluginGuildConfig;
 use serde::{Deserialize, Serialize, Serializer};
 
 use serenity::model::id::GuildId;
-use serenity::prelude::TypeMapKey;
 
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
@@ -400,8 +399,4 @@ impl State {
     pub fn guild_count(&self) -> usize {
         self.guild_states.len()
     }
-}
-
-impl TypeMapKey for State {
-    type Value = State;
 }

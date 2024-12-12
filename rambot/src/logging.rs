@@ -23,8 +23,9 @@ use std::io;
 use std::path::Path;
 use poise::FrameworkContext;
 use serenity::all::FullEvent;
-use tokio::sync::RwLock;
-use crate::command::{CommandData, CommandError, CommandResult};
+
+use crate::command::{CommandError, CommandResult};
+use crate::command_data::CommandData;
 use crate::event::FrameworkEventHandler;
 
 const LOG_DIR: &str = "logs";
@@ -156,7 +157,7 @@ impl EventHandler for LoggingEventHandler {
 
 impl FrameworkEventHandler for LoggingEventHandler {
     async fn handle_event(&self, _serenity_ctx: &Context, event: &FullEvent,
-            _framework_ctx: FrameworkContext<'_, RwLock<CommandData>, CommandError>)
+            _framework_ctx: FrameworkContext<'_, CommandData, CommandError>)
             -> CommandResult {
         match event {
             FullEvent::GuildCreate { guild, .. } => {

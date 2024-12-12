@@ -6,7 +6,6 @@ use crate::state::{State, GuildState};
 use rambot_api::{AudioSource, ModifierDocumentation, PluginGuildConfig, SampleDuration, SAMPLES_PER_SECOND};
 
 use serenity::model::id::GuildId;
-use serenity::prelude::TypeMap;
 use serenity::prelude::Context as SerenityContext;
 use serenity::model::channel::Message as SerenityMessage;
 
@@ -27,7 +26,6 @@ use serenity::all::{CreateInteractionResponse, CreateInteractionResponseMessage}
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex as TokioMutex, Mutex};
 use tokio::sync::MutexGuard as TokioMutexGuard;
-use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::RwLockReadGuard as TokioRwLockReadGuard;
 use tokio::sync::RwLockWriteGuard as TokioRwLockWriteGuard;
 
@@ -38,11 +36,9 @@ mod layer;
 
 pub use board::BoardButtonEventHandler;
 
-// TODO TypeMap is no longer necessary
-pub type CommandData = TypeMap;
 pub type CommandError = Box<dyn std::error::Error + Send + Sync>;
 pub type CommandResult<T = ()> = Result<T, CommandError>;
-pub type Context<'a> = poise::Context<'a, TokioRwLock<CommandData>, CommandError>;
+pub type Context<'a> = poise::Context<'a, CommandData, CommandError>;
 
 macro_rules! unwrap_or_return {
     ($e:expr, $r:expr) => {
@@ -56,7 +52,7 @@ macro_rules! unwrap_or_return {
 pub(crate) use unwrap_or_return;
 
 /// Gets a vector of the root commands. Sub-commands are not included, but their parent is.
-pub fn commands() -> Vec<Command<TokioRwLock<CommandData>, CommandError>> {
+pub fn commands() -> Vec<Command<CommandData, CommandError>> {
     vec![
         adapter::adapter(),
         audio(),
@@ -89,6 +85,7 @@ macro_rules! unwrap_or_reply {
 }
 
 pub(crate) use unwrap_or_reply;
+use crate::command_data::CommandData;
 
 /// Connects to the channel of the command author. Returns `true` if and only if the bot is
 /// connected afterward.
@@ -172,7 +169,7 @@ where
 }
 
 struct GuildStateRef<'a> {
-    data: TokioRwLockReadGuard<'a, CommandData>,
+    state: TokioRwLockReadGuard<'a, State>,
     guild_id: GuildId
 }
 
@@ -180,13 +177,12 @@ impl Deref for GuildStateRef<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
-        let state = self.data.get::<State>().unwrap();
-        state.guild_state(self.guild_id).unwrap()
+        self.state.guild_state(self.guild_id).unwrap()
     }
 }
 
 struct GuildStateMutUnguarded<'a> {
-    data_guard: TokioRwLockWriteGuard<'a, TypeMap>,
+    state: TokioRwLockWriteGuard<'a, State>,
     guild_id: GuildId
 }
 
@@ -194,20 +190,18 @@ impl Deref for GuildStateMutUnguarded<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
-        let state = self.data_guard.get::<State>().unwrap();
-        state.guild_state(self.guild_id).unwrap()
+        self.state.guild_state(self.guild_id).unwrap()
     }
 }
 
 impl DerefMut for GuildStateMutUnguarded<'_> {
     fn deref_mut(&mut self) -> &mut GuildState {
-        let state_mut = self.data_guard.get_mut::<State>().unwrap();
-        state_mut.guild_state_mut_unguarded(self.guild_id).unwrap()
+        self.state.guild_state_mut_unguarded(self.guild_id).unwrap()
     }
 }
 
 struct GuildStateMut<'a> {
-    data_guard: TokioRwLockWriteGuard<'a, TypeMap>,
+    state: TokioRwLockWriteGuard<'a, State>,
     guild_id: GuildId,
     plugin_manager: Arc<PluginManager>
 }
@@ -216,8 +210,7 @@ impl Deref for GuildStateMut<'_> {
     type Target = GuildState;
 
     fn deref(&self) -> &GuildState {
-        let state = self.data_guard.get::<State>().unwrap();
-        state.guild_state(self.guild_id).unwrap()
+        self.state.guild_state(self.guild_id).unwrap()
     }
 }
 
@@ -232,27 +225,25 @@ impl DerefMut for GuildStateMut<'_> {
         // dropped. Dropping this dummy guard ensures any changes are committed
         // to the state file.
 
-        let state_mut = self.data_guard.get_mut::<State>().unwrap();
-        state_mut.guild_state_mut_unguarded(self.guild_id).unwrap()
+        self.state.guild_state_mut_unguarded(self.guild_id).unwrap()
     }
 }
 
 impl Drop for GuildStateMut<'_> {
     fn drop(&mut self) {
-        let state_mut = self.data_guard.get_mut::<State>().unwrap();
-        let g = state_mut.guild_state_mut(self.guild_id, &self.plugin_manager);
+        let g = self.state.guild_state_mut(self.guild_id, &self.plugin_manager);
 
         drop(g);
     }
 }
 
-async fn get_guild_state(data: &TokioRwLock<CommandData>, guild_id: GuildId)
+async fn get_guild_state(data: &CommandData, guild_id: GuildId)
         -> Option<GuildStateRef<'_>> {
-    let data = data.read().await;
+    let state = data.state().await;
 
-    if data.get::<State>()?.guild_state(guild_id).is_some() {
+    if state.guild_state(guild_id).is_some() {
         Some(GuildStateRef {
-            data,
+            state,
             guild_id
         })
     }
@@ -261,13 +252,13 @@ async fn get_guild_state(data: &TokioRwLock<CommandData>, guild_id: GuildId)
     }
 }
 
-async fn get_guild_state_mut_unguarded(data: &TokioRwLock<CommandData>, guild_id: GuildId)
+async fn get_guild_state_mut_unguarded(data: &CommandData, guild_id: GuildId)
         -> Option<GuildStateMutUnguarded<'_>> {
-    let data_guard = data.write().await;
+    let state = data.state_mut().await;
 
-    if data_guard.get::<State>()?.guild_state(guild_id).is_some() {
+    if state.guild_state(guild_id).is_some() {
         Some(GuildStateMutUnguarded {
-            data_guard,
+            state,
             guild_id
         })
     }
@@ -276,15 +267,14 @@ async fn get_guild_state_mut_unguarded(data: &TokioRwLock<CommandData>, guild_id
     }
 }
 
-async fn get_guild_state_mut(data: &TokioRwLock<CommandData>, guild_id: GuildId)
+async fn get_guild_state_mut(data: &CommandData, guild_id: GuildId)
         -> GuildStateMut<'_> {
-    let mut data_guard = data.write().await;
-    let plugin_manager = Arc::clone(data_guard.get::<PluginManager>().unwrap());
-    let state = data_guard.get_mut::<State>().unwrap();
+    let mut state = data.state_mut().await;
+    let plugin_manager = data.plugin_manager_arc();
     state.ensure_guild_state_exists(guild_id, &plugin_manager);
 
     GuildStateMut {
-        data_guard,
+        state,
         guild_id,
         plugin_manager
     }
@@ -502,8 +492,7 @@ async fn cmd_do(ctx: Context<'_>, commands: Vec<String>) -> CommandResult {
 /// Usage: `audio [audio]`
 #[poise::command(slash_command, prefix_command, guild_only)]
 async fn audio(ctx: Context<'_>, audio: Option<String>) -> CommandResult {
-    let data_guard = ctx.data().read().await;
-    let plugin_manager = data_guard.get::<PluginManager>().unwrap();
+    let plugin_manager = ctx.data().plugin_manager();
 
     let reply = if let Some(audio) = audio {
         let audio_lower = audio.to_lowercase();
@@ -689,13 +678,10 @@ where
     D: FnMut(&PluginManager, &str) -> Option<ModifierDocumentation>,
     N: FnOnce(&PluginManager) -> Keys<'_, String, R>
 {
-    let data_guard = ctx.data().read().await;
-    let plugin_manager =
-        Arc::clone(data_guard.get::<PluginManager>().unwrap());
+    let plugin_manager = ctx.data().plugin_manager();
 
     if let Some(name) = modifier {
-        if let Some(documentation) =
-                get_documentation(plugin_manager.as_ref(), &name) {
+        if let Some(documentation) = get_documentation(plugin_manager, &name) {
             ctx.reply(format!("**{}**\n\n{}", name, documentation)).await?;
         }
         else {
@@ -705,10 +691,8 @@ where
     else {
         let mut response = format!("{} provided by plugins:", name_plural_upper);
 
-        for name in get_names(plugin_manager.as_ref()) {
-            let doc =
-                get_documentation(plugin_manager.as_ref(), name.as_str())
-                .unwrap();
+        for name in get_names(plugin_manager) {
+            let doc = get_documentation(plugin_manager, name.as_str()).unwrap();
 
             write!(&mut response, "\n- **{}**: {}", name, doc.short_summary())
                 .unwrap();
@@ -726,7 +710,7 @@ where
 struct SyntheticMessageMarker;
 
 async fn dispatch_command_as_message(
-        framework_ctx: FrameworkContext<'_, TokioRwLock<CommandData>, CommandError>,
+        framework_ctx: FrameworkContext<'_, CommandData, CommandError>,
         serenity_ctx: &SerenityContext,
         msg: &SerenityMessage) -> CommandResult {
     let trigger = MessageDispatchTrigger::MessageCreate;
