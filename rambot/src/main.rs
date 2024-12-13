@@ -15,7 +15,7 @@ use songbird::SerenityInit;
 
 use std::sync::Arc;
 use poise::{Command, FrameworkContext, FrameworkError, FrameworkOptions, PrefixFrameworkOptions};
-use serenity::all::FullEvent;
+use serenity::all::{FullEvent, UserId};
 
 pub mod audio;
 pub mod command_data;
@@ -46,17 +46,18 @@ async fn handle_event(serenity_ctx: &Context, event: &FullEvent,
     LoggingEventHandler.handle_event(serenity_ctx, event, framework_ctx).await
 }
 
-fn get_framework_options(
-    config: &Config,
+fn get_framework_options<'uid>(
+    prefix: Option<&str>,
+    owners: impl IntoIterator<Item = &'uid UserId>,
     commands: Vec<Command<CommandData, CommandError>>
 ) -> FrameworkOptions<CommandData, CommandError> {
     FrameworkOptions {
         commands,
         prefix_options: PrefixFrameworkOptions {
-            prefix: Some(config.prefix().to_owned()),
+            prefix: prefix.map(str::to_owned),
             ..Default::default()
         },
-        owners: config.owners().iter().cloned().collect(),
+        owners: owners.into_iter().cloned().collect(),
         on_error: |err| Box::pin(handle_error(err)),
         event_handler: |serenity_ctx, event, framework_ctx, _|
             Box::pin(handle_event(serenity_ctx, event, framework_ctx)),
@@ -72,7 +73,7 @@ fn get_framework_options_for_configured_modes(
         commands.iter_mut().for_each(|command| command.slash_action = None);
     }
 
-    get_framework_options(config, commands)
+    get_framework_options(config.prefix(), config.owners(), commands)
 }
 
 #[tokio::main]
@@ -124,7 +125,7 @@ async fn main() {
     let framework_options =
         get_framework_options_for_configured_modes(&config, command::commands());
     let programmatic_command_framework_options =
-        get_framework_options(&config, command::commands());
+        get_framework_options(config.prefix().or(Some("")), config.owners(), command::commands());
     let command_data =
         CommandData::new(config, plugin_mgr, state, programmatic_command_framework_options);
     let framework = poise::Framework::builder()
