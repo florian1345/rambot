@@ -187,7 +187,7 @@ impl Config {
     /// The prefix for commands to be recognized by the bot. If `None`, prefix commands are not
     /// enabled.
     pub fn prefix(&self) -> Option<&str> {
-        self.prefix.as_ref().map(|s| s.as_str())
+        self.prefix.as_deref()
     }
 
     /// Indicates whether slash-commands should be registered and accepted.
