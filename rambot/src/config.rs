@@ -21,20 +21,18 @@ const DEFAULT_STATE_DIRECTORY: &str = "state";
 const DEFAULT_ALLOW_WEB_ACCESS: bool = true;
 const DEFAULT_LOG_LEVEL_FILTER: LevelFilter = LevelFilter::Info;
 
-/// An enumeration of the different errors that can occur when loading the
-/// configuration.
+/// An enumeration of the different errors that can occur when loading the configuration.
 pub enum ConfigError {
 
-    /// Indicates that the path of the config file is currently occupied by a
-    /// directory of the same name.
+    /// Indicates that the path of the config file is currently occupied by a directory of the same
+    /// name.
     OccupiedByDirectory,
 
-    /// Wraps an [IO error](std::io::Error) that occurred while loading or
-    /// saving the file.
+    /// Wraps an [IO error](io::Error) that occurred while loading or saving the file.
     IOError(io::Error),
 
-    /// Wraps a [JSON error](serde_json::Error) that occurred during
-    /// serialization or deserialization of the configuration file.
+    /// Wraps a [JSON error](serde_json::Error) that occurred during serialization or
+    /// deserialization of the configuration file.
     JSONError(serde_json::Error)
 }
 

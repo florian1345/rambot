@@ -48,12 +48,8 @@ async fn handle_event(serenity_ctx: &Context, event: &FullEvent,
 
 fn get_framework_options(
     config: &Config,
-    mut commands: Vec<Command<CommandData, CommandError>>
+    commands: Vec<Command<CommandData, CommandError>>
 ) -> FrameworkOptions<CommandData, CommandError> {
-    if !config.allow_slash_commands() {
-        commands.iter_mut().for_each(|command| command.slash_action = None);
-    }
-
     FrameworkOptions {
         commands,
         prefix_options: PrefixFrameworkOptions {
@@ -66,6 +62,17 @@ fn get_framework_options(
             Box::pin(handle_event(serenity_ctx, event, framework_ctx)),
         ..Default::default()
     }
+}
+
+fn get_framework_options_for_configured_modes(
+    config: &Config,
+    mut commands: Vec<Command<CommandData, CommandError>>
+) -> FrameworkOptions<CommandData, CommandError> {
+    if !config.allow_slash_commands() {
+        commands.iter_mut().for_each(|command| command.slash_action = None);
+    }
+
+    get_framework_options(config, commands)
 }
 
 #[tokio::main]
@@ -114,8 +121,12 @@ async fn main() {
     log::info!("Successfully loaded state for {} guilds.", state.guild_count());
 
     let token = config.token().to_owned();
-    let framework_options = get_framework_options(&config, command::commands());
-    let command_data = CommandData::new(config, plugin_mgr, state);
+    let framework_options =
+        get_framework_options_for_configured_modes(&config, command::commands());
+    let programmatic_command_framework_options =
+        get_framework_options(&config, command::commands());
+    let command_data =
+        CommandData::new(config, plugin_mgr, state, programmatic_command_framework_options);
     let framework = poise::Framework::builder()
         .options(framework_options)
         .setup(|ctx, _ready, framework| {
@@ -178,7 +189,7 @@ mod tests {
     fn get_framework_options_works_with_slash_commands() {
         let config: Config = get_config("!", true, &["123"]);
 
-        let framework_options = get_framework_options(&config, vec![test()]);
+        let framework_options = get_framework_options_for_configured_modes(&config, vec![test()]);
 
         let expected_user_id = UserId::from_str("123").unwrap();
         assert_that!(&framework_options.commands).has_length(1);
@@ -191,7 +202,7 @@ mod tests {
     fn get_framework_options_works_without_slash_commands() {
         let config: Config = get_config("!", false, &["123", "456"]);
 
-        let framework_options = get_framework_options(&config, vec![test()]);
+        let framework_options = get_framework_options_for_configured_modes(&config, vec![test()]);
 
         let expected_user_id_1 = UserId::from_str("123").unwrap();
         let expected_user_id_2 = UserId::from_str("456").unwrap();
