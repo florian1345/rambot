@@ -118,7 +118,9 @@ where
 /// The configuration data of the bot.
 #[derive(Deserialize, Serialize)]
 pub struct Config {
-    prefix: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefix: Option<String>,
     allow_slash_commands: bool,
     token: String,
     owners: Vec<UserId>,
@@ -159,7 +161,7 @@ impl Config {
                 .unwrap()
                 .to_owned();
             let config = Config {
-                prefix: DEFAULT_PREFIX.to_owned(),
+                prefix: Some(DEFAULT_PREFIX.to_owned()),
                 allow_slash_commands: DEFAULT_ALLOW_SLASH_COMMANDS,
                 token,
                 owners: Vec::new(),
@@ -182,9 +184,10 @@ impl Config {
         }
     }
 
-    /// The prefix for commands to be recognized by the bot.
-    pub fn prefix(&self) -> &str {
-        &self.prefix
+    /// The prefix for commands to be recognized by the bot. If `None`, prefix commands are not
+    /// enabled.
+    pub fn prefix(&self) -> Option<&str> {
+        self.prefix.as_deref()
     }
 
     /// Indicates whether slash-commands should be registered and accepted.
