@@ -3,17 +3,31 @@ use crate::key_value::KeyValueDescriptor;
 use crate::plugin::PluginManager;
 use crate::state::{State, GuildState};
 
-use rambot_api::{AudioSource, ModifierDocumentation, PluginGuildConfig, SampleDuration, SAMPLES_PER_SECOND};
+use rambot_api::{
+    AudioSource,
+    ModifierDocumentation,
+    PluginGuildConfig,
+    SampleDuration,
+    SAMPLES_PER_SECOND
+};
 
+use serenity::all::{CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::model::id::GuildId;
-use serenity::prelude::Context as SerenityContext;
 use serenity::model::channel::Message as SerenityMessage;
+use serenity::prelude::Context as SerenityContext;
 
 use songbird::Call;
 use songbird::error::JoinError;
 use songbird::input::{Input, RawAdapter};
 
-use poise::{builtins, Command, FrameworkContext, MessageDispatchTrigger};
+use poise::{Command, FrameworkContext, MessageDispatchTrigger};
+use poise::builtins::{self, HelpConfiguration};
+
+use tokio::runtime::{Handle, Runtime};
+use tokio::sync::{Mutex as TokioMutex, Mutex};
+use tokio::sync::MutexGuard as TokioMutexGuard;
+use tokio::sync::RwLockReadGuard as TokioRwLockReadGuard;
+use tokio::sync::RwLockWriteGuard as TokioRwLockWriteGuard;
 
 use std::any::Any;
 use std::clone::Clone;
@@ -21,13 +35,6 @@ use std::collections::hash_map::Keys;
 use std::fmt::{Display, Write};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
-use poise::builtins::HelpConfiguration;
-use serenity::all::{CreateInteractionResponse, CreateInteractionResponseMessage};
-use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{Mutex as TokioMutex, Mutex};
-use tokio::sync::MutexGuard as TokioMutexGuard;
-use tokio::sync::RwLockReadGuard as TokioRwLockReadGuard;
-use tokio::sync::RwLockWriteGuard as TokioRwLockWriteGuard;
 
 mod adapter;
 pub mod board;
@@ -471,9 +478,7 @@ async fn seek(ctx: Context<'_>, layer: String, delta: SampleDuration) -> Command
 async fn cmd_do(ctx: Context<'_>, commands: Vec<String>) -> CommandResult {
     for command in commands {
         match ctx {
-            Context::Application(_) => {
-                // TODO figure out how to do in a slash command
-            },
+            Context::Application(_) => unreachable!(), // prefix-only command
             Context::Prefix(ctx) => {
                 let mut msg = ctx.msg.clone();
                 msg.content = command.to_owned();
@@ -716,6 +721,11 @@ async fn dispatch_command_as_message(
     let trigger = MessageDispatchTrigger::MessageCreate;
     let invocation_data: Mutex<Box<dyn Any + Send + Sync>> =
         Mutex::new(Box::new(SyntheticMessageMarker));
+    let framework_ctx = FrameworkContext {
+        options: framework_ctx.user_data.programmatic_command_framework_options(),
+        ..framework_ctx
+    };
+
     poise::dispatch_message(
         framework_ctx,
         serenity_ctx,

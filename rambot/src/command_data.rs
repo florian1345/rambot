@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use poise::FrameworkOptions;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use crate::command::CommandError;
 use crate::config::Config;
 use crate::plugin::PluginManager;
 use crate::state::State;
@@ -8,7 +10,8 @@ use crate::state::State;
 pub struct CommandData {
     config: Config,
     plugin_manager: Arc<PluginManager>,
-    state: RwLock<State>
+    state: RwLock<State>,
+    programmatic_command_framework_options: FrameworkOptions<CommandData, CommandError>
 }
 
 impl CommandData {
@@ -21,11 +24,20 @@ impl CommandData {
     /// * `plugin_mgr`: An arc of the global plugin manager to be used by commands.
     /// * `state`: The initial mutable state shared by commands. Will be wrapped in a lock to manage
     ///   access.
-    pub fn new(config: Config, plugin_mgr: Arc<PluginManager>, state: State) -> CommandData {
+    /// * `programmatic_command_framework_options`: The framework options to use for programmatic
+    ///   command execution. This is different to the ordinary framework options as commands have to
+    ///   be invokable by their prefix action, even if prefix commands are disabled.
+    pub fn new(
+        config: Config,
+        plugin_mgr: Arc<PluginManager>,
+        state: State,
+        programmatic_command_framework_options: FrameworkOptions<CommandData, CommandError>
+    ) -> CommandData {
         CommandData {
             config,
             plugin_manager: plugin_mgr,
-            state: RwLock::new(state)
+            state: RwLock::new(state),
+            programmatic_command_framework_options
         }
     }
 
@@ -52,5 +64,14 @@ impl CommandData {
     /// Gets mutable access to the mutable state shared by commands.
     pub async fn state_mut(&self) -> RwLockWriteGuard<'_, State> {
         self.state.write().await
+    }
+
+    /// Gets the framework options to use for programmatic command execution. This is different to
+    /// the ordinary framework options as commands have to be invokable by their prefix action, even
+    /// if prefix commands are disabled.
+    pub fn programmatic_command_framework_options(
+        &self
+    ) -> &FrameworkOptions<CommandData, CommandError> {
+        &self.programmatic_command_framework_options
     }
 }
