@@ -3,16 +3,17 @@ use crate::command::{
     get_guild_state,
     get_guild_state_mut,
     get_guild_state_mut_unguarded,
+    prepare_command_for_dispatch,
     respond,
     CommandData,
+    CommandError,
+    CommandResponse,
     CommandResult,
     Context,
     GuildStateMut,
     GuildStateMutUnguarded,
     GuildStateRef,
-    unwrap_or_return,
-    CommandError,
-    CommandResponse
+    unwrap_or_return
 };
 
 use std::collections::HashMap;
@@ -22,7 +23,15 @@ use poise::FrameworkContext;
 
 use serde::{Deserialize, Serialize};
 
-use serenity::all::{ButtonStyle, ComponentInteraction, CreateInteractionResponse, CreateMessage, EditMessage, FullEvent, Interaction};
+use serenity::all::{
+    ButtonStyle,
+    ComponentInteraction,
+    CreateInteractionResponse,
+    CreateMessage,
+    EditMessage,
+    FullEvent,
+    Interaction
+};
 use serenity::builder::{CreateActionRow, CreateButton};
 use serenity::model::id::{MessageId, GuildId};
 use serenity::model::prelude::ChannelId;
@@ -164,6 +173,14 @@ impl Button {
         CreateButton::new(format!("{}", index))
             .label(&self.label)
             .style(style)
+    }
+    
+    fn command(&self) -> &str {
+        &self.command
+    }
+    
+    fn deactivate_command(&self) -> Option<&str> {
+        self.deactivate_command.as_deref()
     }
 }
 
@@ -442,8 +459,9 @@ impl FrameworkEventHandler for BoardButtonEventHandler {
             let channel_id = message_component.channel_id;
             let message_id = message_component.message.id;
             let button_id: usize = message_component.data.custom_id.parse().unwrap();
+            let user_data = framework_ctx.user_data;
             let board_manager = unwrap_or_return!(
-                get_board_manager(framework_ctx.user_data, guild_id).await, Ok(()));
+                get_board_manager(user_data, guild_id).await, Ok(()));
             let button = unwrap_or_return!(
                 board_manager.active_board(message_id, channel_id)
                     .and_then(|b| b.buttons.get(button_id))
@@ -453,11 +471,11 @@ impl FrameworkEventHandler for BoardButtonEventHandler {
 
             // Determine the command to execute
 
-            let mut command = button.command;
+            let mut command = button.command();
             let mut msg = serenity_ctx.http.get_message(channel_id, message_id)
                 .await.unwrap();
 
-            if let Some(deactivate_command) = button.deactivate_command {
+            if let Some(deactivate_command) = button.deactivate_command() {
                 // The button is a toggle button => if active, run the
                 // deactivate command instead, and switch the toggle state.
 
@@ -465,10 +483,8 @@ impl FrameworkEventHandler for BoardButtonEventHandler {
                     command = deactivate_command;
                 }
 
-                let mut board_manager =
-                    get_board_manager_mut(framework_ctx.user_data, guild_id).await;
-                let board = board_manager
-                    .active_board_mut(message_id, channel_id).unwrap();
+                let mut board_manager = get_board_manager_mut(user_data, guild_id).await;
+                let board = board_manager.active_board_mut(message_id, channel_id).unwrap();
                 let button = board.buttons.get_mut(button_id).unwrap();
 
                 button.active = !button.active;
@@ -488,7 +504,7 @@ impl FrameworkEventHandler for BoardButtonEventHandler {
 
             // Execute the command
 
-            msg.content = command;
+            msg.content = prepare_command_for_dispatch(command, user_data.config());
             msg.author = message_component.user.clone();
             msg.webhook_id = None;
 
