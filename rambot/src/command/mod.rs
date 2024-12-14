@@ -93,6 +93,7 @@ macro_rules! unwrap_or_reply {
 
 pub(crate) use unwrap_or_reply;
 use crate::command_data::CommandData;
+use crate::config::Config;
 
 /// Connects to the channel of the command author. Returns `true` if and only if the bot is
 /// connected afterward.
@@ -360,7 +361,7 @@ async fn play_do(ctx: Context<'_>, layer: String, audio: String) -> CommandResul
 }
 
 /// Plays the given audio on the given layer.
-/// 
+///
 /// Possible formats for the input depend on the installed plugins.
 ///
 /// Usage: `play <layer> <audio>`
@@ -481,7 +482,7 @@ async fn cmd_do(ctx: Context<'_>, commands: Vec<String>) -> CommandResult {
             Context::Application(_) => unreachable!(), // prefix-only command
             Context::Prefix(ctx) => {
                 let mut msg = ctx.msg.clone();
-                msg.content = command.to_owned();
+                msg.content = prepare_command_for_dispatch(&command, ctx.data.config());
                 dispatch_command_as_message(ctx.framework(), ctx.serenity_context(), &msg).await?;
             }
         }
@@ -648,7 +649,7 @@ where
     let descriptors = get_guild_state(ctx.data(), guild_id).await
         .and_then(|gs| {
             let mixer = gs.mixer_blocking();
-    
+
             if mixer.contains_layer(&layer) {
                 Some(get(mixer.layer(&layer)).iter()
                     .map(|e| format!("{}", e))
@@ -793,4 +794,57 @@ async fn respond<R: Into<String>>(ctx: Context<'_>, response: CommandResponse<R>
     }
 
     Ok(())
+}
+
+fn prepare_command_for_dispatch(command: &str, config: &Config) -> String {
+    if let Some(prefix) = config.prefix() {
+        if !command.starts_with(prefix) {
+            return format!("{}{}", prefix, command);
+        }
+    }
+
+    command.to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use kernal::prelude::*;
+    use rstest::rstest;
+
+    fn config_with_prefix(prefix: Option<&str>) -> Config {
+        let json = format!("
+            {{
+                {}
+                \"allow_slash_commands\": true,
+                \"token\": \"testToken\",
+                \"owners\": [],
+                \"plugin_directory\": \"test/plugin/directory\",
+                \"plugin_config_directory\": \"test/plugin/config/directory\",
+                \"state_directory\": \"test/state/directory\",
+                \"root_directory\": \"test/root/directory\",
+                \"allow_web_access\": true,
+                \"log_level_filter\": \"info\"
+            }}
+        ", prefix.map(|prefix| format!("\"prefix\": \"{}\",", prefix)).unwrap_or_else(String::new));
+
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[rstest]
+    #[case::without_configured_prefix(None, "test command", "test command")]
+    #[case::command_has_prefix(Some("!"), "!test command", "!test command")]
+    #[case::command_does_not_have_prefix(Some("!"), "test command", "!test command")]
+    fn prepare_command_for_dispatch_test(
+        #[case] prefix: Option<&str>,
+        #[case] command: &str,
+        #[case] expected_prepared_command: &str
+    ) {
+        let config = config_with_prefix(prefix);
+
+        let prepared_command = prepare_command_for_dispatch(command, &config);
+
+        assert_that!(prepared_command).is_equal_to(expected_prepared_command.to_owned());
+    }
 }
